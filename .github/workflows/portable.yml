@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: MIT
+
+name: Portable targets
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux GCC
+            runner: ubuntu-24.04
+          - name: Windows MSVC
+            runner: windows-2022
+          - name: macOS Clang
+            runner: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure, build, and test
+        if: runner.os != 'Windows'
+        run: |
+          cmake --preset portable-debug
+          cmake --build --preset portable-debug --parallel
+          ctest --preset portable-debug
+
+      - name: Configure, build, and test with MSVC
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64
+          cmake --preset portable-debug
+          cmake --build --preset portable-debug --parallel
+          ctest --preset portable-debug

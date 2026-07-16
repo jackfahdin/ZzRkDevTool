@@ -1,0 +1,15 @@
+# Local third-party research snapshots
+/temp/
+
+# CMake and IDE build output
+/build/
+/build-*/
+/cmake-build-*/
+
+# Generated artifacts
+/dist/
+/artifacts/
+compile_commands.json
+
+# Developer-specific toolchain paths
+/CMakeUserPresets.json
