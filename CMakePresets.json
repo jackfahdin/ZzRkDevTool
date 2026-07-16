@@ -1,0 +1,106 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "portable-debug",
+      "displayName": "Portable Targets Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "ZZRK_BUILD_CLI": false,
+        "ZZRK_BUILD_GUI": false,
+        "ZZRK_BUILD_TRANSPORT": false,
+        "ZZRK_BUILD_TESTS": true,
+        "ZZRK_WARNINGS_AS_ERRORS": true
+      }
+    },
+    {
+      "name": "linux-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "ZZRK_BUILD_CLI": true,
+        "ZZRK_BUILD_GUI": true,
+        "ZZRK_BUILD_TRANSPORT": true,
+        "ZZRK_BUILD_TESTS": true,
+        "ZZRK_WARNINGS_AS_ERRORS": true,
+        "ZZRK_LIBUSB_ROOT": "${sourceDir}/thirdParty/libusb"
+      }
+    },
+    {
+      "name": "linux-debug",
+      "displayName": "Linux GCC Debug",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux GCC Release",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "linux-sanitize",
+      "displayName": "Linux GCC ASan/UBSan",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ZZRK_ENABLE_SANITIZERS": true
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "portable-debug",
+      "configurePreset": "portable-debug"
+    },
+    {
+      "name": "linux-debug",
+      "configurePreset": "linux-debug"
+    },
+    {
+      "name": "linux-release",
+      "configurePreset": "linux-release"
+    },
+    {
+      "name": "linux-sanitize",
+      "configurePreset": "linux-sanitize"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "portable-debug",
+      "configurePreset": "portable-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-debug",
+      "configurePreset": "linux-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-sanitize",
+      "configurePreset": "linux-sanitize",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
