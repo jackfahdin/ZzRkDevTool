@@ -191,8 +191,8 @@ void testStatusErrors()
     auto* error = std::get_if<StatusDecodeError>(&decoded);
     expect(error != nullptr
                && error->code == StatusDecodeErrorCode::commandFailed
-               && error->deviceDetail == 0x12345678U,
-           "device-reported command failures preserve the detail field");
+               && error->dataResidue == 0x12345678U,
+           "device-reported command failures preserve the raw residue field");
 
     wire[12] = std::byte{0x02};
     decoded = zzrk::protocol::decodeStatus(wire, 0x04030201U);

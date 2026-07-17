@@ -90,6 +90,41 @@ else()
     endif()
 endif()
 
+if(ZZRK_BUILD_CLI OR ZZRK_BUILD_GUI)
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/thirdParty/spdlog/CMakeLists.txt")
+        message(
+            FATAL_ERROR
+            "spdlog is required by the application targets. "
+            "Run 'git submodule update --init thirdParty/spdlog' before "
+            "configuring."
+        )
+    endif()
+
+    set(SPDLOG_BUILD_ALL OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_BUILD_WARNINGS OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_INSTALL OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_FMT_EXTERNAL OFF CACHE BOOL "" FORCE)
+    set(SPDLOG_SYSTEM_INCLUDES ON CACHE BOOL "" FORCE)
+
+    if(DEFINED BUILD_SHARED_LIBS)
+        set(_zzrk_saved_build_shared_libs "${BUILD_SHARED_LIBS}")
+        set(_zzrk_build_shared_libs_was_defined TRUE)
+    endif()
+    set(BUILD_SHARED_LIBS OFF)
+    add_subdirectory(thirdParty/spdlog EXCLUDE_FROM_ALL SYSTEM)
+    if(_zzrk_build_shared_libs_was_defined)
+        set(BUILD_SHARED_LIBS "${_zzrk_saved_build_shared_libs}")
+    else()
+        unset(BUILD_SHARED_LIBS)
+    endif()
+    unset(_zzrk_build_shared_libs_was_defined)
+    unset(_zzrk_saved_build_shared_libs)
+endif()
+
 if(ZZRK_BUILD_TRANSPORT)
     set(_zzrk_default_libusb_root)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

@@ -2,6 +2,7 @@
 
 #include "DeviceListPrinter.hpp"
 
+#include <zzrk/logging/Logging.hpp>
 #include <zzrk/platform/PlatformServices.hpp>
 #include <zzrk/transport/UsbDeviceScanner.hpp>
 
@@ -22,6 +23,7 @@ void printUsage(const std::string_view executable)
 
 int listDevices()
 {
+    zzrk::logging::debug("Starting read-only Rockchip USB device scan");
     zzrk::transport::UsbDeviceScanner scanner;
     const auto result = scanner.scanRockchipDevices();
     std::string usbAccessHelp;
@@ -31,6 +33,15 @@ int listDevices()
         const auto platform = zzrk::platform::createPlatformServices();
         usbAccessHelp = platform->usbAccessHelp();
     }
+    if (result.error.has_value()) {
+        if (result.devices.empty()) {
+            zzrk::logging::error("Rockchip USB device scan failed");
+        } else {
+            zzrk::logging::warning("Rockchip USB device scan was incomplete");
+        }
+    } else {
+        zzrk::logging::debug("Rockchip USB device scan completed");
+    }
     return zzrk::cli::printScanResult(result, std::cout, std::cerr,
                                       usbAccessHelp);
 }
@@ -39,6 +50,8 @@ int listDevices()
 
 int main(const int argc, char* argv[])
 {
+    [[maybe_unused]] const auto loggingSession =
+        zzrk::logging::initializeConsoleLogging("zzrkdevtool-cli");
     const std::string_view executable = argc > 0 ? argv[0] : "zzrkdevtool-cli";
     if (argc == 2 && std::string_view{argv[1]} == "list") {
         return listDevices();

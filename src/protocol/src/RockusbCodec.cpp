@@ -90,7 +90,7 @@ StatusDecodeResult decodeStatus(const std::span<const std::byte> bytes,
 
     const auto tag =
         readLe32(std::span<const std::byte, 4>{bytes.data() + 4, 4});
-    const auto deviceDetail =
+    const auto dataResidue =
         readLe32(std::span<const std::byte, 4>{bytes.data() + 8, 4});
     const auto status = std::to_integer<std::uint8_t>(bytes[12]);
 
@@ -101,14 +101,14 @@ StatusDecodeResult decodeStatus(const std::span<const std::byte> bytes,
             .expectedTag = expectedTag,
             .actualTag = tag,
             .actualSignature = signature,
-            .deviceDetail = deviceDetail,
+            .dataResidue = dataResidue,
             .rawStatus = status,
         };
     }
 
     switch (status) {
     case 0:
-        return RockusbStatus{.tag = tag, .dataResidue = deviceDetail};
+        return RockusbStatus{.tag = tag, .dataResidue = dataResidue};
     case 1:
         return StatusDecodeError{
             .code = StatusDecodeErrorCode::commandFailed,
@@ -116,7 +116,7 @@ StatusDecodeResult decodeStatus(const std::span<const std::byte> bytes,
             .expectedTag = expectedTag,
             .actualTag = tag,
             .actualSignature = signature,
-            .deviceDetail = deviceDetail,
+            .dataResidue = dataResidue,
             .rawStatus = status,
         };
     case 2:
@@ -126,7 +126,7 @@ StatusDecodeResult decodeStatus(const std::span<const std::byte> bytes,
             .expectedTag = expectedTag,
             .actualTag = tag,
             .actualSignature = signature,
-            .deviceDetail = deviceDetail,
+            .dataResidue = dataResidue,
             .rawStatus = status,
         };
     default:
@@ -136,7 +136,7 @@ StatusDecodeResult decodeStatus(const std::span<const std::byte> bytes,
             .expectedTag = expectedTag,
             .actualTag = tag,
             .actualSignature = signature,
-            .deviceDetail = deviceDetail,
+            .dataResidue = dataResidue,
             .rawStatus = status,
         };
     }

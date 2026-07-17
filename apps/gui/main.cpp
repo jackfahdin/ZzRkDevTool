@@ -2,10 +2,11 @@
 
 #include "MainWindow.hpp"
 
+#include <zzrk/logging/Logging.hpp>
+
 #include <QApplication>
 #include <QCheckBox>
 #include <QCoreApplication>
-#include <QDebug>
 #include <QLabel>
 #include <QStatusBar>
 #include <QTimer>
@@ -45,6 +46,9 @@ int main(int argc, char *argv[])
     QCoreApplication::setOrganizationName(QStringLiteral("ZzRkDevTool"));
     QCoreApplication::setApplicationName(QStringLiteral("ZzRkDevTool"));
     QCoreApplication::setApplicationVersion(QStringLiteral(ZZRK_VERSION));
+    [[maybe_unused]] const auto loggingSession =
+        zzrk::logging::initializeConsoleLogging("ZzRkDevTool");
+    zzrk::logging::info("GUI application started");
 
     const bool smokeTest =
         application.arguments().contains(QStringLiteral("--smoke-test"));
@@ -60,7 +64,8 @@ int main(int argc, char *argv[])
             &application,
             [&application, &window, completedScans] {
                 if (!hasCompletedUiState(window)) {
-                    qCritical() << "GUI smoke test observed an incomplete UI state";
+                    zzrk::logging::error(
+                        "GUI smoke test observed an incomplete UI state");
                     application.exit(EXIT_FAILURE);
                     return;
                 }
@@ -74,7 +79,8 @@ int main(int argc, char *argv[])
                     window.findChild<QToolButton *>(QStringLiteral("refreshButton"));
                 refreshButton->click();
                 if (refreshButton->isEnabled()) {
-                    qCritical() << "GUI smoke test could not start a final scan";
+                    zzrk::logging::error(
+                        "GUI smoke test could not start a final scan");
                     application.exit(EXIT_FAILURE);
                     return;
                 }
@@ -83,7 +89,8 @@ int main(int argc, char *argv[])
             });
 
         QTimer::singleShot(12000, &application, [&application] {
-            qCritical() << "GUI smoke test timed out waiting for asynchronous scans";
+            zzrk::logging::error(
+                "GUI smoke test timed out waiting for asynchronous scans");
             application.exit(EXIT_FAILURE);
         });
     }

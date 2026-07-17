@@ -709,7 +709,9 @@ RK3566/3568、RK3576、RK3399、旧 RK32xx、SPI NOR、SPI NAND、NAND 和 UFS �
 - 已实现字节数、扇区数、LBA 强类型，以及 31-byte CBW、13-byte CSW 的显式编解码和 golden tests。
 - 已实现 RAII libusb context、RockUSB VID/PID 过滤、Maskrom/Loader 识别、完整 USB port path 和部分扫描错误语义。
 - CLI 已支持只读 `list`，完整、致命、部分扫描分别返回 0、1、2；Qt Widgets 设备列表使用后台扫描，不阻塞 UI。
-- fake-libusb、CLI 输出和 Qt 离屏 smoke tests 已建立。当前 Linux Debug/Release/Sanitizer 各有 5 项测试，portable 有 2 项测试。
+- fake-libusb、CLI 输出、session 故障矩阵、spdlog 生命周期和 Qt 离屏 smoke tests 已建立。当前 Linux Debug、Release、Sanitizer 各有 7 项通过，portable 有 3 项通过。
+- 已新增 target-private 只读 `RockusbSession` executor：内部生成 tag，严格执行 CBW、DATA IN、CSW，短传输或失步错误后进入 Faulted；公共头、CLI 和 GUI 均不暴露写入或 raw CDB 入口。
+- 应用日志通过 `zzrk_logging` 封装 spdlog v2；协议与 session 保持无日志副作用，CLI 的结构化结果继续使用 stdout。
 
 当前仍保持严格安全边界：产品代码没有调用 `libusb_open`、接口 claim、control/bulk transfer，也不发送 RockUSB 命令。开发树暂不生成安装目标，正式部署必须同时处理 Qt libraries、platform plugins 和各平台 libusb。
 
@@ -718,7 +720,7 @@ RK3566/3568、RK3576、RK3399、旧 RK32xx、SPI NOR、SPI NAND、NAND 和 UFS �
 下一批开发按以下顺序推进：
 
 1. 连接可恢复的 RK3588/eMMC 测试板，分别记录 Maskrom 和 Loader 描述符、VID/PID、`bcdUSB` 与完整 port path。
-2. 建立独立协议事实记录、合法 golden trace 和可注入的 `IUsbTransport`/fake transport。
-3. 在有界 timeout、短传输校验和明确设备选择的前提下，实现 `ReadChipInfo`、`ReadFlashInfo`、`ReadCapability`，仍不加入任何写入命令。
+2. 用项目自有抓包固定 interface、端点、只读 opcode/CDB、响应长度、CSW residue 和 timeout，并形成合法 golden trace。
+3. 为现有 `IUsbTransport` 增加单设备 libusb backend，在有界 timeout、短传输校验和明确设备选择的前提下实现 typed `ReadChipInfo`、`ReadFlashInfo`、`ReadCapability`，仍不加入任何写入命令。
 4. 验证返回的芯片为 RK3588、介质为 eMMC user area，再扩展 CLI `info`/JSON 和 Qt 只读详情页。
 5. 完成两块测试板的 Maskrom/Loader 只读回归后，才进入 Loader 下载和写入规划阶段。
