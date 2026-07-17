@@ -311,6 +311,49 @@ void testFlashInfoOutputUsesNeutralFieldsAndFixedWidthHex()
            "flash info output does not infer a storage medium");
 }
 
+void testFlashIdOutputRecognizesOnlyEmmcMarker()
+{
+    const zzrk::session::FlashId flashId{
+        .rawBytes = {
+            std::byte{0x45}, std::byte{0x4d}, std::byte{0x4d},
+            std::byte{0x43}, std::byte{0x20},
+        },
+    };
+    std::ostringstream output;
+    zzrk::cli::printFlashId(makeLoaderDevice(), flashId, output);
+
+    expect(output.str()
+               == "Port: 1-5 (bcdDevice 0x0223)\n"
+                  "Flash ID bytes: 45 4d 4d 43 20\n"
+                  "Storage type: eMMC (reported by ReadFlashID)\n",
+           "flash ID output reports an exact eMMC media marker");
+    expect(output.str().find("manufacturer") == std::string::npos,
+           "flash ID output does not infer a manufacturer");
+    expect(output.str().find("CID") == std::string::npos,
+           "flash ID output does not infer CID data");
+}
+
+void testOpaqueFlashIdOutputKeepsStorageUnknown()
+{
+    const zzrk::session::FlashId flashId{
+        .rawBytes = {
+            std::byte{0x00}, std::byte{0x01}, std::byte{0x09},
+            std::byte{0x0a}, std::byte{0xff},
+        },
+    };
+    std::ostringstream output;
+    zzrk::cli::printFlashId(makeLoaderDevice(), flashId, output);
+
+    expect(output.str()
+               == "Port: 1-5 (bcdDevice 0x0223)\n"
+                  "Flash ID bytes: 00 01 09 0a ff\n"
+                  "Storage type: unknown\n",
+           "opaque flash ID output prints fixed-width bytes without a media "
+           "inference");
+    expect(output.str().find("eMMC") == std::string::npos,
+           "opaque flash ID output does not infer eMMC");
+}
+
 } // namespace
 
 int main()
@@ -325,5 +368,7 @@ int main()
     testProbeSuccessOutputIsExplicit();
     testChipInfoOutputUsesFixedWidthHexBytes();
     testFlashInfoOutputUsesNeutralFieldsAndFixedWidthHex();
+    testFlashIdOutputRecognizesOnlyEmmcMarker();
+    testOpaqueFlashIdOutputKeepsStorageUnknown();
     return failures == 0 ? 0 : 1;
 }

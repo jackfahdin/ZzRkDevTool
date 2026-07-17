@@ -4,8 +4,9 @@ ZzRkDevTool is an MIT-licensed C++20 and Qt 6 Rockchip flashing tool. The first
 development target is RK3588 with eMMC on Ubuntu 26.04 LTS. The current code is
 a non-writing technical preview: it enumerates Rockchip USB devices and can
 claim and release one explicitly selected RK3588 Loader interface. It can send
-fixed, typed ReadChipInfo and ReadFlashInfo commands; it does not write or erase
-storage.
+fixed, typed ReadChipInfo, ReadFlashInfo and ReadFlashID commands. The exact
+observed `EMMC ` Flash ID marker identifies the current validated target as
+eMMC; the tool does not write or erase storage.
 
 ## Development build
 
@@ -43,6 +44,7 @@ Run the read-only tools:
 ./build/linux-debug/apps/cli/zzrkdevtool-cli probe 1-5
 ./build/linux-debug/apps/cli/zzrkdevtool-cli read-chip-info 1-5
 ./build/linux-debug/apps/cli/zzrkdevtool-cli read-flash-info 1-5
+./build/linux-debug/apps/cli/zzrkdevtool-cli read-flash-id 1-5
 ./build/linux-debug/apps/gui/ZzRkDevTool
 ```
 
@@ -54,7 +56,10 @@ in its project protocol trace and returns an opaque 16-byte value.
 `read-flash-info` sends its separately observed fixed transaction, preserves
 the 11-byte response and reports the sector-derived capacity. Its other fields
 are neutral legacy compatibility codes; it does not determine manufacturer,
-physical geometry or storage type, including whether the target is eMMC.
+physical geometry or storage type. `read-flash-id` preserves its complete
+five-byte response and recognizes only the exact observed `EMMC ` marker as
+eMMC. That marker is not a CID, manufacturer, capacity or hardware-partition
+identifier; every other five-byte response remains opaque.
 
 `CMakeUserPresets.json` may add workstation-specific convenience presets and is
 intentionally ignored by Git. It is not required by the commands above.
@@ -75,7 +80,7 @@ driver, claim failure or release failure. It never selects the first matching
 VID/PID implicitly.
 
 The target-private `RockusbSession` executor supports data-in transactions only.
-The CLI reaches it solely through the fixed typed `readChipInfo` and
-`readFlashInfo` operations; raw command blocks, tags, lengths and LUNs are not
-accepted from CLI or GUI input. Future public operations will follow the same
-typed boundary.
+The CLI reaches it solely through the fixed typed `readChipInfo`,
+`readFlashInfo` and `readFlashId` operations; raw command blocks, tags, lengths
+and LUNs are not accepted from CLI or GUI input. Future public operations will
+follow the same typed boundary.
