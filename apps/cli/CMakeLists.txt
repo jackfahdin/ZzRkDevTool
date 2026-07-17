@@ -13,6 +13,7 @@ target_link_libraries(
     zzrkdevtool-cli
     PRIVATE
         zzrk_cli_support
+        zzrk::logging
         zzrk::platform
         zzrk_project_warnings
 )

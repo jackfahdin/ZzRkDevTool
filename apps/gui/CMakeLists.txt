@@ -17,6 +17,7 @@ target_link_libraries(
         Qt6::Concurrent
         Qt6::Gui
         Qt6::Widgets
+        zzrk::logging
         zzrk::transport
         zzrk_project_warnings
 )

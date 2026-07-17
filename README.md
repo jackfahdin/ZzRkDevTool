@@ -7,6 +7,12 @@ not send commands or write storage.
 
 ## Development build
 
+Initialize the pinned spdlog v2 submodule after cloning:
+
+```bash
+git submodule update --init thirdParty/spdlog
+```
+
 The tracked Linux presets use libusb 1.0.30 from `thirdParty/libusb`. Point
 CMake at a Qt 6.11 or newer installation when configuring a fresh clone:
 
@@ -17,6 +23,8 @@ ctest --preset linux-debug
 ```
 
 `linux-sanitize` and `linux-release` provide sanitizer and optimized builds.
+Application builds compile the pinned spdlog v2 source. On the first configure,
+spdlog downloads fmt 12.1.0 from its SHA-256-pinned CMake declaration.
 To compile the portable core/protocol and the current host's platform service
 source set without Qt or libusb:
 
@@ -45,3 +53,7 @@ deployed together on each supported host platform.
 No write, erase, loader download, or reset operation belongs in the first
 milestone. Such operations will only be added behind typed plans, device and
 range validation, explicit confirmation, and hardware tests.
+
+The target-private `RockusbSession` executor supports data-in transactions only
+and is not wired to the libusb backend or CLI. Public operations will be typed;
+raw command blocks must never be accepted from a CLI or GUI input surface.

@@ -74,7 +74,7 @@ struct StatusDecodeError {
     std::uint32_t expectedTag{};
     std::uint32_t actualTag{};
     std::uint32_t actualSignature{};
-    std::uint32_t deviceDetail{};
+    std::uint32_t dataResidue{};
     std::uint8_t rawStatus{};
 
     friend constexpr bool operator==(const StatusDecodeError&,

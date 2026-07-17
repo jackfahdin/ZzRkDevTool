@@ -14,6 +14,26 @@ target_link_libraries(
 )
 add_test(NAME storage_units COMMAND storage_units_test)
 
+add_executable(rockusb_session_test rockusb_session_test.cpp)
+target_include_directories(
+    rockusb_session_test
+    PRIVATE "${PROJECT_SOURCE_DIR}/src/session/src"
+)
+target_link_libraries(
+    rockusb_session_test
+    PRIVATE zzrk::session zzrk_project_warnings
+)
+add_test(NAME rockusb_session COMMAND rockusb_session_test)
+
+if(TARGET zzrk_logging)
+    add_executable(logging_test logging_test.cpp)
+    target_link_libraries(
+        logging_test
+        PRIVATE zzrk::logging zzrk_project_warnings
+    )
+    add_test(NAME logging COMMAND logging_test)
+endif()
+
 if(TARGET zzrk_transport)
     add_executable(
         usb_device_scanner_test
