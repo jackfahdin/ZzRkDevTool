@@ -23,6 +23,7 @@ namespace {
 constexpr std::uint16_t kLoaderVendorId = 0x2207;
 constexpr std::uint16_t kRk3588ProductId = 0x350b;
 constexpr std::uint16_t kLoaderBcdUsb = 0x0201;
+constexpr std::uint16_t kLoaderBcdDevice = 0x0223;
 constexpr std::uint8_t kRockusbInterfaceClass = 0xff;
 constexpr std::uint8_t kRockusbInterfaceSubclass = 0x06;
 constexpr std::uint8_t kRockusbInterfaceProtocol = 0x05;
@@ -212,6 +213,7 @@ mapTransferError(const int nativeCode) noexcept
     return selection.vendorId == kLoaderVendorId
            && selection.productId == kRk3588ProductId
            && selection.bcdUsb == kLoaderBcdUsb
+           && selection.bcdDevice == kLoaderBcdDevice
            && selection.mode == DeviceMode::Loader;
 }
 
@@ -482,7 +484,8 @@ LibusbBulkTransport::open(const UsbDeviceInfo& selection) noexcept
             }
             if (descriptor.idVendor != selection.vendorId
                 || descriptor.idProduct != selection.productId
-                || descriptor.bcdUSB != selection.bcdUsb) {
+                || descriptor.bcdUSB != selection.bcdUsb
+                || descriptor.bcdDevice != selection.bcdDevice) {
                 continue;
             }
 

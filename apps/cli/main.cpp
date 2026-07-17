@@ -5,6 +5,8 @@
 
 #include <zzrk/logging/Logging.hpp>
 #include <zzrk/platform/PlatformServices.hpp>
+#include <zzrk/session/ReadChipInfo.hpp>
+#include <zzrk/session/RockusbSession.hpp>
 #include <zzrk/transport/LibusbBulkTransport.hpp>
 #include <zzrk/transport/UsbDeviceScanner.hpp>
 
@@ -19,14 +21,17 @@
 
 namespace {
 
-void printUsage(const std::string_view executable)
+void printUsage(const std::string_view executable, std::ostream& output)
 {
-    std::cout << "Usage: " << executable << " list\n"
-              << "       " << executable << " probe <port-path>\n"
-              << "       " << executable << " --version\n\n"
-              << "The probe command opens and claims one RK3588 Loader "
-                 "interface, then releases it without sending a RockUSB "
-                 "command.\n";
+    output << "Usage: " << executable << " list\n"
+           << "       " << executable << " probe <port-path>\n"
+           << "       " << executable << " read-chip-info <port-path>\n"
+           << "       " << executable << " --version\n\n"
+           << "The probe command opens and claims one RK3588 Loader "
+              "interface, then releases it without sending a RockUSB "
+              "command.\n"
+           << "The read-chip-info command sends one read-only RockUSB "
+              "command to the explicitly selected Loader device.\n";
 }
 
 [[nodiscard]] std::string_view describeOpenError(
@@ -70,10 +75,59 @@ void printUsage(const std::string_view executable)
     return "unknown USB open error";
 }
 
-void logScanFailure(const zzrk::transport::ScanError& error)
+[[nodiscard]] std::string_view describeSessionError(
+    const zzrk::session::SessionErrorCode code) noexcept
+{
+    using zzrk::session::SessionErrorCode;
+    switch (code) {
+    case SessionErrorCode::sessionFaulted:
+        return "the session is faulted";
+    case SessionErrorCode::invalidTimeout:
+        return "a session timeout is invalid";
+    case SessionErrorCode::commandEncodeFailed:
+        return "the RockUSB command could not be encoded";
+    case SessionErrorCode::emptyDataBuffer:
+        return "the RockUSB data buffer is empty";
+    case SessionErrorCode::bufferTooLarge:
+        return "the RockUSB data buffer is too large";
+    case SessionErrorCode::transportFailure:
+        return "the USB transfer failed";
+    case SessionErrorCode::shortTransfer:
+        return "the USB transfer was short";
+    case SessionErrorCode::invalidTransferCount:
+        return "the USB backend returned an invalid byte count";
+    case SessionErrorCode::deviceCommandFailed:
+        return "the Loader rejected the RockUSB command";
+    case SessionErrorCode::statusDecodeFailed:
+        return "the RockUSB status wrapper is invalid";
+    case SessionErrorCode::nonZeroResidue:
+        return "the Loader reported untransferred data";
+    }
+    return "unknown session error";
+}
+
+[[nodiscard]] std::string_view
+describeSessionStage(const zzrk::session::SessionStage stage) noexcept
+{
+    using zzrk::session::SessionStage;
+    switch (stage) {
+    case SessionStage::request:
+        return "request";
+    case SessionStage::command:
+        return "command";
+    case SessionStage::data:
+        return "data";
+    case SessionStage::status:
+        return "status";
+    }
+    return "unknown";
+}
+
+void logScanFailure(const zzrk::transport::ScanError& error,
+                    const std::string_view operation)
 {
     std::ostringstream message;
-    message << "USB probe scan failed (" << error.code
+    message << operation << " scan failed (" << error.code
             << "): " << error.message;
     zzrk::logging::error(message.str());
 
@@ -83,37 +137,80 @@ void logScanFailure(const zzrk::transport::ScanError& error)
     }
 }
 
+void logReadFailure(const zzrk::session::SessionError& error)
+{
+    std::ostringstream message;
+    message << "ReadChipInfo failed during " << describeSessionStage(error.stage)
+            << ": " << describeSessionError(error.code);
+    if (error.expectedBytes != 0 || error.actualBytes != 0) {
+        message << " (expected " << error.expectedBytes << " bytes, got "
+                << error.actualBytes << ')';
+    }
+    if (error.transportError.has_value()) {
+        message << " (transport code "
+                << static_cast<int>(error.transportError->code);
+        if (error.transportError->nativeCode != 0) {
+            message << ", native " << error.transportError->nativeCode;
+        }
+        message << ')';
+    }
+    if (error.timeout.count() != 0) {
+        message << " (timeout " << error.timeout.count() << " ms)";
+    }
+    if (error.residue != 0U) {
+        message << " (residue " << error.residue << ')';
+    }
+    if (error.commandEncodeError.has_value()) {
+        message << " (command encode code "
+                << static_cast<int>(error.commandEncodeError->code)
+                << ", value "
+                << static_cast<unsigned int>(error.commandEncodeError->value)
+                << ')';
+    }
+    if (error.statusDecodeError.has_value()) {
+        const auto& status = *error.statusDecodeError;
+        message << " (status decode code " << static_cast<int>(status.code)
+                << ", raw status "
+                << static_cast<unsigned int>(status.rawStatus)
+                << ", residue " << status.dataResidue << ", expected tag "
+                << status.expectedTag << ", actual tag " << status.actualTag
+                << ')';
+    }
+    zzrk::logging::error(message.str());
+}
+
 int probeDevice(const std::string_view portPath)
 {
     zzrk::logging::debug("Scanning for the explicitly selected Loader device");
     zzrk::transport::UsbDeviceScanner scanner;
     auto scan = scanner.scanRockchipDevices();
-    const auto selected = zzrk::cli::selectProbeDevice(scan, portPath);
+    const auto selected = zzrk::cli::selectLoaderDevice(scan, portPath);
     if (!selected) {
         switch (selected.error) {
-        case zzrk::cli::ProbeSelectionError::scanFailed:
+        case zzrk::cli::LoaderSelectionError::scanFailed:
             if (scan.error.has_value()) {
-                logScanFailure(*scan.error);
+                logScanFailure(*scan.error, "USB probe");
             } else {
                 zzrk::logging::error("USB probe scan failed");
             }
             break;
-        case zzrk::cli::ProbeSelectionError::ambiguous:
+        case zzrk::cli::LoaderSelectionError::ambiguous:
             zzrk::logging::error(
                 "USB probe refused an ambiguous physical port path");
             break;
-        case zzrk::cli::ProbeSelectionError::notFound: {
+        case zzrk::cli::LoaderSelectionError::notFound: {
             std::string message{"No Rockchip USB device found at port "};
             message += portPath;
             zzrk::logging::error(message);
             break;
         }
-        case zzrk::cli::ProbeSelectionError::unsupported:
+        case zzrk::cli::LoaderSelectionError::unsupported:
             zzrk::logging::error(
                 "USB probe refused the selected device: this milestone "
-                "requires RK3588 Loader mode (2207:350b, bcdUSB 0x0201)");
+                "requires the validated RK3588 Loader identity "
+                "(2207:350b, bcdUSB 0x0201, bcdDevice 0x0223)");
             break;
-        case zzrk::cli::ProbeSelectionError::none:
+        case zzrk::cli::LoaderSelectionError::none:
             zzrk::logging::error("USB probe selection failed");
             break;
         }
@@ -160,6 +257,98 @@ int probeDevice(const std::string_view portPath)
     return EXIT_SUCCESS;
 }
 
+int readChipInfoDevice(const std::string_view portPath)
+{
+    zzrk::logging::debug(
+        "Scanning for the explicitly selected Loader device");
+    zzrk::transport::UsbDeviceScanner scanner;
+    auto scan = scanner.scanRockchipDevices();
+    const auto selected = zzrk::cli::selectLoaderDevice(scan, portPath);
+    if (!selected) {
+        switch (selected.error) {
+        case zzrk::cli::LoaderSelectionError::scanFailed:
+            if (scan.error.has_value()) {
+                logScanFailure(*scan.error, "ReadChipInfo");
+            } else {
+                zzrk::logging::error("ReadChipInfo USB scan failed");
+            }
+            break;
+        case zzrk::cli::LoaderSelectionError::ambiguous:
+            zzrk::logging::error(
+                "ReadChipInfo refused an ambiguous physical port path");
+            break;
+        case zzrk::cli::LoaderSelectionError::notFound: {
+            std::string message{"No Rockchip USB device found at port "};
+            message += portPath;
+            zzrk::logging::error(message);
+            break;
+        }
+        case zzrk::cli::LoaderSelectionError::unsupported:
+            zzrk::logging::error(
+                "ReadChipInfo refused the selected device: the validated "
+                "RK3588 Loader identity is required (2207:350b, bcdUSB "
+                "0x0201, bcdDevice 0x0223)");
+            break;
+        case zzrk::cli::LoaderSelectionError::none:
+            zzrk::logging::error("ReadChipInfo device selection failed");
+            break;
+        }
+        return EXIT_FAILURE;
+    }
+
+    auto opened = zzrk::transport::LibusbBulkTransport::open(*selected.device);
+    const auto* openError =
+        std::get_if<zzrk::transport::LibusbOpenError>(&opened);
+    if (openError != nullptr) {
+        std::ostringstream message;
+        message << "ReadChipInfo could not open the Loader interface: "
+                << describeOpenError(openError->code);
+        if (openError->nativeCode != 0) {
+            message << " (libusb " << openError->nativeCode << ')';
+        }
+        zzrk::logging::error(message.str());
+        if (zzrk::transport::isAccessDenied(*openError)) {
+            const auto platform = zzrk::platform::createPlatformServices();
+            zzrk::logging::error(platform->usbAccessHelp());
+        }
+        return EXIT_FAILURE;
+    }
+
+    auto transport = std::move(
+        std::get<std::unique_ptr<zzrk::transport::LibusbBulkTransport>>(opened));
+    const auto readResult = [&transport] {
+        zzrk::session::RockusbSession session{*transport};
+        return zzrk::session::readChipInfo(session);
+    }();
+
+    const int releaseResult = transport->close();
+    transport.reset();
+
+    const auto* readError =
+        std::get_if<zzrk::session::SessionError>(&readResult);
+    if (readError != nullptr) {
+        logReadFailure(*readError);
+    }
+    if (releaseResult < 0) {
+        std::ostringstream message;
+        message << "ReadChipInfo could not release the Loader interface "
+                   "(libusb "
+                << releaseResult << ')';
+        zzrk::logging::error(message.str());
+    }
+    if (readError != nullptr || releaseResult < 0) {
+        return EXIT_FAILURE;
+    }
+
+    zzrk::cli::printChipInfo(*selected.device,
+                             std::get<zzrk::session::ChipInfo>(readResult),
+                             std::cout);
+    std::string successMessage{"ReadChipInfo completed successfully at "};
+    successMessage += selected.device->portPath;
+    zzrk::logging::info(successMessage);
+    return EXIT_SUCCESS;
+}
+
 int listDevices()
 {
     zzrk::logging::debug("Starting read-only Rockchip USB device scan");
@@ -198,11 +387,18 @@ int main(const int argc, char* argv[])
     if (argc == 3 && std::string_view{argv[1]} == "probe") {
         return probeDevice(argv[2]);
     }
+    if (argc == 3 && std::string_view{argv[1]} == "read-chip-info") {
+        return readChipInfoDevice(argv[2]);
+    }
     if (argc == 2 && std::string_view{argv[1]} == "--version") {
         std::cout << "ZzRkDevTool " ZZRK_VERSION "\n";
         return EXIT_SUCCESS;
     }
 
-    printUsage(executable);
-    return argc == 1 ? EXIT_SUCCESS : 64;
+    if (argc == 1) {
+        printUsage(executable, std::cout);
+        return EXIT_SUCCESS;
+    }
+    printUsage(executable, std::cerr);
+    return 64;
 }

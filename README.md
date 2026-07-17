@@ -3,8 +3,8 @@
 ZzRkDevTool is an MIT-licensed C++20 and Qt 6 Rockchip flashing tool. The first
 development target is RK3588 with eMMC on Ubuntu 26.04 LTS. The current code is
 a non-writing technical preview: it enumerates Rockchip USB devices and can
-claim and release one explicitly selected RK3588 Loader interface. It does not
-send RockUSB commands or write storage.
+claim and release one explicitly selected RK3588 Loader interface. It can send
+one fixed, typed ReadChipInfo command; it does not write or erase storage.
 
 ## Development build
 
@@ -40,13 +40,15 @@ Run the read-only tools:
 ```bash
 ./build/linux-debug/apps/cli/zzrkdevtool-cli list
 ./build/linux-debug/apps/cli/zzrkdevtool-cli probe 1-5
+./build/linux-debug/apps/cli/zzrkdevtool-cli read-chip-info 1-5
 ./build/linux-debug/apps/gui/ZzRkDevTool
 ```
 
-Use the stable port path printed by `list` as the `probe` argument. The current
-probe accepts only the observed RK3588 Loader identity `2207:350b` with
-`bcdUSB 0x0201`; it opens, claims, releases and closes the interface without a
-bulk or control transfer.
+Use the stable port path printed by `list` for both device commands. They accept
+only the observed RK3588 Loader identity `2207:350b`, `bcdUSB 0x0201`,
+`bcdDevice 0x0223` and exact interface layout. `probe` performs no bulk or
+control transfer. `read-chip-info` sends the single fixed transaction recorded
+in the project protocol trace and returns an opaque 16-byte value.
 
 `CMakeUserPresets.json` may add workstation-specific convenience presets and is
 intentionally ignored by Git. It is not required by the commands above.
@@ -66,6 +68,7 @@ partial scan, descriptor change, unexpected interface layout, active kernel
 driver, claim failure or release failure. It never selects the first matching
 VID/PID implicitly.
 
-The target-private `RockusbSession` executor supports data-in transactions only
-and is not wired to the libusb backend or CLI. Public operations will be typed;
-raw command blocks must never be accepted from a CLI or GUI input surface.
+The target-private `RockusbSession` executor supports data-in transactions only.
+The CLI reaches it solely through the fixed typed `readChipInfo` operation; raw
+command blocks, tags, lengths and LUNs are not accepted from CLI or GUI input.
+Future public operations will follow the same typed boundary.

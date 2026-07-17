@@ -160,7 +160,8 @@ FakeDevice& addDevice(const std::uint8_t busNumber,
                       const std::initializer_list<std::uint8_t> ports,
                       const std::uint16_t vendorId = 0x2207,
                       const std::uint16_t productId = 0x350b,
-                      const std::uint16_t bcdUsb = 0x0201)
+                      const std::uint16_t bcdUsb = 0x0201,
+                      const std::uint16_t bcdDevice = 0x0223)
 {
     FakeDevice& device = g_devices.at(g_deviceCount);
     device.busNumber = busNumber;
@@ -169,6 +170,7 @@ FakeDevice& addDevice(const std::uint8_t busNumber,
     device.descriptor.idVendor = vendorId;
     device.descriptor.idProduct = productId;
     device.descriptor.bcdUSB = bcdUsb;
+    device.descriptor.bcdDevice = bcdDevice;
     g_deviceHandles.at(g_deviceCount).index = g_deviceCount;
     g_openHandles.at(g_deviceCount).index = g_deviceCount;
     ++g_deviceCount;
@@ -234,6 +236,7 @@ UsbDeviceInfo makeSelection()
         .vendorId = 0x2207,
         .productId = 0x350b,
         .bcdUsb = 0x0201,
+        .bcdDevice = 0x0223,
         .busNumber = 1,
         .portNumbers = {5},
         .portPath = "1-5",
@@ -349,6 +352,8 @@ void testStableTopologyAndDescriptorSelection()
         wrongProduct.productId = 0x350a;
         auto maskromDescriptor = makeSelection();
         maskromDescriptor.bcdUsb = 0x0200;
+        auto wrongRevision = makeSelection();
+        wrongRevision.bcdDevice = 0x0224;
         auto inconsistentMode = makeSelection();
         inconsistentMode.mode = zzrk::transport::DeviceMode::Maskrom;
         auto unknownMode = makeSelection();
@@ -358,6 +363,7 @@ void testStableTopologyAndDescriptorSelection()
             wrongVendor,
             wrongProduct,
             maskromDescriptor,
+            wrongRevision,
             inconsistentMode,
             unknownMode,
         };
@@ -399,6 +405,19 @@ void testStableTopologyAndDescriptorSelection()
                    == std::numeric_limits<std::size_t>::max(),
                "a changed descriptor is not opened");
         expectNoTransfers("descriptor revalidation performs no transfer");
+    }
+
+    {
+        resetFakeLibusb();
+        FakeDevice& changed = addUsableDevice();
+        changed.descriptor.bcdDevice = 0x0224;
+        const auto result = LibusbBulkTransport::open(makeSelection());
+        expectOpenError(result, LibusbOpenErrorCode::deviceNotFound, 0,
+                        "a device revision change invalidates selection");
+        expect(eventPosition(EventKind::open)
+                   == std::numeric_limits<std::size_t>::max(),
+               "a changed device revision is not opened");
+        expectNoTransfers("device revision revalidation performs no transfer");
     }
 
     {

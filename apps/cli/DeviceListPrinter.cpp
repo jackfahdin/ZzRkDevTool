@@ -21,7 +21,7 @@ void printAccessHelp(const transport::ScanError& error,
 
 void printDevices(const transport::ScanResult& result, std::ostream& output)
 {
-    output << "PORT          VID:PID    MODE      BCDUSB\n";
+    output << "PORT          VID:PID    MODE      BCDUSB  BCDDEVICE\n";
     for (const auto& device : result.devices) {
         const std::string_view portPath =
             device.portPath.empty() ? std::string_view{"-"} : device.portPath;
@@ -32,6 +32,8 @@ void printDevices(const transport::ScanResult& result, std::ostream& output)
                << std::setw(10) << transport::toString(device.mode) << "0x"
                << std::right << std::hex << std::setfill('0') << std::setw(4)
                << device.bcdUsb
+               << std::setfill(' ') << "  0x" << std::right << std::hex
+               << std::setfill('0') << std::setw(4) << device.bcdDevice
                << std::setfill(' ') << std::dec << '\n';
     }
 }

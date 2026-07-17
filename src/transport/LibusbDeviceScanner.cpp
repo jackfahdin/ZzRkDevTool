@@ -174,6 +174,7 @@ ScanResult UsbDeviceScanner::scanRockchipDevices() const
             .vendorId = descriptor.idVendor,
             .productId = descriptor.idProduct,
             .bcdUsb = descriptor.bcdUSB,
+            .bcdDevice = descriptor.bcdDevice,
             .busNumber = busNumber,
             .portNumbers = std::move(ports),
             .portPath = portPath,

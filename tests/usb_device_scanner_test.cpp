@@ -64,6 +64,7 @@ void resetFakeLibusb()
 FakeDevice& addDevice(const std::uint16_t vendorId,
                       const std::uint16_t productId,
                       const std::uint16_t bcdUsb,
+                      const std::uint16_t bcdDevice,
                       const std::uint8_t busNumber,
                       const std::uint8_t deviceAddress,
                       const std::initializer_list<std::uint8_t> ports)
@@ -72,6 +73,7 @@ FakeDevice& addDevice(const std::uint16_t vendorId,
     device.descriptor.idVendor = vendorId;
     device.descriptor.idProduct = productId;
     device.descriptor.bcdUSB = bcdUsb;
+    device.descriptor.bcdDevice = bcdDevice;
     device.busNumber = busNumber;
     device.deviceAddress = deviceAddress;
     device.portResult = static_cast<int>(ports.size());
@@ -93,12 +95,12 @@ const zzrk::transport::UsbDeviceInfo* findDeviceAtPath(
 void testRockusbFilteringAndModeInference()
 {
     resetFakeLibusb();
-    addDevice(0x1234, 0x350b, 0x0200, 1, 1, {1});
-    addDevice(0x2207, 0x0000, 0x0200, 1, 2, {2});
-    addDevice(0x2207, 0x0010, 0x0201, 1, 3, {3});
-    addDevice(0x2207, 0x0001, 0x0201, 1, 4, {4});
-    addDevice(0x2207, 0x350b, 0x0200, 2, 5, {2, 3});
-    addDevice(0x2207, 0x350b, 0x0201, 2, 6, {4});
+    addDevice(0x1234, 0x350b, 0x0200, 0x0100, 1, 1, {1});
+    addDevice(0x2207, 0x0000, 0x0200, 0x0100, 1, 2, {2});
+    addDevice(0x2207, 0x0010, 0x0201, 0x0223, 1, 3, {3});
+    addDevice(0x2207, 0x0001, 0x0201, 0x0223, 1, 4, {4});
+    addDevice(0x2207, 0x350b, 0x0200, 0x0100, 2, 5, {2, 3});
+    addDevice(0x2207, 0x350b, 0x0201, 0x0223, 2, 6, {4});
 
     {
         zzrk::transport::UsbDeviceScanner scanner;
@@ -110,6 +112,8 @@ void testRockusbFilteringAndModeInference()
         const auto* maskrom = findDeviceAtPath(result, "2-2.3");
         expect(maskrom != nullptr && maskrom->productId == 0x350b,
                "the observed RK3588-family Maskrom identity is retained");
+        expect(maskrom != nullptr && maskrom->bcdDevice == 0x0100,
+               "the Maskrom device revision is retained");
         expect(maskrom != nullptr
                    && maskrom->mode == zzrk::transport::DeviceMode::Maskrom,
                "an even bcdUSB value is Maskrom");
@@ -119,8 +123,9 @@ void testRockusbFilteringAndModeInference()
         const auto* loader = findDeviceAtPath(result, "2-4");
         expect(loader != nullptr
                    && loader->productId == 0x350b
+                   && loader->bcdDevice == 0x0223
                    && loader->mode == zzrk::transport::DeviceMode::Loader,
-               "the same PID with bcdUSB 0x0201 is Loader");
+               "the observed Loader descriptor identity is retained");
     }
 
     expect(g_freeListCallCount == 1, "the libusb device list is released once");
@@ -130,7 +135,8 @@ void testRockusbFilteringAndModeInference()
 void testMissingPortPathIsPartialFailure()
 {
     resetFakeLibusb();
-    FakeDevice& device = addDevice(0x2207, 0x350b, 0x0200, 3, 9, {});
+    FakeDevice& device =
+        addDevice(0x2207, 0x350b, 0x0200, 0x0100, 3, 9, {});
     device.portResult = LIBUSB_ERROR_NOT_SUPPORTED;
 
     zzrk::transport::UsbDeviceScanner scanner;
