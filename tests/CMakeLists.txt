@@ -32,6 +32,13 @@ target_link_libraries(
 )
 add_test(NAME read_chip_info COMMAND read_chip_info_test)
 
+add_executable(read_flash_info_test read_flash_info_test.cpp)
+target_link_libraries(
+    read_flash_info_test
+    PRIVATE zzrk::session zzrk_project_warnings
+)
+add_test(NAME read_flash_info COMMAND read_flash_info_test)
+
 if(TARGET zzrk_logging)
     add_executable(logging_test logging_test.cpp)
     target_link_libraries(

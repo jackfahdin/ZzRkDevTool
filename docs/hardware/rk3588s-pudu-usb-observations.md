@@ -6,10 +6,11 @@
 - Stable libusb port path: `1-5`
 - Board-reported product: `pudu_rk3588s`
 - Device serial: intentionally omitted
-- Method: host-side `lsusb`, sysfs, udev and ZzRkDevTool read-only enumeration
+- Method: host-side `lsusb`, sysfs, udev and ZzRkDevTool read-only operations
 
 No USB interface was opened and no RockUSB command was sent while collecting
-these observations.
+the descriptor tables below. Later verification sections explicitly record
+the claim-only probe and the two typed, read-only RockUSB transactions.
 
 ## ADB Mode
 
@@ -145,8 +146,45 @@ physical port `1-5`.
 The response remains an opaque 16-byte ChipInfo value. Its first bytes resemble
 a reversed model string, but no field order, uniqueness or stability is claimed.
 
+## Typed ReadFlashInfo Verification
+
+After two matching reference observations established the 11-byte wire
+transaction, the typed ZzRkDevTool command was run against the same Loader:
+
+```text
+Port: 1-5 (bcdDevice 0x0223)
+Sector count: 124190720
+Capacity bytes: 63585648640
+Legacy block-size code: 1024
+Legacy page-size code: 4
+Legacy ECC field: 0
+Legacy access-time field: 40
+Legacy manufacturer/code: 0x00
+Legacy flash-mask field: 0x01
+Storage type: not determined by ReadFlashInfo
+Raw bytes: 00 00 67 07 00 04 04 00 28 00 01
+```
+
+The retained [protocol evidence](../protocol/rk3588-read-flash-info.md) records
+the complete reference and ZzRkDevTool API traces. The project command sent one
+31-byte CBW on `0x02`, received 11-byte data and a 13-byte CSW on `0x81`, and
+used finite timeouts of 5/30/5 seconds. The CSW matched tag 1 with zero residue
+and success status.
+
+The correlated kernel trace contained exactly three bulk URB submissions, one
+claim and one successful explicit release. It contained no control, reset,
+disconnect, set-interface, set-configuration or clear-halt operation. The
+device remained Loader `2207:350b`, `bcdUSB 0x0201`, `bcdDevice 0x0223` at
+physical port `1-5`.
+
+Only the little-endian sector count is treated as capacity. The remaining
+legacy fields are preserved under neutral names and do not establish physical
+block/page geometry, manufacturer or storage type. In particular, this command
+does not identify the attached storage as eMMC.
+
 ## Not Yet Observed
 
-- A root-level usbmon/pcap capture of the ReadChipInfo command
-- Loader response data for flash or capability information
+- A root-level usbmon/pcap capture of the ReadChipInfo or ReadFlashInfo command
+- Loader response data for Flash ID, capability or current storage media
+- Physical geometry or manufacturer semantics for the legacy FlashInfo fields
 - Stall, timeout, short transfer and CSW residue behavior on hardware

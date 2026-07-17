@@ -269,6 +269,48 @@ void testChipInfoOutputUsesFixedWidthHexBytes()
            "chip info output prints exactly 16 fixed-width hexadecimal bytes");
 }
 
+void testFlashInfoOutputUsesNeutralFieldsAndFixedWidthHex()
+{
+    const zzrk::session::FlashInfo flashInfo{
+        .rawBytes = {
+            std::byte{0x00}, std::byte{0x00}, std::byte{0x67},
+            std::byte{0x07}, std::byte{0x00}, std::byte{0x04},
+            std::byte{0x04}, std::byte{0x00}, std::byte{0x28},
+            std::byte{0x0a}, std::byte{0x01},
+        },
+        .legacy = {
+            .sectorCount = 124'190'720,
+            .blockSizeCode = 1'024,
+            .pageSizeCode = 4,
+            .eccBits = 0,
+            .accessTime = 40,
+            .manufacturerCode = 0x0a,
+            .flashMask = 0x01,
+        },
+    };
+    std::ostringstream output;
+    zzrk::cli::printFlashInfo(makeLoaderDevice(), flashInfo, output);
+
+    expect(output.str()
+               == "Port: 1-5 (bcdDevice 0x0223)\n"
+                  "Sector count: 124190720\n"
+                  "Capacity bytes: 63585648640\n"
+                  "Legacy block-size code: 1024\n"
+                  "Legacy page-size code: 4\n"
+                  "Legacy ECC field: 0\n"
+                  "Legacy access-time field: 40\n"
+                  "Legacy manufacturer/code: 0x0a\n"
+                  "Legacy flash-mask field: 0x01\n"
+                  "Storage type: not determined by ReadFlashInfo\n"
+                  "Raw bytes: 00 00 67 07 00 04 04 00 28 0a 01\n",
+           "flash info output reports neutral decoded fields and exactly 11 "
+           "fixed-width hexadecimal bytes");
+    expect(output.str().find("Samsung") == std::string::npos,
+           "flash info output does not infer a manufacturer name");
+    expect(output.str().find("eMMC") == std::string::npos,
+           "flash info output does not infer a storage medium");
+}
+
 } // namespace
 
 int main()
@@ -282,5 +324,6 @@ int main()
     testLoaderSelectionRequiresExactIdentity();
     testProbeSuccessOutputIsExplicit();
     testChipInfoOutputUsesFixedWidthHexBytes();
+    testFlashInfoOutputUsesNeutralFieldsAndFixedWidthHex();
     return failures == 0 ? 0 : 1;
 }

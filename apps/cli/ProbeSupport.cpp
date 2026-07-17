@@ -2,6 +2,8 @@
 
 #include "ProbeSupport.hpp"
 
+#include <zzrk/core/StorageUnits.hpp>
+
 #include <cstddef>
 #include <cstdint>
 #include <iomanip>
@@ -89,6 +91,46 @@ void printChipInfo(const transport::UsbDeviceInfo& device,
            << std::setfill(' ') << ")\n"
            << "Chip info:" << std::hex << std::setfill('0');
     for (const auto byte : chipInfo.bytes) {
+        output << ' ' << std::setw(2) << std::to_integer<unsigned int>(byte);
+    }
+    output << std::dec << std::setfill(' ') << '\n';
+}
+
+void printFlashInfo(const transport::UsbDeviceInfo& device,
+                    const session::FlashInfo& flashInfo,
+                    std::ostream& output)
+{
+    output << "Port: " << device.portPath << " (bcdDevice 0x" << std::hex
+           << std::setfill('0') << std::setw(4) << device.bcdDevice << std::dec
+           << std::setfill(' ') << ")\n"
+           << "Sector count: " << flashInfo.legacy.sectorCount << '\n';
+
+    const auto capacityBytes =
+        core::toBytes(core::SectorCount{flashInfo.legacy.sectorCount});
+    output << "Capacity bytes: ";
+    if (capacityBytes.has_value()) {
+        output << capacityBytes->value;
+    } else {
+        output << "overflow";
+    }
+
+    output << "\nLegacy block-size code: "
+           << flashInfo.legacy.blockSizeCode
+           << "\nLegacy page-size code: "
+           << static_cast<unsigned int>(flashInfo.legacy.pageSizeCode)
+           << "\nLegacy ECC field: "
+           << static_cast<unsigned int>(flashInfo.legacy.eccBits)
+           << "\nLegacy access-time field: "
+           << static_cast<unsigned int>(flashInfo.legacy.accessTime)
+           << "\nLegacy manufacturer/code: 0x" << std::hex
+           << std::setfill('0')
+           << std::setw(2)
+           << static_cast<unsigned int>(flashInfo.legacy.manufacturerCode)
+           << "\nLegacy flash-mask field: 0x" << std::setw(2)
+           << static_cast<unsigned int>(flashInfo.legacy.flashMask)
+           << "\nStorage type: not determined by ReadFlashInfo"
+           << "\nRaw bytes:";
+    for (const auto byte : flashInfo.rawBytes) {
         output << ' ' << std::setw(2) << std::to_integer<unsigned int>(byte);
     }
     output << std::dec << std::setfill(' ') << '\n';
