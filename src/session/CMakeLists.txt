@@ -3,6 +3,7 @@
 add_library(
     zzrk_session STATIC
     src/ReadChipInfo.cpp
+    src/ReadFlashInfo.cpp
     src/RockusbSession.cpp
 )
 add_library(zzrk::session ALIAS zzrk_session)
