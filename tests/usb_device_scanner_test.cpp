@@ -81,12 +81,12 @@ FakeDevice& addDevice(const std::uint16_t vendorId,
     return device;
 }
 
-const zzrk::transport::UsbDeviceInfo* findDevice(
+const zzrk::transport::UsbDeviceInfo* findDeviceAtPath(
     const zzrk::transport::ScanResult& result,
-    const std::uint16_t productId)
+    const std::string_view portPath)
 {
-    const auto found = std::ranges::find(result.devices, productId,
-                                         &zzrk::transport::UsbDeviceInfo::productId);
+    const auto found = std::ranges::find(
+        result.devices, portPath, &zzrk::transport::UsbDeviceInfo::portPath);
     return found == result.devices.end() ? nullptr : &*found;
 }
 
@@ -97,8 +97,8 @@ void testRockusbFilteringAndModeInference()
     addDevice(0x2207, 0x0000, 0x0200, 1, 2, {2});
     addDevice(0x2207, 0x0010, 0x0201, 1, 3, {3});
     addDevice(0x2207, 0x0001, 0x0201, 1, 4, {4});
-    addDevice(0x2207, 0x350b, 0x0300, 2, 5, {2, 3});
-    addDevice(0x2207, 0x350c, 0x0301, 2, 6, {4});
+    addDevice(0x2207, 0x350b, 0x0200, 2, 5, {2, 3});
+    addDevice(0x2207, 0x350b, 0x0201, 2, 6, {4});
 
     {
         zzrk::transport::UsbDeviceScanner scanner;
@@ -107,18 +107,20 @@ void testRockusbFilteringAndModeInference()
         expect(result.devices.size() == 2,
                "only RockUSB PIDs with a SoC-family high byte are returned");
 
-        const auto* maskrom = findDevice(result, 0x350b);
-        expect(maskrom != nullptr, "the RK3588-family PID is retained");
+        const auto* maskrom = findDeviceAtPath(result, "2-2.3");
+        expect(maskrom != nullptr && maskrom->productId == 0x350b,
+               "the observed RK3588-family Maskrom identity is retained");
         expect(maskrom != nullptr
                    && maskrom->mode == zzrk::transport::DeviceMode::Maskrom,
                "an even bcdUSB value is Maskrom");
         expect(maskrom != nullptr && maskrom->portPath == "2-2.3",
                "the stable path contains the complete USB topology");
 
-        const auto* loader = findDevice(result, 0x350c);
+        const auto* loader = findDeviceAtPath(result, "2-4");
         expect(loader != nullptr
+                   && loader->productId == 0x350b
                    && loader->mode == zzrk::transport::DeviceMode::Loader,
-               "an odd bcdUSB value is Loader even when it is not 0x0201");
+               "the same PID with bcdUSB 0x0201 is Loader");
     }
 
     expect(g_freeListCallCount == 1, "the libusb device list is released once");

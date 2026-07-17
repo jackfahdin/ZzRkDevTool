@@ -1,0 +1,3 @@
+# ZzRkDevTool: RK3588S RockUSB Loader and Maskrom observed as 2207:350b.
+# Keep ADB (2207:0006) and unverified Rockchip products outside this rule.
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="2207", ATTR{idProduct}=="350b", MODE:="0660", GROUP:="plugdev", TAG+="uaccess"

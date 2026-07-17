@@ -101,6 +101,10 @@ void testPartialScanReturnsTwo()
            "a partial scan returns 2");
     expect(output.str().find("2207:350b") != std::string::npos,
            "partial results still list usable device diagnostics");
+    expect(output.str().find("0x0200") != std::string::npos,
+           "BCD USB values keep leading zeroes after left-aligned columns");
+    expect(output.str().find("0x2000") == std::string::npos,
+           "BCD USB digits are never padded on the right");
     expect(output.str().find("-") != std::string::npos,
            "a missing stable port path is displayed explicitly");
     expect(errorOutput.str().find("scan was partial") != std::string::npos,

@@ -30,7 +30,8 @@ void printDevices(const transport::ScanResult& result, std::ostream& output)
                << device.vendorId << ':' << std::setw(4) << device.productId
                << std::setfill(' ') << std::dec << "  " << std::left
                << std::setw(10) << transport::toString(device.mode) << "0x"
-               << std::hex << std::setfill('0') << std::setw(4) << device.bcdUsb
+               << std::right << std::hex << std::setfill('0') << std::setw(4)
+               << device.bcdUsb
                << std::setfill(' ') << std::dec << '\n';
     }
 }
