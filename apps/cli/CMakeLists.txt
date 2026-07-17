@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: MIT
 
-add_library(zzrk_cli_support STATIC DeviceListPrinter.cpp)
+add_library(
+    zzrk_cli_support STATIC
+    DeviceListPrinter.cpp
+    ProbeSupport.cpp
+)
 target_include_directories(zzrk_cli_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(
     zzrk_cli_support

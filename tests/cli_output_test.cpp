@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "DeviceListPrinter.hpp"
+#include "ProbeSupport.hpp"
 
 #include <zzrk/transport/UsbDeviceScanner.hpp>
 
@@ -8,6 +9,7 @@
 #include <iostream>
 #include <sstream>
 #include <string_view>
+#include <utility>
 
 namespace {
 
@@ -33,6 +35,16 @@ zzrk::transport::UsbDeviceInfo makeDevice()
         .mode = zzrk::transport::DeviceMode::Maskrom,
         .deviceAddress = 4,
     };
+}
+
+zzrk::transport::UsbDeviceInfo makeLoaderDevice()
+{
+    auto device = makeDevice();
+    device.bcdUsb = 0x0201;
+    device.portNumbers = {5};
+    device.portPath = "1-5";
+    device.mode = zzrk::transport::DeviceMode::Loader;
+    return device;
 }
 
 void testEmptySuccess()
@@ -137,6 +149,95 @@ void testCompleteDeviceListSucceeds()
     expect(errorOutput.str().empty(), "a complete scan has no warning");
 }
 
+void testProbeSelectionRequiresExactUniquePath()
+{
+    auto otherDevice = makeLoaderDevice();
+    otherDevice.portNumbers = {6};
+    otherDevice.portPath = "1-6";
+    zzrk::transport::ScanResult result{
+        .devices = {makeLoaderDevice(), otherDevice}, .error = {}};
+
+    const auto selected = zzrk::cli::selectProbeDevice(result, "1-5");
+    expect(static_cast<bool>(selected),
+           "probe accepts one exact Loader port path");
+    expect(selected.device == &result.devices.front(),
+           "probe does not select a different Loader device");
+
+    const auto missing = zzrk::cli::selectProbeDevice(result, "1-7");
+    expect(missing.error == zzrk::cli::ProbeSelectionError::notFound,
+           "probe rejects a missing physical port path");
+
+    result.devices.push_back(makeLoaderDevice());
+    const auto duplicate = zzrk::cli::selectProbeDevice(result, "1-5");
+    expect(duplicate.error == zzrk::cli::ProbeSelectionError::ambiguous,
+           "probe rejects duplicate devices at one physical port path");
+}
+
+void testProbeSelectionRejectsPartialScan()
+{
+    zzrk::transport::ScanResult result{
+        .devices = {makeLoaderDevice()},
+        .error = zzrk::transport::ScanError{
+            .code = -1,
+            .message = "partial scan",
+            .kind = zzrk::transport::ScanErrorKind::Other,
+        },
+    };
+    const auto selected = zzrk::cli::selectProbeDevice(result, "1-5");
+    expect(selected.error == zzrk::cli::ProbeSelectionError::scanFailed,
+           "probe refuses a partial scan even when the target was listed");
+}
+
+void testProbeSelectionRequiresExactLoaderIdentity()
+{
+    auto expectUnsupported = [](zzrk::transport::UsbDeviceInfo device,
+                                const std::string_view description) {
+        zzrk::transport::ScanResult result{.devices = {std::move(device)},
+                                           .error = {}};
+        const auto selected = zzrk::cli::selectProbeDevice(result, "1-5");
+        expect(selected.error == zzrk::cli::ProbeSelectionError::unsupported,
+               description);
+    };
+
+    auto device = makeLoaderDevice();
+    device.vendorId = 0x1234;
+    expectUnsupported(std::move(device), "probe rejects a non-Rockchip VID");
+
+    device = makeLoaderDevice();
+    device.productId = 0x350a;
+    expectUnsupported(std::move(device), "probe rejects a different PID");
+
+    device = makeLoaderDevice();
+    device.bcdUsb = 0x0203;
+    expectUnsupported(std::move(device), "probe rejects a different bcdUSB");
+
+    device = makeLoaderDevice();
+    device.mode = zzrk::transport::DeviceMode::Maskrom;
+    expectUnsupported(std::move(device), "probe rejects non-Loader mode");
+}
+
+void testProbeSuccessOutputIsExplicit()
+{
+    const zzrk::transport::LibusbInterfaceInfo interfaceInfo{
+        .interfaceNumber = 0,
+        .alternateSetting = 0,
+        .bulkInEndpoint = 0x81,
+        .bulkOutEndpoint = 0x02,
+        .bulkInMaxPacketSize = 512,
+        .bulkOutMaxPacketSize = 512,
+    };
+    std::ostringstream output;
+    zzrk::cli::printProbeSuccess(makeLoaderDevice(), interfaceInfo, output);
+
+    expect(output.str()
+               == "Probe succeeded: 1-5 (2207:350b, Loader)\n"
+                  "Interface 0, alternate 0, bulk IN 0x81, bulk OUT 0x02, "
+                  "max packet 512/512 bytes\n"
+                  "Interface claim and release succeeded; no RockUSB command "
+                  "was sent.\n",
+           "probe success output reports only the verified lifecycle");
+}
+
 } // namespace
 
 int main()
@@ -145,5 +246,9 @@ int main()
     testFatalErrorHelpIsCategorySpecific();
     testPartialScanReturnsTwo();
     testCompleteDeviceListSucceeds();
+    testProbeSelectionRequiresExactUniquePath();
+    testProbeSelectionRejectsPartialScan();
+    testProbeSelectionRequiresExactLoaderIdentity();
+    testProbeSuccessOutputIsExplicit();
     return failures == 0 ? 0 : 1;
 }
