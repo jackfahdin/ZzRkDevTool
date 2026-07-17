@@ -708,18 +708,18 @@ RK3566/3568、RK3576、RK3399、旧 RK32xx、SPI NOR、SPI NAND、NAND 和 UFS �
 - portable preset 不加载 Qt 或 libusb，并实际编译 core、protocol、当前平台 source set 和无硬件测试，为 Windows/macOS compile-only CI 保留边界。
 - 已实现字节数、扇区数、LBA 强类型，以及 31-byte CBW、13-byte CSW 的显式编解码和 golden tests。
 - 已实现 RAII libusb context、RockUSB VID/PID 过滤、Maskrom/Loader 识别、完整 USB port path，以及按 bus、完整端口链和描述符重新选择设备的单设备 libusb backend。
-- CLI 已支持只读 `list`、显式 `probe <port-path>`、`read-chip-info <port-path>` 和 `read-flash-info <port-path>`；设备命令仅接受观测到的 RK3588 Loader 身份、`bcdDevice 0x0223` 与精确接口布局，并在成功输出前验证 claim/release。Qt Widgets 设备列表仍只做后台扫描，不阻塞 UI。
-- fake-libusb、CLI 输出与选择、session 故障矩阵、typed ReadChipInfo/ReadFlashInfo、spdlog 生命周期和 Qt 离屏 smoke tests 已建立；Debug、Release、Sanitizer 与 portable 测试矩阵继续作为变更门禁。
-- target-private `RockusbSession` executor 内部生成 tag，严格执行 CBW、DATA IN、CSW，短传输或失步错误后进入 Faulted；公开操作分别返回固定 16-byte `ChipInfo` 和固定 11-byte `FlashInfo`，公共头、CLI 和 GUI 均不暴露写入或 raw CDB 入口。
+- CLI 已支持只读 `list`、显式 `probe <port-path>`、`read-chip-info <port-path>`、`read-flash-info <port-path>` 和 `read-flash-id <port-path>`；设备命令仅接受观测到的 RK3588 Loader 身份、`bcdDevice 0x0223` 与精确接口布局，并在成功输出前验证 claim/release。Qt Widgets 设备列表仍只做后台扫描，不阻塞 UI。
+- fake-libusb、CLI 输出与选择、session 故障矩阵、typed ReadChipInfo/ReadFlashInfo/ReadFlashID、spdlog 生命周期和 Qt 离屏 smoke tests 已建立；portable 测试为 6/6，Debug、Release、Sanitizer 三个 Linux 矩阵分别为 11/11，并继续作为变更门禁。
+- target-private `RockusbSession` executor 内部生成 tag，严格执行 CBW、DATA IN、CSW，短传输或失步错误后进入 Faulted；公开操作分别返回固定 16-byte `ChipInfo`、固定 11-byte `FlashInfo` 和固定 5-byte `FlashId`，公共头、CLI 和 GUI 均不暴露写入或 raw CDB 入口。
 - 应用日志通过 `zzrk_logging` 封装 spdlog v2；协议与 session 保持无日志副作用，CLI 的结构化结果继续使用 stdout。
 
-当前仍保持严格安全边界：`probe` 只执行 open、claim、release、close；`read-chip-info` 与 `read-flash-info` 各自只增加一笔固定 31-byte CBW 和两笔固定长度 DATA IN/CSW。三者都要求显式物理端口和完全匹配的 Loader，不会设置 configuration、切换 alternate setting、detach 驱动、reset 设备、clear halt 或读写存储数据。开发树暂不生成安装目标，正式部署必须同时处理 Qt libraries、platform plugins 和各平台 libusb。
+当前仍保持严格安全边界：`probe` 只执行 open、claim、release、close；`read-chip-info`、`read-flash-info` 与 `read-flash-id` 各自只增加一笔固定 31-byte CBW 和两笔固定长度 DATA IN/CSW。四者都要求显式物理端口和完全匹配的 Loader，不会设置 configuration、切换 alternate setting、detach 驱动、reset 设备、clear halt 或读写存储数据。开发树暂不生成安装目标，正式部署必须同时处理 Qt libraries、platform plugins 和各平台 libusb。
 
-Ubuntu 26.04 真机已验证 `pudu_rk3588s` 在同一物理端口下的 ADB、Loader、Maskrom 身份变化；claim-only probe、typed ReadChipInfo 和 typed ReadFlashInfo 均成功。ReadChipInfo 的项目轨迹严格为 OUT 31、IN 16、IN 13；ReadFlashInfo 为 OUT 31、IN 11、IN 13；两者 CSW residue/status 均为零，显式 release 成功且无其他 USB 状态操作。FlashInfo 仅将 sector count 解释为 63585648640-byte 容量，其余字段保持 legacy code，不能据此确认厂商、物理几何或 eMMC；因此当前结果仍不能描述为已支持烧录。
+Ubuntu 26.04 真机已验证 `pudu_rk3588s` 在同一物理端口下的 ADB、Loader、Maskrom 身份变化；claim-only probe、typed ReadChipInfo、typed ReadFlashInfo 和 typed ReadFlashID 均成功。ReadChipInfo 的项目轨迹严格为 OUT 31、IN 16、IN 13；ReadFlashInfo 为 OUT 31、IN 11、IN 13；ReadFlashID 为 OUT 31、IN 5、IN 13；三者 CSW residue/status 均为零，显式 release 成功且无其他 USB 状态操作。FlashInfo 仅将 sector count 解释为 63585648640-byte 容量，其余字段保持 legacy code；独立 ReadFlashID 响应的精确 `EMMC ` marker 支持当前 Loader 的 eMMC 介质结论，但不是 CID、厂商或硬件分区信息。因此当前结果仍不能描述为已支持烧录。
 
 下一批开发按以下顺序推进：
 
-1. 为 ReadFlashID 建立项目自有 trace，先用独立响应证据确认当前介质；随后再为 ReadCapability 固定 opcode/CDB、响应长度、CSW residue/status 和 timeout，不猜测协议常量。
-2. 在现有 `IUsbTransport` 和 faulting session 上实现对应 typed 操作，仍不加入任何写入命令，也不从 FlashInfo legacy code 推断介质。
-3. 用额外板卡和 Loader revision 建立 ChipInfo/FlashInfo 的语义与兼容矩阵，并确认介质为 eMMC user area，再扩展 CLI `info`/JSON 和 Qt 只读详情页。
+1. 为 ReadCapability 建立两次匹配的参考 trace，固定 opcode/CDB、响应长度、CSW residue/status 和 timeout，不猜测协议常量；随后建立项目自有 trace。
+2. 在现有 `IUsbTransport` 和 faulting session 上实现 typed ReadCapability，仍不加入任何写入命令，也不从 FlashInfo legacy code 推断介质或能力。
+3. 用额外板卡和 Loader revision 建立 ChipInfo/FlashInfo/FlashID 的语义与兼容矩阵，并确认介质为 eMMC user area，再扩展 CLI `info`/JSON 和 Qt 只读详情页。
 4. 完成第二块 RK3588/eMMC 测试板的 Maskrom/Loader 只读回归后，才进入 Loader 下载和写入规划阶段。

@@ -3,6 +3,7 @@
 #pragma once
 
 #include <zzrk/session/ReadChipInfo.hpp>
+#include <zzrk/session/ReadFlashId.hpp>
 #include <zzrk/session/ReadFlashInfo.hpp>
 #include <zzrk/transport/LibusbBulkTransport.hpp>
 #include <zzrk/transport/UsbDeviceScanner.hpp>
@@ -45,5 +46,9 @@ void printChipInfo(const transport::UsbDeviceInfo& device,
 void printFlashInfo(const transport::UsbDeviceInfo& device,
                     const session::FlashInfo& flashInfo,
                     std::ostream& output);
+
+void printFlashId(const transport::UsbDeviceInfo& device,
+                  const session::FlashId& flashId,
+                  std::ostream& output);
 
 } // namespace zzrk::cli

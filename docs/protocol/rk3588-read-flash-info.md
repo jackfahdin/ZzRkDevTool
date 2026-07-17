@@ -206,17 +206,17 @@ raw response. It must not expose a trusted manufacturer enum, storage type,
 
 ## Media-Type Evidence Boundary
 
-`ReadFlashInfo` does not contain a reliable media-type field. The next command
-needed for this board is a separately traced `ReadFlashID` observation. Modern
-Loaders are known to return fixed five-byte ASCII media identifiers such as
-`EMMC `, `NAND ` or `SNAND`, while older NAND Loaders may return an actual NAND
-identifier. Therefore the RK3588S response must be captured before assigning
-semantics.
+`ReadFlashInfo` does not contain a reliable media-type field. A separately
+traced [ReadFlashID observation](rk3588-read-flash-id.md) for this board returned
+the exact five-byte ASCII marker `EMMC ` in two matching reference runs and the
+typed project validation. That independent response supports an eMMC conclusion
+for this exact Loader revision.
 
-Only a matching, independently observed `ReadFlashID` response can support an
-eMMC conclusion for this exact Loader revision. That conclusion must not be
-backfilled from the reference program's `SAMSUNG` display or the legacy block
-and page compatibility values above.
+This new evidence does not change the interpretation of any `ReadFlashInfo`
+field. The eMMC conclusion must not be backfilled from the reference program's
+`SAMSUNG` display, legacy block/page codes or manufacturer/code byte. A board or
+Loader with an unknown five-byte `ReadFlashID` response must preserve it as
+opaque until separately documented.
 
 ## Golden Vector Normalization
 

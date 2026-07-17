@@ -6,6 +6,7 @@
 #include <zzrk/logging/Logging.hpp>
 #include <zzrk/platform/PlatformServices.hpp>
 #include <zzrk/session/ReadChipInfo.hpp>
+#include <zzrk/session/ReadFlashId.hpp>
 #include <zzrk/session/ReadFlashInfo.hpp>
 #include <zzrk/session/RockusbSession.hpp>
 #include <zzrk/transport/LibusbBulkTransport.hpp>
@@ -28,6 +29,7 @@ void printUsage(const std::string_view executable, std::ostream& output)
            << "       " << executable << " probe <port-path>\n"
            << "       " << executable << " read-chip-info <port-path>\n"
            << "       " << executable << " read-flash-info <port-path>\n"
+           << "       " << executable << " read-flash-id <port-path>\n"
            << "       " << executable << " --version\n\n"
            << "The probe command opens and claims one RK3588 Loader "
               "interface, then releases it without sending a RockUSB "
@@ -35,6 +37,8 @@ void printUsage(const std::string_view executable, std::ostream& output)
            << "The read-chip-info command sends one read-only RockUSB "
               "command to the explicitly selected Loader device.\n"
            << "The read-flash-info command sends one read-only RockUSB "
+              "command to the explicitly selected Loader device.\n"
+           << "The read-flash-id command sends one read-only RockUSB "
               "command to the explicitly selected Loader device.\n";
 }
 
@@ -263,7 +267,11 @@ int probeDevice(const std::string_view portPath)
     return EXIT_SUCCESS;
 }
 
-int readChipInfoDevice(const std::string_view portPath)
+template <typename Value, typename Reader, typename Printer>
+int readLoaderDevice(const std::string_view portPath,
+                     const std::string_view operation,
+                     Reader reader,
+                     Printer printer)
 {
     zzrk::logging::debug(
         "Scanning for the explicitly selected Loader device");
@@ -274,30 +282,40 @@ int readChipInfoDevice(const std::string_view portPath)
         switch (selected.error) {
         case zzrk::cli::LoaderSelectionError::scanFailed:
             if (scan.error.has_value()) {
-                logScanFailure(*scan.error, "ReadChipInfo");
+                logScanFailure(*scan.error, operation);
             } else {
-                zzrk::logging::error("ReadChipInfo USB scan failed");
+                std::string message{operation};
+                message += " USB scan failed";
+                zzrk::logging::error(message);
             }
             break;
-        case zzrk::cli::LoaderSelectionError::ambiguous:
-            zzrk::logging::error(
-                "ReadChipInfo refused an ambiguous physical port path");
+        case zzrk::cli::LoaderSelectionError::ambiguous: {
+            std::string message{operation};
+            message += " refused an ambiguous physical port path";
+            zzrk::logging::error(message);
             break;
+        }
         case zzrk::cli::LoaderSelectionError::notFound: {
             std::string message{"No Rockchip USB device found at port "};
             message += portPath;
             zzrk::logging::error(message);
             break;
         }
-        case zzrk::cli::LoaderSelectionError::unsupported:
-            zzrk::logging::error(
-                "ReadChipInfo refused the selected device: the validated "
-                "RK3588 Loader identity is required (2207:350b, bcdUSB "
-                "0x0201, bcdDevice 0x0223)");
+        case zzrk::cli::LoaderSelectionError::unsupported: {
+            std::string message{operation};
+            message +=
+                " refused the selected device: the validated RK3588 Loader "
+                "identity is required (2207:350b, bcdUSB 0x0201, bcdDevice "
+                "0x0223)";
+            zzrk::logging::error(message);
             break;
-        case zzrk::cli::LoaderSelectionError::none:
-            zzrk::logging::error("ReadChipInfo device selection failed");
+        }
+        case zzrk::cli::LoaderSelectionError::none: {
+            std::string message{operation};
+            message += " device selection failed";
+            zzrk::logging::error(message);
             break;
+        }
         }
         return EXIT_FAILURE;
     }
@@ -307,7 +325,7 @@ int readChipInfoDevice(const std::string_view portPath)
         std::get_if<zzrk::transport::LibusbOpenError>(&opened);
     if (openError != nullptr) {
         std::ostringstream message;
-        message << "ReadChipInfo could not open the Loader interface: "
+        message << operation << " could not open the Loader interface: "
                 << describeOpenError(openError->code);
         if (openError->nativeCode != 0) {
             message << " (libusb " << openError->nativeCode << ')';
@@ -322,9 +340,9 @@ int readChipInfoDevice(const std::string_view portPath)
 
     auto transport = std::move(
         std::get<std::unique_ptr<zzrk::transport::LibusbBulkTransport>>(opened));
-    const auto readResult = [&transport] {
+    const auto readResult = [&transport, &reader] {
         zzrk::session::RockusbSession session{*transport};
-        return zzrk::session::readChipInfo(session);
+        return reader(session);
     }();
 
     const int releaseResult = transport->close();
@@ -333,12 +351,12 @@ int readChipInfoDevice(const std::string_view portPath)
     const auto* readError =
         std::get_if<zzrk::session::SessionError>(&readResult);
     if (readError != nullptr) {
-        logReadFailure(*readError, "ReadChipInfo");
+        logReadFailure(*readError, operation);
     }
     if (releaseResult < 0) {
         std::ostringstream message;
-        message << "ReadChipInfo could not release the Loader interface "
-                   "(libusb "
+        message << operation
+                << " could not release the Loader interface (libusb "
                 << releaseResult << ')';
         zzrk::logging::error(message.str());
     }
@@ -346,105 +364,33 @@ int readChipInfoDevice(const std::string_view portPath)
         return EXIT_FAILURE;
     }
 
-    zzrk::cli::printChipInfo(*selected.device,
-                             std::get<zzrk::session::ChipInfo>(readResult),
-                             std::cout);
-    std::string successMessage{"ReadChipInfo completed successfully at "};
+    printer(*selected.device, std::get<Value>(readResult), std::cout);
+    std::string successMessage{operation};
+    successMessage += " completed successfully at ";
     successMessage += selected.device->portPath;
     zzrk::logging::info(successMessage);
     return EXIT_SUCCESS;
 }
 
+int readChipInfoDevice(const std::string_view portPath)
+{
+    return readLoaderDevice<zzrk::session::ChipInfo>(
+        portPath, "ReadChipInfo", zzrk::session::readChipInfo,
+        zzrk::cli::printChipInfo);
+}
+
 int readFlashInfoDevice(const std::string_view portPath)
 {
-    zzrk::logging::debug(
-        "Scanning for the explicitly selected Loader device");
-    zzrk::transport::UsbDeviceScanner scanner;
-    auto scan = scanner.scanRockchipDevices();
-    const auto selected = zzrk::cli::selectLoaderDevice(scan, portPath);
-    if (!selected) {
-        switch (selected.error) {
-        case zzrk::cli::LoaderSelectionError::scanFailed:
-            if (scan.error.has_value()) {
-                logScanFailure(*scan.error, "ReadFlashInfo");
-            } else {
-                zzrk::logging::error("ReadFlashInfo USB scan failed");
-            }
-            break;
-        case zzrk::cli::LoaderSelectionError::ambiguous:
-            zzrk::logging::error(
-                "ReadFlashInfo refused an ambiguous physical port path");
-            break;
-        case zzrk::cli::LoaderSelectionError::notFound: {
-            std::string message{"No Rockchip USB device found at port "};
-            message += portPath;
-            zzrk::logging::error(message);
-            break;
-        }
-        case zzrk::cli::LoaderSelectionError::unsupported:
-            zzrk::logging::error(
-                "ReadFlashInfo refused the selected device: the validated "
-                "RK3588 Loader identity is required (2207:350b, bcdUSB "
-                "0x0201, bcdDevice 0x0223)");
-            break;
-        case zzrk::cli::LoaderSelectionError::none:
-            zzrk::logging::error("ReadFlashInfo device selection failed");
-            break;
-        }
-        return EXIT_FAILURE;
-    }
+    return readLoaderDevice<zzrk::session::FlashInfo>(
+        portPath, "ReadFlashInfo", zzrk::session::readFlashInfo,
+        zzrk::cli::printFlashInfo);
+}
 
-    auto opened = zzrk::transport::LibusbBulkTransport::open(*selected.device);
-    const auto* openError =
-        std::get_if<zzrk::transport::LibusbOpenError>(&opened);
-    if (openError != nullptr) {
-        std::ostringstream message;
-        message << "ReadFlashInfo could not open the Loader interface: "
-                << describeOpenError(openError->code);
-        if (openError->nativeCode != 0) {
-            message << " (libusb " << openError->nativeCode << ')';
-        }
-        zzrk::logging::error(message.str());
-        if (zzrk::transport::isAccessDenied(*openError)) {
-            const auto platform = zzrk::platform::createPlatformServices();
-            zzrk::logging::error(platform->usbAccessHelp());
-        }
-        return EXIT_FAILURE;
-    }
-
-    auto transport = std::move(
-        std::get<std::unique_ptr<zzrk::transport::LibusbBulkTransport>>(opened));
-    const auto readResult = [&transport] {
-        zzrk::session::RockusbSession session{*transport};
-        return zzrk::session::readFlashInfo(session);
-    }();
-
-    const int releaseResult = transport->close();
-    transport.reset();
-
-    const auto* readError =
-        std::get_if<zzrk::session::SessionError>(&readResult);
-    if (readError != nullptr) {
-        logReadFailure(*readError, "ReadFlashInfo");
-    }
-    if (releaseResult < 0) {
-        std::ostringstream message;
-        message << "ReadFlashInfo could not release the Loader interface "
-                   "(libusb "
-                << releaseResult << ')';
-        zzrk::logging::error(message.str());
-    }
-    if (readError != nullptr || releaseResult < 0) {
-        return EXIT_FAILURE;
-    }
-
-    zzrk::cli::printFlashInfo(*selected.device,
-                              std::get<zzrk::session::FlashInfo>(readResult),
-                              std::cout);
-    std::string successMessage{"ReadFlashInfo completed successfully at "};
-    successMessage += selected.device->portPath;
-    zzrk::logging::info(successMessage);
-    return EXIT_SUCCESS;
+int readFlashIdDevice(const std::string_view portPath)
+{
+    return readLoaderDevice<zzrk::session::FlashId>(
+        portPath, "ReadFlashID", zzrk::session::readFlashId,
+        zzrk::cli::printFlashId);
 }
 
 int listDevices()
@@ -490,6 +436,9 @@ int main(const int argc, char* argv[])
     }
     if (argc == 3 && std::string_view{argv[1]} == "read-flash-info") {
         return readFlashInfoDevice(argv[2]);
+    }
+    if (argc == 3 && std::string_view{argv[1]} == "read-flash-id") {
+        return readFlashIdDevice(argv[2]);
     }
     if (argc == 2 && std::string_view{argv[1]} == "--version") {
         std::cout << "ZzRkDevTool " ZZRK_VERSION "\n";

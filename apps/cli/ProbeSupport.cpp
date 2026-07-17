@@ -136,4 +136,24 @@ void printFlashInfo(const transport::UsbDeviceInfo& device,
     output << std::dec << std::setfill(' ') << '\n';
 }
 
+void printFlashId(const transport::UsbDeviceInfo& device,
+                  const session::FlashId& flashId,
+                  std::ostream& output)
+{
+    output << "Port: " << device.portPath << " (bcdDevice 0x" << std::hex
+           << std::setfill('0') << std::setw(4) << device.bcdDevice
+           << ")\nFlash ID bytes:";
+    for (const auto byte : flashId.rawBytes) {
+        output << ' ' << std::setw(2) << std::to_integer<unsigned int>(byte);
+    }
+    output << std::dec << std::setfill(' ')
+           << "\nStorage type: ";
+    if (session::classifyFlashId(flashId)
+        == session::FlashIdKind::emmcMediaMarker) {
+        output << "eMMC (reported by ReadFlashID)\n";
+    } else {
+        output << "unknown\n";
+    }
+}
+
 } // namespace zzrk::cli

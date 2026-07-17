@@ -10,7 +10,7 @@
 
 No USB interface was opened and no RockUSB command was sent while collecting
 the descriptor tables below. Later verification sections explicitly record
-the claim-only probe and the two typed, read-only RockUSB transactions.
+the claim-only probe and the three typed, read-only RockUSB transactions.
 
 ## ADB Mode
 
@@ -182,9 +182,40 @@ legacy fields are preserved under neutral names and do not establish physical
 block/page geometry, manufacturer or storage type. In particular, this command
 does not identify the attached storage as eMMC.
 
+## Typed ReadFlashID Verification
+
+After two matching reference observations established the five-byte wire
+transaction, the typed ZzRkDevTool command was run against the same Loader:
+
+```text
+Port: 1-5 (bcdDevice 0x0223)
+Flash ID bytes: 45 4d 4d 43 20
+Storage type: eMMC (reported by ReadFlashID)
+```
+
+The retained [protocol evidence](../protocol/rk3588-read-flash-id.md) records
+the complete reference and ZzRkDevTool API traces. The project command sent one
+31-byte CBW on `0x02`, received five-byte data and a 13-byte CSW on `0x81`, and
+used finite timeouts of 5/30/5 seconds. The CSW matched tag 1 with zero residue
+and success status.
+
+The correlated kernel trace contained exactly three bulk URB submissions, one
+claim and one successful explicit release. It contained no control, reset,
+disconnect, set-interface, set-configuration or clear-halt operation. The
+device remained Loader `2207:350b`, `bcdUSB 0x0201`, `bcdDevice 0x0223` at
+physical port `1-5`.
+
+The exact bytes spell the ASCII media marker `EMMC `, including its trailing
+space, and support identifying the storage media as eMMC for this exact Loader.
+They are not a CID and do not establish manufacturer, capacity, physical
+geometry or the active eMMC hardware partition. Unknown five-byte responses
+remain opaque and have no guessed media mapping.
+
 ## Not Yet Observed
 
-- A root-level usbmon/pcap capture of the ReadChipInfo or ReadFlashInfo command
-- Loader response data for Flash ID, capability or current storage media
+- A root-level usbmon/pcap capture of the ReadChipInfo, ReadFlashInfo or
+  ReadFlashID command
+- Loader response data for capability
+- eMMC CID, physical manufacturer or active hardware-partition information
 - Physical geometry or manufacturer semantics for the legacy FlashInfo fields
 - Stall, timeout, short transfer and CSW residue behavior on hardware
