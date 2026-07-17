@@ -98,6 +98,28 @@ automatically received the same group, mode, tag and ACL. `lsusb -v` could open
 the device as the normal user. No interface was claimed and no command or bulk
 payload was sent during this permission verification.
 
+## Claim-Only Probe Verification
+
+The first Linux libusb backend was then validated against the Loader device at
+the explicit stable path `1-5`:
+
+```text
+Probe succeeded: 1-5 (2207:350b, Loader)
+Interface 0, alternate 0, bulk IN 0x81, bulk OUT 0x02, max packet 512/512 bytes
+Interface claim and release succeeded; no RockUSB command was sent.
+```
+
+Before opening, the backend re-selected the device by bus, complete port chain,
+VID, PID and `bcdUSB`, then required the exact observed configuration and
+endpoint layout. The explicit release returned success and the device remained
+in Loader mode at `1-5`.
+
+A host-side `strace` of the successful probe recorded one
+`USBDEVFS_CLAIMINTERFACE` and one `USBDEVFS_RELEASEINTERFACE`. It recorded zero
+`USBDEVFS_BULK`, `USBDEVFS_CONTROL`, reset, disconnect, set-interface or
+set-configuration ioctls. Therefore this verification exercised USB resource
+ownership only; it did not send a RockUSB CBW, CDB, data stage or CSW.
+
 ## Not Yet Observed
 
 - Project-owned USB packet capture for any RockUSB command

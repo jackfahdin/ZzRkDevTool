@@ -54,6 +54,27 @@ if(TARGET zzrk_transport)
         PRIVATE zzrk_project_options zzrk_project_warnings
     )
     add_test(NAME usb_device_scanner COMMAND usb_device_scanner_test)
+
+    add_executable(
+        libusb_bulk_transport_test
+        libusb_bulk_transport_test.cpp
+        "${PROJECT_SOURCE_DIR}/src/transport/LibusbBulkTransport.cpp"
+    )
+    target_include_directories(
+        libusb_bulk_transport_test
+        PRIVATE
+            "${PROJECT_SOURCE_DIR}/src/transport/include"
+            "${PROJECT_SOURCE_DIR}/src/session/include"
+    )
+    target_include_directories(
+        libusb_bulk_transport_test
+        SYSTEM PRIVATE "${LIBUSB1_INCLUDE_DIR}"
+    )
+    target_link_libraries(
+        libusb_bulk_transport_test
+        PRIVATE zzrk_project_options zzrk_project_warnings
+    )
+    add_test(NAME libusb_bulk_transport COMMAND libusb_bulk_transport_test)
 endif()
 
 if(TARGET zzrk_cli_support)

@@ -701,26 +701,25 @@ RK3566/3568、RK3576、RK3399、旧 RK32xx、SPI NOR、SPI NAND、NAND 和 UFS �
 
 ## 17. 当前开发基线
 
-截至 2026-07-16，首个 Linux-first 开发基线已经落地：
+截至 2026-07-17，首个 Linux-first 开发基线已经落地：
 
 - Qt 6.11.1、C++20、CMake Presets 和仓库内 libusb 1.0.30 已完成 Debug、Release、ASan/UBSan 构建验证。
 - `libusb-1.0.pc` 使用相对 `pcfiledir`，仓库移动后仍能解析正确的 include 和 library 路径。
 - portable preset 不加载 Qt 或 libusb，并实际编译 core、protocol、当前平台 source set 和无硬件测试，为 Windows/macOS compile-only CI 保留边界。
 - 已实现字节数、扇区数、LBA 强类型，以及 31-byte CBW、13-byte CSW 的显式编解码和 golden tests。
-- 已实现 RAII libusb context、RockUSB VID/PID 过滤、Maskrom/Loader 识别、完整 USB port path 和部分扫描错误语义。
-- CLI 已支持只读 `list`，完整、致命、部分扫描分别返回 0、1、2；Qt Widgets 设备列表使用后台扫描，不阻塞 UI。
-- fake-libusb、CLI 输出、session 故障矩阵、spdlog 生命周期和 Qt 离屏 smoke tests 已建立。当前 Linux Debug、Release、Sanitizer 各有 7 项通过，portable 有 3 项通过。
+- 已实现 RAII libusb context、RockUSB VID/PID 过滤、Maskrom/Loader 识别、完整 USB port path，以及按 bus、完整端口链和描述符重新选择设备的单设备 libusb backend。
+- CLI 已支持只读 `list` 和显式 `probe <port-path>`；probe 仅接受观测到的 RK3588 Loader 身份与接口布局，并在成功输出前验证 claim/release。Qt Widgets 设备列表仍只做后台扫描，不阻塞 UI。
+- fake-libusb、CLI 输出与选择、session 故障矩阵、spdlog 生命周期和 Qt 离屏 smoke tests 已建立。当前 Linux Debug、Release、Sanitizer 各有 8 项通过，portable 有 3 项通过。
 - 已新增 target-private 只读 `RockusbSession` executor：内部生成 tag，严格执行 CBW、DATA IN、CSW，短传输或失步错误后进入 Faulted；公共头、CLI 和 GUI 均不暴露写入或 raw CDB 入口。
 - 应用日志通过 `zzrk_logging` 封装 spdlog v2；协议与 session 保持无日志副作用，CLI 的结构化结果继续使用 stdout。
 
-当前仍保持严格安全边界：产品代码没有调用 `libusb_open`、接口 claim、control/bulk transfer，也不发送 RockUSB 命令。开发树暂不生成安装目标，正式部署必须同时处理 Qt libraries、platform plugins 和各平台 libusb。
+当前仍保持严格安全边界：`probe` 只对显式选择且完全匹配的 Loader 执行 open、claim、release、close；不会设置 configuration、切换 alternate setting、detach 驱动、reset 设备，也不调用 control/bulk transfer 或发送 RockUSB 命令。开发树暂不生成安装目标，正式部署必须同时处理 Qt libraries、platform plugins 和各平台 libusb。
 
-真实主机上的只读枚举已经验证 libusb/udev 可以初始化，但验证时没有连接 Rockchip USB 设备。因此 M0 的 RK3588 真机门禁尚未完成，不能把当前结果描述为已支持 RK3588 烧录。
+Ubuntu 26.04 真机已验证 `pudu_rk3588s` 在同一物理端口下的 ADB、Loader、Maskrom 身份变化；Loader 上的 claim-only probe 成功，系统调用跟踪为一次 claim、一次 release，且 bulk/control/reset/detach/configuration 切换均为零。该结果只完成 M0 的 USB 生命周期门禁，尚未验证任何 RockUSB 只读命令，更不能描述为已支持 RK3588 烧录。
 
 下一批开发按以下顺序推进：
 
-1. 连接可恢复的 RK3588/eMMC 测试板，分别记录 Maskrom 和 Loader 描述符、VID/PID、`bcdUSB` 与完整 port path。
-2. 用项目自有抓包固定 interface、端点、只读 opcode/CDB、响应长度、CSW residue 和 timeout，并形成合法 golden trace。
-3. 为现有 `IUsbTransport` 增加单设备 libusb backend，在有界 timeout、短传输校验和明确设备选择的前提下实现 typed `ReadChipInfo`、`ReadFlashInfo`、`ReadCapability`，仍不加入任何写入命令。
-4. 验证返回的芯片为 RK3588、介质为 eMMC user area，再扩展 CLI `info`/JSON 和 Qt 只读详情页。
-5. 完成两块测试板的 Maskrom/Loader 只读回归后，才进入 Loader 下载和写入规划阶段。
+1. 用项目自有抓包固定只读 opcode/CDB、响应长度、CSW residue 和 timeout，并形成合法 golden trace；在此之前不猜测协议常量。
+2. 在现有 `IUsbTransport` 和 faulting session 上实现 typed `ReadChipInfo`、`ReadFlashInfo`、`ReadCapability`，仍不加入任何写入命令。
+3. 验证返回的芯片为 RK3588、介质为 eMMC user area，再扩展 CLI `info`/JSON 和 Qt 只读详情页。
+4. 完成第二块 RK3588/eMMC 测试板的 Maskrom/Loader 只读回归后，才进入 Loader 下载和写入规划阶段。
