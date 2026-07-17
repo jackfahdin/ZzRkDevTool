@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: MIT
 
-add_library(zzrk_session STATIC src/RockusbSession.cpp)
+add_library(
+    zzrk_session STATIC
+    src/ReadChipInfo.cpp
+    src/RockusbSession.cpp
+)
 add_library(zzrk::session ALIAS zzrk_session)
 
 target_include_directories(

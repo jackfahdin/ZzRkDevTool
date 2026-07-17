@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <zzrk/session/ReadChipInfo.hpp>
 #include <zzrk/transport/LibusbBulkTransport.hpp>
 #include <zzrk/transport/UsbDeviceScanner.hpp>
 
@@ -10,7 +11,7 @@
 
 namespace zzrk::cli {
 
-enum class ProbeSelectionError {
+enum class LoaderSelectionError {
     none,
     scanFailed,
     notFound,
@@ -18,22 +19,26 @@ enum class ProbeSelectionError {
     unsupported,
 };
 
-struct ProbeSelectionResult {
+struct LoaderSelectionResult {
     const transport::UsbDeviceInfo* device{};
-    ProbeSelectionError error{ProbeSelectionError::notFound};
+    LoaderSelectionError error{LoaderSelectionError::notFound};
 
     [[nodiscard]] explicit constexpr operator bool() const noexcept
     {
-        return device != nullptr && error == ProbeSelectionError::none;
+        return device != nullptr && error == LoaderSelectionError::none;
     }
 };
 
-[[nodiscard]] ProbeSelectionResult
-selectProbeDevice(const transport::ScanResult& scan,
-                  std::string_view portPath) noexcept;
+[[nodiscard]] LoaderSelectionResult
+selectLoaderDevice(const transport::ScanResult& scan,
+                   std::string_view portPath) noexcept;
 
 void printProbeSuccess(const transport::UsbDeviceInfo& device,
                        const transport::LibusbInterfaceInfo& interfaceInfo,
                        std::ostream& output);
+
+void printChipInfo(const transport::UsbDeviceInfo& device,
+                   const session::ChipInfo& chipInfo,
+                   std::ostream& output);
 
 } // namespace zzrk::cli

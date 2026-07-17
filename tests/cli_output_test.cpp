@@ -5,6 +5,7 @@
 
 #include <zzrk/transport/UsbDeviceScanner.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <sstream>
@@ -29,6 +30,7 @@ zzrk::transport::UsbDeviceInfo makeDevice()
         .vendorId = 0x2207,
         .productId = 0x350b,
         .bcdUsb = 0x0200,
+        .bcdDevice = 0x0100,
         .busNumber = 1,
         .portNumbers = {2},
         .portPath = "1-2",
@@ -41,6 +43,7 @@ zzrk::transport::UsbDeviceInfo makeLoaderDevice()
 {
     auto device = makeDevice();
     device.bcdUsb = 0x0201;
+    device.bcdDevice = 0x0223;
     device.portNumbers = {5};
     device.portPath = "1-5";
     device.mode = zzrk::transport::DeviceMode::Loader;
@@ -117,6 +120,8 @@ void testPartialScanReturnsTwo()
            "BCD USB values keep leading zeroes after left-aligned columns");
     expect(output.str().find("0x2000") == std::string::npos,
            "BCD USB digits are never padded on the right");
+    expect(output.str().find("0x0100") != std::string::npos,
+           "BCD device revisions are printed with leading zeroes");
     expect(output.str().find("-") != std::string::npos,
            "a missing stable port path is displayed explicitly");
     expect(errorOutput.str().find("scan was partial") != std::string::npos,
@@ -149,7 +154,7 @@ void testCompleteDeviceListSucceeds()
     expect(errorOutput.str().empty(), "a complete scan has no warning");
 }
 
-void testProbeSelectionRequiresExactUniquePath()
+void testLoaderSelectionRequiresExactUniquePath()
 {
     auto otherDevice = makeLoaderDevice();
     otherDevice.portNumbers = {6};
@@ -157,23 +162,23 @@ void testProbeSelectionRequiresExactUniquePath()
     zzrk::transport::ScanResult result{
         .devices = {makeLoaderDevice(), otherDevice}, .error = {}};
 
-    const auto selected = zzrk::cli::selectProbeDevice(result, "1-5");
+    const auto selected = zzrk::cli::selectLoaderDevice(result, "1-5");
     expect(static_cast<bool>(selected),
            "probe accepts one exact Loader port path");
     expect(selected.device == &result.devices.front(),
            "probe does not select a different Loader device");
 
-    const auto missing = zzrk::cli::selectProbeDevice(result, "1-7");
-    expect(missing.error == zzrk::cli::ProbeSelectionError::notFound,
+    const auto missing = zzrk::cli::selectLoaderDevice(result, "1-7");
+    expect(missing.error == zzrk::cli::LoaderSelectionError::notFound,
            "probe rejects a missing physical port path");
 
     result.devices.push_back(makeLoaderDevice());
-    const auto duplicate = zzrk::cli::selectProbeDevice(result, "1-5");
-    expect(duplicate.error == zzrk::cli::ProbeSelectionError::ambiguous,
+    const auto duplicate = zzrk::cli::selectLoaderDevice(result, "1-5");
+    expect(duplicate.error == zzrk::cli::LoaderSelectionError::ambiguous,
            "probe rejects duplicate devices at one physical port path");
 }
 
-void testProbeSelectionRejectsPartialScan()
+void testLoaderSelectionRejectsPartialScan()
 {
     zzrk::transport::ScanResult result{
         .devices = {makeLoaderDevice()},
@@ -183,19 +188,19 @@ void testProbeSelectionRejectsPartialScan()
             .kind = zzrk::transport::ScanErrorKind::Other,
         },
     };
-    const auto selected = zzrk::cli::selectProbeDevice(result, "1-5");
-    expect(selected.error == zzrk::cli::ProbeSelectionError::scanFailed,
+    const auto selected = zzrk::cli::selectLoaderDevice(result, "1-5");
+    expect(selected.error == zzrk::cli::LoaderSelectionError::scanFailed,
            "probe refuses a partial scan even when the target was listed");
 }
 
-void testProbeSelectionRequiresExactLoaderIdentity()
+void testLoaderSelectionRequiresExactIdentity()
 {
     auto expectUnsupported = [](zzrk::transport::UsbDeviceInfo device,
                                 const std::string_view description) {
         zzrk::transport::ScanResult result{.devices = {std::move(device)},
                                            .error = {}};
-        const auto selected = zzrk::cli::selectProbeDevice(result, "1-5");
-        expect(selected.error == zzrk::cli::ProbeSelectionError::unsupported,
+        const auto selected = zzrk::cli::selectLoaderDevice(result, "1-5");
+        expect(selected.error == zzrk::cli::LoaderSelectionError::unsupported,
                description);
     };
 
@@ -210,6 +215,11 @@ void testProbeSelectionRequiresExactLoaderIdentity()
     device = makeLoaderDevice();
     device.bcdUsb = 0x0203;
     expectUnsupported(std::move(device), "probe rejects a different bcdUSB");
+
+    device = makeLoaderDevice();
+    device.bcdDevice = 0x0224;
+    expectUnsupported(std::move(device),
+                      "probe rejects an unvalidated Loader revision");
 
     device = makeLoaderDevice();
     device.mode = zzrk::transport::DeviceMode::Maskrom;
@@ -230,12 +240,33 @@ void testProbeSuccessOutputIsExplicit()
     zzrk::cli::printProbeSuccess(makeLoaderDevice(), interfaceInfo, output);
 
     expect(output.str()
-               == "Probe succeeded: 1-5 (2207:350b, Loader)\n"
+               == "Probe succeeded: 1-5 (2207:350b, Loader, bcdDevice "
+                  "0x0223)\n"
                   "Interface 0, alternate 0, bulk IN 0x81, bulk OUT 0x02, "
                   "max packet 512/512 bytes\n"
                   "Interface claim and release succeeded; no RockUSB command "
                   "was sent.\n",
            "probe success output reports only the verified lifecycle");
+}
+
+void testChipInfoOutputUsesFixedWidthHexBytes()
+{
+    const zzrk::session::ChipInfo chipInfo{
+        .bytes = {
+            std::byte{0x00}, std::byte{0x01}, std::byte{0x09}, std::byte{0x0a},
+            std::byte{0x10}, std::byte{0x38}, std::byte{0x7f}, std::byte{0x80},
+            std::byte{0xa5}, std::byte{0xfe}, std::byte{0xff}, std::byte{0x20},
+            std::byte{0x03}, std::byte{0x04}, std::byte{0x05}, std::byte{0x06},
+        },
+    };
+    std::ostringstream output;
+    zzrk::cli::printChipInfo(makeLoaderDevice(), chipInfo, output);
+
+    expect(output.str()
+               == "Port: 1-5 (bcdDevice 0x0223)\n"
+                  "Chip info: 00 01 09 0a 10 38 7f 80 a5 fe ff 20 03 04 05 "
+                  "06\n",
+           "chip info output prints exactly 16 fixed-width hexadecimal bytes");
 }
 
 } // namespace
@@ -246,9 +277,10 @@ int main()
     testFatalErrorHelpIsCategorySpecific();
     testPartialScanReturnsTwo();
     testCompleteDeviceListSucceeds();
-    testProbeSelectionRequiresExactUniquePath();
-    testProbeSelectionRejectsPartialScan();
-    testProbeSelectionRequiresExactLoaderIdentity();
+    testLoaderSelectionRequiresExactUniquePath();
+    testLoaderSelectionRejectsPartialScan();
+    testLoaderSelectionRequiresExactIdentity();
     testProbeSuccessOutputIsExplicit();
+    testChipInfoOutputUsesFixedWidthHexBytes();
     return failures == 0 ? 0 : 1;
 }

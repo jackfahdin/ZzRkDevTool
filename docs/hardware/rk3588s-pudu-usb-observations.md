@@ -104,15 +104,15 @@ The first Linux libusb backend was then validated against the Loader device at
 the explicit stable path `1-5`:
 
 ```text
-Probe succeeded: 1-5 (2207:350b, Loader)
+Probe succeeded: 1-5 (2207:350b, Loader, bcdDevice 0x0223)
 Interface 0, alternate 0, bulk IN 0x81, bulk OUT 0x02, max packet 512/512 bytes
 Interface claim and release succeeded; no RockUSB command was sent.
 ```
 
 Before opening, the backend re-selected the device by bus, complete port chain,
-VID, PID and `bcdUSB`, then required the exact observed configuration and
-endpoint layout. The explicit release returned success and the device remained
-in Loader mode at `1-5`.
+VID, PID, `bcdUSB` and `bcdDevice`, then required the exact observed
+configuration and endpoint layout. The explicit release returned success and
+the device remained in Loader mode at `1-5`.
 
 A host-side `strace` of the successful probe recorded one
 `USBDEVFS_CLAIMINTERFACE` and one `USBDEVFS_RELEASEINTERFACE`. It recorded zero
@@ -120,8 +120,33 @@ A host-side `strace` of the successful probe recorded one
 set-configuration ioctls. Therefore this verification exercised USB resource
 ownership only; it did not send a RockUSB CBW, CDB, data stage or CSW.
 
+## Typed ReadChipInfo Verification
+
+After two matching reference observations established the wire transaction,
+the typed ZzRkDevTool command was run against the same Loader:
+
+```text
+Port: 1-5 (bcdDevice 0x0223)
+Chip info: 38 38 35 33 00 00 00 00 00 00 00 00 00 00 00 00
+```
+
+The retained [protocol evidence](../protocol/rk3588-read-chip-info.md) records
+the complete reference and ZzRkDevTool API traces. The project command sent one
+31-byte CBW on `0x02`, received 16-byte data and a 13-byte CSW on `0x81`, and
+used finite timeouts of 5/30/5 seconds. The CSW matched tag 1 with zero residue
+and success status.
+
+The correlated kernel trace contained exactly three bulk URB submissions, one
+claim and one successful explicit release. It contained no control, reset,
+disconnect, set-interface, set-configuration or clear-halt operation. The
+device remained Loader `2207:350b`, `bcdUSB 0x0201`, `bcdDevice 0x0223` at
+physical port `1-5`.
+
+The response remains an opaque 16-byte ChipInfo value. Its first bytes resemble
+a reversed model string, but no field order, uniqueness or stability is claimed.
+
 ## Not Yet Observed
 
-- Project-owned USB packet capture for any RockUSB command
-- Loader response data for chip, flash or capability information
+- A root-level usbmon/pcap capture of the ReadChipInfo command
+- Loader response data for flash or capability information
 - Stall, timeout, short transfer and CSW residue behavior on hardware

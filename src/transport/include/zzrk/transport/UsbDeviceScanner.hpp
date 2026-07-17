@@ -34,6 +34,7 @@ struct UsbDeviceInfo {
     std::uint16_t vendorId{};
     std::uint16_t productId{};
     std::uint16_t bcdUsb{};
+    std::uint16_t bcdDevice{};
     std::uint8_t busNumber{};
     std::vector<std::uint8_t> portNumbers;
     std::string portPath;
