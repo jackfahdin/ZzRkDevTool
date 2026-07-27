@@ -9,6 +9,7 @@
 # Generated artifacts
 /dist/
 /artifacts/
+/*.img
 compile_commands.json
 
 # Developer-specific toolchain paths

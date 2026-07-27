@@ -92,13 +92,13 @@ const zzrk::transport::UsbDeviceInfo* findDeviceAtPath(
     return found == result.devices.end() ? nullptr : &*found;
 }
 
-void testRockusbFilteringAndModeInference()
+void testRockchipDiscoveryAndModeInference()
 {
     resetFakeLibusb();
     addDevice(0x1234, 0x350b, 0x0200, 0x0100, 1, 1, {1});
     addDevice(0x2207, 0x0000, 0x0200, 0x0100, 1, 2, {2});
     addDevice(0x2207, 0x0010, 0x0201, 0x0223, 1, 3, {3});
-    addDevice(0x2207, 0x0001, 0x0201, 0x0223, 1, 4, {4});
+    addDevice(0x2207, 0x0006, 0x0201, 0x0100, 1, 4, {4});
     addDevice(0x2207, 0x350b, 0x0200, 0x0100, 2, 5, {2, 3});
     addDevice(0x2207, 0x350b, 0x0201, 0x0223, 2, 6, {4});
 
@@ -106,8 +106,18 @@ void testRockusbFilteringAndModeInference()
         zzrk::transport::UsbDeviceScanner scanner;
         const auto result = scanner.scanRockchipDevices();
         expect(!result.error.has_value(), "a complete fake scan has no error");
-        expect(result.devices.size() == 2,
-               "only RockUSB PIDs with a SoC-family high byte are returned");
+        expect(result.devices.size() == 5,
+               "all Rockchip VID devices are returned for mode diagnostics");
+
+        const auto* adb = findDeviceAtPath(result, "1-4");
+        expect(adb != nullptr
+                   && adb->mode == zzrk::transport::DeviceMode::Adb,
+               "the observed 2207:0006 identity is reported as ADB");
+
+        const auto* unknown = findDeviceAtPath(result, "1-3");
+        expect(unknown != nullptr
+                   && unknown->mode == zzrk::transport::DeviceMode::Unknown,
+               "unvalidated low-byte Rockchip PIDs remain unknown");
 
         const auto* maskrom = findDeviceAtPath(result, "2-2.3");
         expect(maskrom != nullptr && maskrom->productId == 0x350b,
@@ -298,7 +308,7 @@ std::uint8_t LIBUSB_CALL libusb_get_device_address(libusb_device* device)
 
 int main()
 {
-    testRockusbFilteringAndModeInference();
+    testRockchipDiscoveryAndModeInference();
     testMissingPortPathIsPartialFailure();
     testAccessErrorClassification();
     return g_failures == 0 ? 0 : 1;

@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <iostream>
 #include <sstream>
+#include <string>
 #include <string_view>
 #include <utility>
 
@@ -152,6 +153,71 @@ void testCompleteDeviceListSucceeds()
     expect(output.str().find("1-2") != std::string::npos,
            "a complete scan prints the stable port path");
     expect(errorOutput.str().empty(), "a complete scan has no warning");
+}
+
+void testAdbDeviceIsVisibleButNotOperable()
+{
+    auto device = makeDevice();
+    device.productId = 0x0006;
+    device.mode = zzrk::transport::DeviceMode::Adb;
+    zzrk::transport::ScanResult result{.devices = {device}, .error = {}};
+
+    std::ostringstream output;
+    std::ostringstream errorOutput;
+    const int exitCode = zzrk::cli::printScanResult(
+        result, output, errorOutput, "permission help");
+    expect(exitCode == 0, "an ADB device is a successful discovery result");
+    expect(output.str().find("2207:0006") != std::string::npos,
+           "the observed ADB PID is printed");
+    expect(output.str().find("Not flashable") != std::string::npos,
+           "ADB is explicitly marked as not flashable");
+}
+
+void testJsonDeviceListHasStableEnvelope()
+{
+    auto device = makeLoaderDevice();
+    zzrk::transport::ScanResult result{.devices = {device}, .error = {}};
+    std::ostringstream output;
+    const int exitCode =
+        zzrk::cli::printScanResultJson(result, output, "permission help");
+    const std::string json = output.str();
+
+    expect(exitCode == 0, "complete JSON output succeeds");
+    expect(json.find("\"schemaVersion\":1") != std::string::npos,
+           "JSON output is versioned");
+    expect(json.find("\"portPath\":\"1-5\"") != std::string::npos,
+           "JSON output contains stable device identity");
+    expect(json.find("\"mode\":\"Loader\"") != std::string::npos,
+           "JSON output contains the device mode");
+    expect(json.find("\"rockusbOperable\":true") != std::string::npos,
+           "JSON output marks Loader as RockUSB-operable");
+    expect(json.find("\"error\":null") != std::string::npos,
+           "JSON success has an explicit null error");
+}
+
+void testJsonScanErrorEscapesText()
+{
+    zzrk::transport::ScanResult result{
+        .devices = {},
+        .error = zzrk::transport::ScanError{
+            .code = -3,
+            .message = "denied \"usb\"\nnow",
+            .kind = zzrk::transport::ScanErrorKind::AccessDenied,
+        },
+    };
+    std::ostringstream output;
+    const int exitCode =
+        zzrk::cli::printScanResultJson(result, output, "use \\ rule");
+    const std::string json = output.str();
+
+    expect(exitCode == zzrk::cli::kFatalScanExitCode,
+           "fatal JSON scan returns the fatal exit code");
+    expect(json.find("\"success\":false") != std::string::npos,
+           "fatal JSON scan reports failure");
+    expect(json.find("denied \\\"usb\\\"\\nnow") != std::string::npos,
+           "JSON error text is escaped");
+    expect(json.find("use \\\\ rule") != std::string::npos,
+           "JSON help text is escaped");
 }
 
 void testLoaderSelectionRequiresExactUniquePath()
@@ -362,6 +428,9 @@ int main()
     testFatalErrorHelpIsCategorySpecific();
     testPartialScanReturnsTwo();
     testCompleteDeviceListSucceeds();
+    testAdbDeviceIsVisibleButNotOperable();
+    testJsonDeviceListHasStableEnvelope();
+    testJsonScanErrorEscapesText();
     testLoaderSelectionRequiresExactUniquePath();
     testLoaderSelectionRejectsPartialScan();
     testLoaderSelectionRequiresExactIdentity();
