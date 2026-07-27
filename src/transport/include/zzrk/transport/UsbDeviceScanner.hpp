@@ -13,6 +13,7 @@ namespace zzrk::transport {
 
 enum class DeviceMode {
     Unknown,
+    Adb,
     Maskrom,
     Loader,
 };
@@ -20,6 +21,8 @@ enum class DeviceMode {
 [[nodiscard]] constexpr std::string_view toString(const DeviceMode mode) noexcept
 {
     switch (mode) {
+    case DeviceMode::Adb:
+        return "ADB";
     case DeviceMode::Maskrom:
         return "Maskrom";
     case DeviceMode::Loader:

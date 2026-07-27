@@ -14,27 +14,23 @@ namespace zzrk::transport {
 namespace {
 
 constexpr std::uint16_t kRockchipVendorId = 0x2207;
-constexpr std::array<std::uint16_t, 2> kKnownNonRockusbProductIds{
-    0x0000,
-    0x0010,
-};
+constexpr std::uint16_t kObservedAdbProductId = 0x0006;
 
-[[nodiscard]] bool isRockusbDevice(const std::uint16_t vendorId,
-                                   const std::uint16_t productId) noexcept
+[[nodiscard]] bool isRockchipDevice(const std::uint16_t vendorId) noexcept
 {
-    if (vendorId != kRockchipVendorId
-        || std::ranges::find(kKnownNonRockusbProductIds, productId)
-               != kKnownNonRockusbProductIds.end()) {
-        return false;
-    }
-
-    // RockUSB PIDs encode the SoC family in the high byte. Low-byte-only PIDs
-    // are used by non-flashing modes and must not enter the flashing list.
-    return (productId & 0xff00U) != 0U;
+    return vendorId == kRockchipVendorId;
 }
 
-[[nodiscard]] DeviceMode inferMode(const std::uint16_t bcdUsb) noexcept
+[[nodiscard]] DeviceMode inferMode(const std::uint16_t productId,
+                                   const std::uint16_t bcdUsb) noexcept
 {
+    if (productId == kObservedAdbProductId) {
+        return DeviceMode::Adb;
+    }
+    if ((productId & 0xff00U) == 0U) {
+        return DeviceMode::Unknown;
+    }
+
     // Rockchip's tools use bit 0 of bcdUSB as the Maskrom/Loader mode flag.
     return (bcdUsb & 0x0001U) == 0U ? DeviceMode::Maskrom
                                     : DeviceMode::Loader;
@@ -147,7 +143,7 @@ ScanResult UsbDeviceScanner::scanRockchipDevices() const
             }
             continue;
         }
-        if (!isRockusbDevice(descriptor.idVendor, descriptor.idProduct)) {
+        if (!isRockchipDevice(descriptor.idVendor)) {
             continue;
         }
 
@@ -178,7 +174,7 @@ ScanResult UsbDeviceScanner::scanRockchipDevices() const
             .busNumber = busNumber,
             .portNumbers = std::move(ports),
             .portPath = portPath,
-            .mode = inferMode(descriptor.bcdUSB),
+            .mode = inferMode(descriptor.idProduct, descriptor.bcdUSB),
             .deviceAddress = address,
         });
     }

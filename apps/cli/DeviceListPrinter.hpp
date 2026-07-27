@@ -18,4 +18,9 @@ inline constexpr int kPartialScanExitCode = 2;
     std::ostream& errorOutput,
     std::string_view usbAccessHelp);
 
+[[nodiscard]] int printScanResultJson(
+    const transport::ScanResult& result,
+    std::ostream& output,
+    std::string_view usbAccessHelp);
+
 } // namespace zzrk::cli

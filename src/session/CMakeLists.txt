@@ -3,8 +3,12 @@
 add_library(
     zzrk_session STATIC
     src/ReadChipInfo.cpp
+    src/ReadCapability.cpp
     src/ReadFlashId.cpp
     src/ReadFlashInfo.cpp
+    src/ReadLba.cpp
+    src/WriteLba.cpp
+    src/EraseLba.cpp
     src/RockusbSession.cpp
 )
 add_library(zzrk::session ALIAS zzrk_session)
@@ -17,6 +21,6 @@ target_include_directories(
 )
 target_link_libraries(
     zzrk_session
-    PUBLIC zzrk::protocol zzrk_project_options
+    PUBLIC zzrk::core zzrk::protocol zzrk_project_options
     PRIVATE zzrk_project_warnings
 )

@@ -45,6 +45,8 @@ QString modeText(zzrk::transport::DeviceMode mode)
     using zzrk::transport::DeviceMode;
 
     switch (mode) {
+    case DeviceMode::Adb:
+        return QStringLiteral("ADB");
     case DeviceMode::Maskrom:
         return QStringLiteral("Maskrom");
     case DeviceMode::Loader:

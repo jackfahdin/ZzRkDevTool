@@ -3,6 +3,7 @@
 #pragma once
 
 #include <zzrk/session/ReadChipInfo.hpp>
+#include <zzrk/session/ReadCapability.hpp>
 #include <zzrk/session/ReadFlashId.hpp>
 #include <zzrk/session/ReadFlashInfo.hpp>
 #include <zzrk/transport/LibusbBulkTransport.hpp>
@@ -42,6 +43,10 @@ void printProbeSuccess(const transport::UsbDeviceInfo& device,
 void printChipInfo(const transport::UsbDeviceInfo& device,
                    const session::ChipInfo& chipInfo,
                    std::ostream& output);
+
+void printCapability(const transport::UsbDeviceInfo& device,
+                     const session::Capability& capability,
+                     std::ostream& output);
 
 void printFlashInfo(const transport::UsbDeviceInfo& device,
                     const session::FlashInfo& flashInfo,
