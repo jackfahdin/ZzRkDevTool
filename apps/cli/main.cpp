@@ -60,8 +60,8 @@ void printUsage(const std::string_view executable, std::ostream& output)
               "command to the explicitly selected Loader device.\n"
            << "The read-flash-id command sends one read-only RockUSB "
               "command to the explicitly selected Loader device.\n"
-           << "The flash-image command writes GPT and every partition payload "
-              "from an RK3588 update.img; the active Loader is preserved.\n";
+           << "The flash-image command writes GPT, every partition payload, "
+              "and the embedded Loader from an RK3588 update.img.\n";
 }
 
 [[nodiscard]] std::string_view describeOpenError(
@@ -236,6 +236,10 @@ void logReadFailure(const zzrk::session::SessionError& error,
         return "reading the firmware image failed";
     case FirmwareFlashErrorCode::unsupportedPayload:
         return "the partition payload is unsupported or inconsistent";
+    case FirmwareFlashErrorCode::invalidLoader:
+        return "the embedded Loader cannot form a valid eMMC IDBlock";
+    case FirmwareFlashErrorCode::loaderUnsupported:
+        return "the device does not report New IDBlock Loader support";
     case FirmwareFlashErrorCode::partitionTableGenerationFailed:
         return "GPT generation failed";
     case FirmwareFlashErrorCode::eraseFailed:
@@ -243,7 +247,7 @@ void logReadFailure(const zzrk::session::SessionError& error,
     case FirmwareFlashErrorCode::writeFailed:
         return "eMMC write failed";
     case FirmwareFlashErrorCode::verifyFailed:
-        return "GPT read-back verification failed";
+        return "eMMC read-back verification failed";
     }
     return "unknown flash error";
 }
@@ -261,6 +265,10 @@ void logReadFailure(const zzrk::session::SessionError& error,
         return "erase";
     case FirmwareFlashPhase::writePartition:
         return "write";
+    case FirmwareFlashPhase::writeLoader:
+        return "write Loader";
+    case FirmwareFlashPhase::verifyLoader:
+        return "verify Loader";
     }
     return "flash";
 }
@@ -793,7 +801,8 @@ int flashImage(const std::string_view portPath,
                 << image.model << ", eMMC " << deviceSectors
                 << " sectors, partition payload "
                 << plan.totalPartitionBytes
-                << " bytes; current Loader will be preserved";
+                << " bytes; embedded Loader will be upgraded last and "
+                   "verified";
         zzrk::logging::warning(summary.str());
     }
 
@@ -850,7 +859,9 @@ int flashImage(const std::string_view portPath,
     message << "System flash completed: " << success.partitionBytesWritten
             << " partition bytes processed, " << success.sectorsErased
             << " sectors erased, primary GPT verified, backup GPT write "
-               "submitted, Loader preserved";
+               "submitted, Loader "
+            << (success.loaderWritten ? "written" : "not written")
+            << (success.loaderVerified ? " and verified" : "");
     zzrk::logging::info(message.str());
     return EXIT_SUCCESS;
 }

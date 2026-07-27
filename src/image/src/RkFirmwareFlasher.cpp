@@ -4,6 +4,7 @@
 
 #include <zzrk/core/StorageUnits.hpp>
 #include <zzrk/session/EraseLba.hpp>
+#include <zzrk/session/ReadCapability.hpp>
 #include <zzrk/session/ReadLba.hpp>
 #include <zzrk/session/WriteLba.hpp>
 
@@ -37,6 +38,13 @@ constexpr std::uint16_t kSparseRawChunk = 0xcac1U;
 constexpr std::uint16_t kSparseFillChunk = 0xcac2U;
 constexpr std::uint16_t kSparseDontCareChunk = 0xcac3U;
 constexpr std::uint16_t kSparseCrc32Chunk = 0xcac4U;
+constexpr std::uint64_t kLoaderLba = 64U;
+constexpr std::size_t kLoaderAlignment = 2048U;
+constexpr std::size_t kMaximumIdBlockBytes = 64U * 1024U * 1024U;
+constexpr std::array<std::uint8_t, 16> kRockchipRc4Key{
+    124U, 78U, 3U,  4U,  85U, 5U,  9U,  7U,
+    45U,  44U, 123U, 56U, 23U, 13U, 23U, 17U,
+};
 
 struct GptBuffers {
     std::array<std::byte, kPrimaryGptSectors * kSectorSize> primary{};
@@ -305,6 +313,117 @@ makeGpt(const RkFirmwareImage& image, const std::uint64_t deviceSectors)
            && static_cast<bool>(stream);
 }
 
+[[nodiscard]] constexpr std::size_t alignUp(
+    const std::size_t value, const std::size_t alignment) noexcept
+{
+    return (value + alignment - 1U) / alignment * alignment;
+}
+
+void rockchipRc4(const std::span<std::byte> bytes) noexcept
+{
+    std::array<std::uint8_t, 256> state{};
+    for (std::size_t index = 0; index < state.size(); ++index) {
+        state[index] = static_cast<std::uint8_t>(index);
+    }
+
+    std::uint16_t second = 0;
+    for (std::uint16_t first = 0; first < state.size(); ++first) {
+        const auto keyByte = static_cast<std::uint16_t>(
+            kRockchipRc4Key[first % kRockchipRc4Key.size()]);
+        const auto sum = static_cast<std::uint32_t>(second)
+                         + static_cast<std::uint32_t>(state[first])
+                         + static_cast<std::uint32_t>(keyByte);
+        second = static_cast<std::uint16_t>(
+            sum & 0xffU);
+        std::swap(state[first], state[second]);
+    }
+
+    std::uint16_t first = 0;
+    second = 0;
+    for (auto& byte : bytes) {
+        first = static_cast<std::uint16_t>((first + 1U) & 0xffU);
+        second = static_cast<std::uint16_t>(
+            (second + state[first]) & 0xffU);
+        std::swap(state[first], state[second]);
+        const std::uint8_t keyByte = state[static_cast<std::uint8_t>(
+            state[first] + state[second])];
+        byte ^= static_cast<std::byte>(keyByte);
+    }
+}
+
+[[nodiscard]] std::variant<std::vector<std::byte>, FirmwareFlashError>
+makeIdBlock(std::ifstream& stream, const RkFirmwareImage& image,
+            const RkFirmwareFlashPlan& plan)
+{
+    const auto loaderStep = std::ranges::find(
+        plan.steps, FirmwareFlashStepKind::upgradeLoader,
+        &FirmwareFlashStep::kind);
+    if (!image.loader.has_value() || loaderStep == plan.steps.end()
+        || !loaderStep->entryIndex.has_value()
+        || *loaderStep->entryIndex >= image.entries.size()
+        || loaderStep->outputSize != image.loader->idBlockSize) {
+        return makeError(FirmwareFlashErrorCode::invalidLoader,
+                         "eMMC IDBlock");
+    }
+
+    const auto& info = *image.loader;
+    const auto& entry = image.entries[*loaderStep->entryIndex];
+    if (entry.name != "bootloader" || info.idBlockSize == 0U
+        || info.idBlockSize > kMaximumIdBlockBytes
+        || info.idBlockSize % kSectorSize != 0U) {
+        return makeError(FirmwareFlashErrorCode::invalidLoader,
+                         "eMMC IDBlock");
+    }
+
+    std::vector<std::byte> idBlock(static_cast<std::size_t>(info.idBlockSize));
+    const std::size_t dataOffset =
+        alignUp(info.flashHead.size, kLoaderAlignment);
+    const std::size_t bootOffset =
+        dataOffset + alignUp(info.flashData.size, kLoaderAlignment);
+
+    const auto loadComponent = [&](const FirmwareLoaderComponent& component,
+                                   const std::size_t destinationOffset)
+        -> std::optional<FirmwareFlashError> {
+        if (component.size == 0U || component.size % kSectorSize != 0U
+            || destinationOffset > idBlock.size()
+            || component.size > idBlock.size() - destinationOffset
+            || component.relativeOffset > entry.contentSize
+            || component.size
+                   > entry.contentSize - component.relativeOffset) {
+            return makeError(FirmwareFlashErrorCode::invalidLoader,
+                             "eMMC IDBlock");
+        }
+        if (!seekTo(stream, entry.fileOffset + component.relativeOffset)) {
+            return makeError(FirmwareFlashErrorCode::imageSeekFailed,
+                             "embedded Loader");
+        }
+        auto destination = std::span<std::byte>{idBlock}.subspan(
+            destinationOffset, component.size);
+        if (!readExact(stream, destination)) {
+            return makeError(FirmwareFlashErrorCode::imageReadFailed,
+                             "embedded Loader");
+        }
+        if (info.rc4Disable) {
+            for (std::size_t offset = 0; offset < destination.size();
+                 offset += kSectorSize) {
+                rockchipRc4(destination.subspan(offset, kSectorSize));
+            }
+        }
+        return std::nullopt;
+    };
+
+    if (auto error = loadComponent(info.flashHead, 0U)) {
+        return *error;
+    }
+    if (auto error = loadComponent(info.flashData, dataOffset)) {
+        return *error;
+    }
+    if (auto error = loadComponent(info.flashBoot, bootOffset)) {
+        return *error;
+    }
+    return idBlock;
+}
+
 [[nodiscard]] std::optional<FirmwareFlashError>
 writeBuffer(session::RockusbSession& rockusb,
             const std::span<const std::byte> source, std::uint64_t firstLba,
@@ -546,17 +665,34 @@ verifyBuffer(session::RockusbSession& rockusb,
              const std::span<const std::byte> expected,
              const std::uint64_t firstLba, const std::string_view target)
 {
-    std::vector<std::byte> actual(expected.size());
-    const auto result = session::readLba(
-        rockusb, core::Lba{firstLba},
-        core::SectorCount{expected.size() / kSectorSize}, actual);
-    if (const auto* error = std::get_if<session::SessionError>(&result)) {
-        return makeSessionError(FirmwareFlashErrorCode::verifyFailed,
-                                std::string{target}, *error);
-    }
-    if (!std::equal(expected.begin(), expected.end(), actual.begin())) {
-        return makeError(FirmwareFlashErrorCode::verifyFailed,
+    if (expected.empty() || expected.size() % kSectorSize != 0U) {
+        return makeError(FirmwareFlashErrorCode::invalidPlan,
                          std::string{target});
+    }
+    std::vector<std::byte> actual(kTransferBytes);
+    std::size_t offset = 0;
+    while (offset < expected.size()) {
+        const std::size_t bytes =
+            std::min(actual.size(), expected.size() - offset);
+        auto destination = std::span<std::byte>{actual}.first(bytes);
+        const auto result = session::readLba(
+            rockusb,
+            core::Lba{firstLba + offset / kSectorSize},
+            core::SectorCount{bytes / kSectorSize}, destination);
+        if (const auto* error =
+                std::get_if<session::SessionError>(&result)) {
+            return makeSessionError(FirmwareFlashErrorCode::verifyFailed,
+                                    std::string{target}, *error, offset);
+        }
+        if (!std::equal(expected.begin()
+                            + static_cast<std::ptrdiff_t>(offset),
+                        expected.begin()
+                            + static_cast<std::ptrdiff_t>(offset + bytes),
+                        destination.begin())) {
+            return makeError(FirmwareFlashErrorCode::verifyFailed,
+                             std::string{target}, offset);
+        }
+        offset += bytes;
     }
     return std::nullopt;
 }
@@ -584,6 +720,37 @@ FirmwareFlashResult flashRkFirmwareImage(
     if (!stream) {
         return makeError(FirmwareFlashErrorCode::imageOpenFailed,
                          image.sourcePath.string());
+    }
+
+    std::optional<std::vector<std::byte>> idBlock;
+    if (options.upgradeLoader) {
+        auto prepared = makeIdBlock(stream, image, plan);
+        if (const auto* error =
+                std::get_if<FirmwareFlashError>(&prepared)) {
+            return *error;
+        }
+        idBlock = std::get<std::vector<std::byte>>(std::move(prepared));
+        const std::uint64_t loaderSectors = idBlock->size() / kSectorSize;
+        if (kLoaderLba > deviceSectors
+            || loaderSectors > deviceSectors - kLoaderLba) {
+            return makeError(FirmwareFlashErrorCode::deviceTooSmall,
+                             "eMMC IDBlock");
+        }
+
+        const auto capabilityResult = session::readCapability(rockusb);
+        if (const auto* error =
+                std::get_if<session::SessionError>(&capabilityResult)) {
+            return makeSessionError(
+                FirmwareFlashErrorCode::loaderUnsupported,
+                "New IDBlock capability", *error);
+        }
+        const auto& capability =
+            std::get<session::Capability>(capabilityResult);
+        if ((std::to_integer<std::uint8_t>(capability.rawBytes[1]) & 1U)
+            == 0U) {
+            return makeError(FirmwareFlashErrorCode::loaderUnsupported,
+                             "New IDBlock capability");
+        }
     }
 
     std::optional<GptBuffers> gpt;
@@ -625,18 +792,30 @@ FirmwareFlashResult flashRkFirmwareImage(
                kPrimaryGptSectors * kSectorSize);
     }
 
-    for (const auto& step : plan.steps) {
-        if (step.kind != FirmwareFlashStepKind::writePartition) {
+    for (const auto& plannedStep : plan.steps) {
+        if (plannedStep.kind != FirmwareFlashStepKind::writePartition) {
             continue;
         }
+        FirmwareFlashStep step = plannedStep;
         if (!step.entryIndex.has_value()
             || *step.entryIndex >= image.entries.size()) {
             return makeError(FirmwareFlashErrorCode::invalidPlan, step.target,
                              success.partitionBytesWritten);
         }
         const auto& entry = image.entries[*step.entryIndex];
-        if (entry.logicalSize > step.sectorCount * core::kSectorSize
-            || step.firstLba + step.sectorCount > deviceSectors) {
+        if (step.sectorCount == 0U) {
+            if (step.firstLba > deviceSectors
+                || deviceSectors - step.firstLba <= kBackupGptSectors) {
+                return makeError(FirmwareFlashErrorCode::deviceTooSmall,
+                                 step.target,
+                                 success.partitionBytesWritten);
+            }
+            step.sectorCount =
+                deviceSectors - step.firstLba - kBackupGptSectors;
+        }
+        if (step.firstLba > deviceSectors
+            || step.sectorCount > deviceSectors - step.firstLba
+            || entry.logicalSize > step.sectorCount * core::kSectorSize) {
             return makeError(FirmwareFlashErrorCode::invalidPlan, step.target,
                              success.partitionBytesWritten);
         }
@@ -665,6 +844,30 @@ FirmwareFlashResult flashRkFirmwareImage(
             return *error;
         }
         success.partitionBytesWritten += entry.logicalSize;
+    }
+
+    if (idBlock.has_value()) {
+        report(progress, FirmwareFlashPhase::writeLoader, "eMMC IDBlock", 0,
+               idBlock->size());
+        if (auto error =
+                writeBuffer(rockusb, *idBlock, kLoaderLba, "eMMC IDBlock")) {
+            return *error;
+        }
+        success.loaderWritten = true;
+        report(progress, FirmwareFlashPhase::writeLoader, "eMMC IDBlock",
+               idBlock->size(), idBlock->size());
+
+        if (options.verifyLoader) {
+            report(progress, FirmwareFlashPhase::verifyLoader,
+                   "eMMC IDBlock", 0, idBlock->size());
+            if (auto error = verifyBuffer(rockusb, *idBlock, kLoaderLba,
+                                          "eMMC IDBlock")) {
+                return *error;
+            }
+            success.loaderVerified = true;
+            report(progress, FirmwareFlashPhase::verifyLoader,
+                   "eMMC IDBlock", idBlock->size(), idBlock->size());
+        }
     }
     return success;
 }
