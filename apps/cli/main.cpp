@@ -849,7 +849,8 @@ int flashImage(const std::string_view portPath,
     std::ostringstream message;
     message << "System flash completed: " << success.partitionBytesWritten
             << " partition bytes processed, " << success.sectorsErased
-            << " sectors erased, GPT written and verified, Loader preserved";
+            << " sectors erased, primary GPT verified, backup GPT write "
+               "submitted, Loader preserved";
     zzrk::logging::info(message.str());
     return EXIT_SUCCESS;
 }
