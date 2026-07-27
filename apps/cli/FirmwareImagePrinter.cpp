@@ -30,6 +30,8 @@ std::string_view describeFirmwareImageError(
         return "the RKFW boot region is out of bounds";
     case FirmwareImageErrorCode::invalidBootSignature:
         return "the embedded Loader has an unsupported signature";
+    case FirmwareImageErrorCode::invalidLoader:
+        return "the embedded Loader container is invalid";
     case FirmwareImageErrorCode::invalidFirmwareRegion:
         return "the RKFW firmware region is out of bounds";
     case FirmwareImageErrorCode::invalidRkafSignature:
@@ -86,6 +88,19 @@ void printFirmwareImage(const image::RkFirmwareImage& firmware,
            << "Trailing MD5: " << firmware.trailingMd5.data() << '\n'
            << "Entries: " << firmware.entries.size() << '\n';
 
+    if (firmware.loader.has_value()) {
+        const auto& loader = *firmware.loader;
+        output << "Loader version: 0x" << std::hex << loader.version
+               << ", chip=0x" << loader.chipType << std::dec
+               << ", RC4 transform="
+               << (loader.rc4Disable ? "required" : "not required") << '\n'
+               << "Loader components: FlashHead=" << loader.flashHead.size
+               << ", FlashData=" << loader.flashData.size
+               << ", FlashBoot=" << loader.flashBoot.size << " bytes\n"
+               << "eMMC IDBlock: " << loader.idBlockSize << " bytes ("
+               << loader.idBlockSize / 512U << " sectors at LBA 64)\n";
+    }
+
     for (std::size_t index = 0; index < firmware.entries.size(); ++index) {
         const auto& entry = firmware.entries[index];
         output << "  [" << index << "] " << entry.name << " -> "
@@ -128,8 +143,6 @@ std::string_view describeFirmwarePlanError(
         return "the partition layout contains duplicate names";
     case FirmwarePlanErrorCode::targetPartitionMissing:
         return "an image entry has no target partition";
-    case FirmwarePlanErrorCode::targetPartitionHasNoFixedSize:
-        return "an image entry targets a grow-only partition";
     case FirmwarePlanErrorCode::targetPartitionTooSmall:
         return "an image is larger than its target partition";
     case FirmwarePlanErrorCode::partitionRangeOverflow:
@@ -158,8 +171,13 @@ void printFirmwareFlashPlan(const image::RkFirmwareFlashPlan& plan,
             break;
         case image::FirmwareFlashStepKind::writePartition:
             output << "Write " << step.target << " at LBA 0x" << std::hex
-                   << step.firstLba << std::dec << " (capacity "
-                   << step.sectorCount << " sectors)";
+                   << step.firstLba << std::dec << " (capacity ";
+            if (step.sectorCount == 0U) {
+                output << "grow";
+            } else {
+                output << step.sectorCount << " sectors";
+            }
+            output << ')';
             break;
         }
         output << ", input=" << step.inputSize

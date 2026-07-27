@@ -10,6 +10,7 @@
 #include <limits>
 #include <span>
 #include <system_error>
+#include <utility>
 
 namespace zzrk::image {
 namespace {
@@ -28,6 +29,10 @@ constexpr std::uint16_t kSparseFillChunk = 0xcac2;
 constexpr std::uint16_t kSparseDontCareChunk = 0xcac3;
 constexpr std::uint16_t kSparseCrc32Chunk = 0xcac4;
 constexpr std::uint32_t kMaximumSparseChunks = 10'000'000;
+constexpr std::size_t kRkLoaderHeaderSize = 102;
+constexpr std::size_t kRkLoaderEntryMinimumSize = 57;
+constexpr std::uint32_t kRkLoaderEntryType = 4;
+constexpr std::uint64_t kRkLoaderAlignment = 2048;
 
 [[nodiscard]] constexpr std::uint16_t
 readLe16(const std::span<const std::byte> bytes,
@@ -115,6 +120,152 @@ readLe32(const std::span<const std::byte> bytes,
         value.push_back(static_cast<char>(character));
     }
     return value;
+}
+
+[[nodiscard]] std::string readUtf16LeName(
+    const std::span<const std::byte> bytes) noexcept
+{
+    std::string value;
+    value.reserve(bytes.size() / 2U);
+    for (std::size_t offset = 0; offset + 1U < bytes.size(); offset += 2U) {
+        const std::uint16_t character = readLe16(bytes, offset);
+        if (character == 0U) {
+            break;
+        }
+        if (character > 0x7fU) {
+            return {};
+        }
+        value.push_back(static_cast<char>(character));
+    }
+    return value;
+}
+
+[[nodiscard]] std::uint32_t rockchipCrc32(
+    const std::span<const std::byte> bytes) noexcept
+{
+    std::uint32_t crc = 0;
+    for (const auto byte : bytes) {
+        crc ^= std::to_integer<std::uint32_t>(byte) << 24U;
+        for (unsigned int bit = 0; bit < 8U; ++bit) {
+            crc = (crc & 0x80000000U) != 0U
+                      ? (crc << 1U) ^ 0x04c10db7U
+                      : crc << 1U;
+        }
+    }
+    return crc;
+}
+
+[[nodiscard]] constexpr std::uint64_t alignUp(
+    const std::uint64_t value, const std::uint64_t alignment) noexcept
+{
+    return (value + alignment - 1U) / alignment * alignment;
+}
+
+[[nodiscard]] std::variant<FirmwareLoaderInfo, FirmwareImageError>
+parseLoader(std::ifstream& stream, const FirmwareEntry& entry,
+            const std::size_t entryIndex) noexcept
+{
+    if (entry.contentSize < kRkLoaderHeaderSize + 4U) {
+        return makeError(FirmwareImageErrorCode::invalidLoader,
+                         entry.fileOffset, entryIndex);
+    }
+    std::vector<std::byte> bytes(entry.contentSize);
+    if (!readAt(stream, entry.fileOffset, bytes)) {
+        return makeError(FirmwareImageErrorCode::shortRead,
+                         entry.fileOffset, entryIndex);
+    }
+    const auto loader = std::span<const std::byte>{bytes};
+    if ((!hasSignature(loader, "LDR ") && !hasSignature(loader, "BOOT"))
+        || readLe16(loader, 4) < kRkLoaderHeaderSize
+        || readLe16(loader, 4) > entry.contentSize - 4U
+        || rockchipCrc32(loader.first(loader.size() - 4U))
+               != readLe32(loader, loader.size() - 4U)) {
+        return makeError(FirmwareImageErrorCode::invalidLoader,
+                         entry.fileOffset, entryIndex);
+    }
+
+    struct Table {
+        std::uint8_t count{};
+        std::uint32_t offset{};
+        std::uint8_t entrySize{};
+        std::uint32_t expectedType{};
+    };
+    const std::array tables{
+        Table{std::to_integer<std::uint8_t>(loader[25]), readLe32(loader, 26),
+              std::to_integer<std::uint8_t>(loader[30]), 1U},
+        Table{std::to_integer<std::uint8_t>(loader[31]), readLe32(loader, 32),
+              std::to_integer<std::uint8_t>(loader[36]), 2U},
+        Table{std::to_integer<std::uint8_t>(loader[37]), readLe32(loader, 38),
+              std::to_integer<std::uint8_t>(loader[42]),
+              kRkLoaderEntryType},
+    };
+
+    FirmwareLoaderInfo info{};
+    info.version = readLe32(loader, 6);
+    info.chipType = readLe32(loader, 21);
+    info.rc4Disable = std::to_integer<std::uint8_t>(loader[44]) != 0U;
+    bool foundHead = false;
+    bool foundData = false;
+    bool foundBoot = false;
+    for (const auto& table : tables) {
+        if (table.count == 0U) {
+            continue;
+        }
+        const std::uint64_t tableSize =
+            static_cast<std::uint64_t>(table.count) * table.entrySize;
+        if (table.count > 64U || table.entrySize < kRkLoaderEntryMinimumSize
+            || !addFits(table.offset, tableSize, loader.size() - 4U)) {
+            return makeError(FirmwareImageErrorCode::invalidLoader,
+                             entry.fileOffset + table.offset, entryIndex);
+        }
+        for (std::size_t index = 0; index < table.count; ++index) {
+            const std::uint64_t relativeEntryOffset =
+                table.offset + index * table.entrySize;
+            const auto record = loader.subspan(
+                static_cast<std::size_t>(relativeEntryOffset),
+                table.entrySize);
+            const std::string name = readUtf16LeName(record.subspan(5, 40));
+            const std::uint32_t dataOffset = readLe32(record, 45);
+            const std::uint32_t dataSize = readLe32(record, 49);
+            if (std::to_integer<std::uint8_t>(record[0])
+                    < kRkLoaderEntryMinimumSize
+                || readLe32(record, 1) != table.expectedType || name.empty()
+                || dataSize == 0U
+                || !addFits(dataOffset, dataSize, loader.size() - 4U)) {
+                return makeError(FirmwareImageErrorCode::invalidLoader,
+                                 entry.fileOffset + relativeEntryOffset,
+                                 entryIndex);
+            }
+            if (table.expectedType != kRkLoaderEntryType) {
+                continue;
+            }
+            const FirmwareLoaderComponent component{
+                .relativeOffset = dataOffset,
+                .size = dataSize,
+            };
+            if (name == "FlashHead" && !foundHead) {
+                info.flashHead = component;
+                foundHead = true;
+            } else if (name == "FlashData" && !foundData) {
+                info.flashData = component;
+                foundData = true;
+            } else if (name == "FlashBoot" && !foundBoot) {
+                info.flashBoot = component;
+                foundBoot = true;
+            }
+        }
+    }
+    if (!foundHead || !foundData || !foundBoot
+        || info.flashHead.size % 512U != 0U
+        || info.flashData.size % 512U != 0U
+        || info.flashBoot.size % 512U != 0U) {
+        return makeError(FirmwareImageErrorCode::invalidLoader,
+                         entry.fileOffset, entryIndex);
+    }
+    info.idBlockSize = alignUp(info.flashHead.size, kRkLoaderAlignment)
+                       + alignUp(info.flashData.size, kRkLoaderAlignment)
+                       + alignUp(info.flashBoot.size, kRkLoaderAlignment);
+    return info;
 }
 
 [[nodiscard]] std::string readChipName(
@@ -507,6 +658,20 @@ parseRkFirmwareImage(const std::filesystem::path& path) noexcept
         image.entries.push_back(std::move(parsed));
     }
 
+    const auto loader = std::ranges::find(
+        image.entries, std::string{"bootloader"}, &FirmwareEntry::name);
+    if (loader == image.entries.end()) {
+        return makeError(FirmwareImageErrorCode::invalidLoader,
+                         image.firmwareOffset);
+    }
+    const std::size_t loaderIndex = static_cast<std::size_t>(
+        std::distance(image.entries.begin(), loader));
+    auto parsedLoader = parseLoader(stream, *loader, loaderIndex);
+    if (const auto* error = std::get_if<FirmwareImageError>(&parsedLoader)) {
+        return *error;
+    }
+    image.loader = std::get<FirmwareLoaderInfo>(std::move(parsedLoader));
+
     const auto parameter = std::ranges::find(
         image.entries, std::string{"parameter"}, &FirmwareEntry::name);
     if (parameter == image.entries.end()
@@ -557,7 +722,7 @@ buildRkFirmwareFlashPlan(const RkFirmwareImage& image) noexcept
 
     const auto loader = std::ranges::find(
         image.entries, std::string{"bootloader"}, &FirmwareEntry::name);
-    if (loader == image.entries.end()) {
+    if (loader == image.entries.end() || !image.loader.has_value()) {
         return FirmwarePlanError{
             .code = FirmwarePlanErrorCode::missingLoader,
             .target = "bootloader",
@@ -588,7 +753,8 @@ buildRkFirmwareFlashPlan(const RkFirmwareImage& image) noexcept
         .sourcePath = image.sourcePath,
         .targetChip = "RK" + image.chip,
         .targetModel = image.model,
-        .minimumDeviceSectors = 0,
+        .minimumDeviceSectors =
+            64U + image.loader->idBlockSize / 512U,
         .totalPartitionBytes = 0,
         .steps = {},
     };
@@ -599,8 +765,8 @@ buildRkFirmwareFlashPlan(const RkFirmwareImage& image) noexcept
         .target = "eMMC IDBlock",
         .entryIndex = loaderIndex,
         .inputSize = loader->contentSize,
-        .outputSize = loader->logicalSize,
-        .format = loader->format,
+        .outputSize = image.loader->idBlockSize,
+        .format = PayloadFormat::raw,
     });
     const auto parameterIndex = static_cast<std::size_t>(
         std::distance(image.entries.begin(), parameter));
@@ -623,10 +789,24 @@ buildRkFirmwareFlashPlan(const RkFirmwareImage& image) noexcept
                     .target = partition.name,
                 };
             }
+            if (partition.firstLba + *partition.sectorCount
+                > std::numeric_limits<std::uint64_t>::max() - 33U) {
+                return FirmwarePlanError{
+                    .code = FirmwarePlanErrorCode::partitionRangeOverflow,
+                    .target = partition.name,
+                };
+            }
             plan.minimumDeviceSectors = std::max(
                 plan.minimumDeviceSectors,
-                partition.firstLba + *partition.sectorCount);
+                partition.firstLba + *partition.sectorCount + 33U);
         } else {
+            if (partition.firstLba
+                > std::numeric_limits<std::uint64_t>::max() - 34U) {
+                return FirmwarePlanError{
+                    .code = FirmwarePlanErrorCode::partitionRangeOverflow,
+                    .target = partition.name,
+                };
+            }
             plan.minimumDeviceSectors = std::max(
                 plan.minimumDeviceSectors, partition.firstLba + 34U);
         }
@@ -648,28 +828,46 @@ buildRkFirmwareFlashPlan(const RkFirmwareImage& image) noexcept
                 .entryIndex = entryIndex,
             };
         }
-        if (!partition->sectorCount.has_value()) {
-            return FirmwarePlanError{
-                .code = FirmwarePlanErrorCode::targetPartitionHasNoFixedSize,
-                .target = entry.name,
-                .entryIndex = entryIndex,
-            };
-        }
-        if (*partition->sectorCount
-            > std::numeric_limits<std::uint64_t>::max() / 512U) {
+        if (entry.logicalSize
+            > std::numeric_limits<std::uint64_t>::max() - 511U) {
             return FirmwarePlanError{
                 .code = FirmwarePlanErrorCode::partitionRangeOverflow,
                 .target = entry.name,
                 .entryIndex = entryIndex,
             };
         }
-        const std::uint64_t partitionBytes = *partition->sectorCount * 512U;
-        if (entry.logicalSize > partitionBytes) {
+        const std::uint64_t requiredSectors =
+            (entry.logicalSize + 511U) / 512U;
+        if (partition->sectorCount.has_value()
+            && *partition->sectorCount
+                   > std::numeric_limits<std::uint64_t>::max() / 512U) {
+            return FirmwarePlanError{
+                .code = FirmwarePlanErrorCode::partitionRangeOverflow,
+                .target = entry.name,
+                .entryIndex = entryIndex,
+            };
+        }
+        if (partition->sectorCount.has_value()
+            && requiredSectors > *partition->sectorCount) {
             return FirmwarePlanError{
                 .code = FirmwarePlanErrorCode::targetPartitionTooSmall,
                 .target = entry.name,
                 .entryIndex = entryIndex,
             };
+        }
+        if (!partition->sectorCount.has_value()) {
+            if (partition->firstLba
+                > std::numeric_limits<std::uint64_t>::max()
+                      - requiredSectors - 33U) {
+                return FirmwarePlanError{
+                    .code = FirmwarePlanErrorCode::partitionRangeOverflow,
+                    .target = entry.name,
+                    .entryIndex = entryIndex,
+                };
+            }
+            plan.minimumDeviceSectors = std::max(
+                plan.minimumDeviceSectors,
+                partition->firstLba + requiredSectors + 33U);
         }
         if (plan.totalPartitionBytes
             > std::numeric_limits<std::uint64_t>::max() - entry.logicalSize) {
@@ -685,7 +883,7 @@ buildRkFirmwareFlashPlan(const RkFirmwareImage& image) noexcept
             .target = entry.name,
             .entryIndex = entryIndex,
             .firstLba = partition->firstLba,
-            .sectorCount = *partition->sectorCount,
+            .sectorCount = partition->sectorCount.value_or(0U),
             .inputSize = entry.contentSize,
             .outputSize = entry.logicalSize,
             .format = entry.format,

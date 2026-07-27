@@ -18,6 +18,8 @@ enum class FirmwareFlashPhase {
     verifyPartitionTable,
     erasePartition,
     writePartition,
+    writeLoader,
+    verifyLoader,
 };
 
 struct FirmwareFlashProgress {
@@ -34,6 +36,8 @@ struct FirmwareFlashOptions {
     bool writePartitionTable{true};
     bool verifyPartitionTable{true};
     bool eraseSparsePartitions{true};
+    bool upgradeLoader{true};
+    bool verifyLoader{true};
 };
 
 enum class FirmwareFlashErrorCode {
@@ -44,6 +48,8 @@ enum class FirmwareFlashErrorCode {
     imageSeekFailed,
     imageReadFailed,
     unsupportedPayload,
+    invalidLoader,
+    loaderUnsupported,
     partitionTableGenerationFailed,
     eraseFailed,
     writeFailed,
@@ -62,7 +68,8 @@ struct FirmwareFlashSuccess {
     std::uint64_t sectorsErased{};
     bool partitionTableWritten{};
     bool partitionTableVerified{};
-    bool loaderPreserved{true};
+    bool loaderWritten{};
+    bool loaderVerified{};
 };
 
 using FirmwareFlashResult =

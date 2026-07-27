@@ -71,6 +71,21 @@ struct FirmwarePartition {
     bool grow{};
 };
 
+struct FirmwareLoaderComponent {
+    std::uint64_t relativeOffset{};
+    std::uint32_t size{};
+};
+
+struct FirmwareLoaderInfo {
+    std::uint32_t version{};
+    std::uint32_t chipType{};
+    bool rc4Disable{};
+    FirmwareLoaderComponent flashHead;
+    FirmwareLoaderComponent flashData;
+    FirmwareLoaderComponent flashBoot;
+    std::uint64_t idBlockSize{};
+};
+
 struct RkFirmwareImage {
     std::filesystem::path sourcePath;
     std::uint64_t fileSize{};
@@ -88,6 +103,7 @@ struct RkFirmwareImage {
     std::array<char, 33> trailingMd5{};
     std::vector<FirmwareEntry> entries;
     std::vector<FirmwarePartition> partitions;
+    std::optional<FirmwareLoaderInfo> loader;
 };
 
 enum class FirmwareImageErrorCode {
@@ -100,6 +116,7 @@ enum class FirmwareImageErrorCode {
     invalidRkfwHeader,
     invalidBootRegion,
     invalidBootSignature,
+    invalidLoader,
     invalidFirmwareRegion,
     invalidRkafSignature,
     rkafSizeMismatch,
@@ -156,7 +173,6 @@ enum class FirmwarePlanErrorCode {
     missingParameter,
     duplicatePartition,
     targetPartitionMissing,
-    targetPartitionHasNoFixedSize,
     targetPartitionTooSmall,
     partitionRangeOverflow,
 };
