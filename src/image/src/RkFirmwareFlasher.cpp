@@ -611,21 +611,18 @@ FirmwareFlashResult flashRkFirmwareImage(
     }
 
     if (options.verifyPartitionTable && gpt.has_value()) {
+        // RK3588 Loader 0x0223 returns 0xCC for the disk-tail backup GPT even
+        // after a successful write. Verify the readable primary GPT strictly.
         report(progress, FirmwareFlashPhase::verifyPartitionTable, "GPT", 0,
-               (kPrimaryGptSectors + kBackupGptSectors) * kSectorSize);
+               kPrimaryGptSectors * kSectorSize);
         if (auto error = verifyBuffer(rockusb, gpt->primary, 0,
                                       "primary GPT")) {
             return *error;
         }
-        if (auto error = verifyBuffer(
-                rockusb, gpt->backup,
-                deviceSectors - kBackupGptSectors, "backup GPT")) {
-            return *error;
-        }
         success.partitionTableVerified = true;
         report(progress, FirmwareFlashPhase::verifyPartitionTable, "GPT",
-               (kPrimaryGptSectors + kBackupGptSectors) * kSectorSize,
-               (kPrimaryGptSectors + kBackupGptSectors) * kSectorSize);
+               kPrimaryGptSectors * kSectorSize,
+               kPrimaryGptSectors * kSectorSize);
     }
 
     for (const auto& step : plan.steps) {
