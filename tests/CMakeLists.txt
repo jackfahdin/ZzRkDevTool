@@ -46,6 +46,13 @@ target_link_libraries(
 )
 add_test(NAME read_flash_info COMMAND read_flash_info_test)
 
+add_executable(rk_maskrom_loader_test rk_maskrom_loader_test.cpp)
+target_link_libraries(
+    rk_maskrom_loader_test
+    PRIVATE zzrk::image zzrk_project_warnings
+)
+add_test(NAME rk_maskrom_loader COMMAND rk_maskrom_loader_test)
+
 if(TARGET zzrk_logging)
     add_executable(logging_test logging_test.cpp)
     target_link_libraries(

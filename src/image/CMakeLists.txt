@@ -4,6 +4,7 @@ add_library(
     zzrk_image STATIC
     src/RkFirmwareImage.cpp
     src/RkFirmwareFlasher.cpp
+    src/RkMaskromLoader.cpp
 )
 add_library(zzrk::image ALIAS zzrk_image)
 
