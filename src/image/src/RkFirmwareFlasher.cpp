@@ -1072,22 +1072,38 @@ FirmwareFlashResult flashRkFirmwareImage(
             return *error;
         }
         success.partitionBytesWritten += entry.logicalSize;
+    }
 
+    std::uint64_t verifiedPlanOffset = 0;
+    for (const auto& step : plan.steps) {
+        if (step.kind != FirmwareFlashStepKind::writePartition) {
+            continue;
+        }
+        if (!step.entryIndex.has_value()
+            || *step.entryIndex >= image.entries.size()) {
+            return makeError(FirmwareFlashErrorCode::invalidPlan, step.target,
+                             verifiedPlanOffset);
+        }
+        const auto& entry = image.entries[*step.entryIndex];
         if (shouldVerifyPartition(options.verifyMode, step.target)) {
+            std::optional<FirmwareFlashError> error;
             if (entry.format == PayloadFormat::raw) {
                 error = verifyRawEntry(rockusb, stream, entry, step, progress,
                                        cancellation);
-            } else {
+            } else if (entry.format == PayloadFormat::androidSparse) {
                 error = verifySparseEntry(rockusb, stream, entry, step,
                                           progress, cancellation);
+            } else {
+                error = makeError(FirmwareFlashErrorCode::unsupportedPayload,
+                                  step.target);
             }
             if (error.has_value()) {
-                error->completedBytes +=
-                    success.partitionBytesWritten - entry.logicalSize;
+                error->completedBytes += verifiedPlanOffset;
                 return *error;
             }
             ++success.partitionsVerified;
         }
+        verifiedPlanOffset += entry.logicalSize;
     }
 
     if (idBlock.has_value()) {
