@@ -14,6 +14,7 @@
 #include <zzrk/session/ReadFlashId.hpp>
 #include <zzrk/session/ReadFlashInfo.hpp>
 #include <zzrk/session/ReadLba.hpp>
+#include <zzrk/session/ResetDevice.hpp>
 #include <zzrk/session/RockusbSession.hpp>
 #include <zzrk/transport/LibusbBulkTransport.hpp>
 #include <zzrk/transport/UsbDeviceScanner.hpp>
@@ -42,7 +43,8 @@ void printUsage(const std::string_view executable, std::ostream& output)
            << "       " << executable << " inspect-image <update.img>\n"
            << "       " << executable << " plan-image <update.img>\n"
            << "       " << executable
-           << " flash-image <port-path> <update.img> --yes\n"
+           << " flash-image <port-path> <update.img> --yes [--no-reboot]\n"
+           << "       " << executable << " reset <port-path>\n"
            << "       " << executable << " probe <port-path>\n"
            << "       " << executable << " read-chip-info <port-path>\n"
            << "       " << executable << " read-capability <port-path>\n"
@@ -471,6 +473,57 @@ int readCapabilityDevice(const std::string_view portPath)
         zzrk::cli::printCapability);
 }
 
+int resetDeviceCommand(const std::string_view portPath)
+{
+    zzrk::transport::UsbDeviceScanner scanner;
+    auto scan = scanner.scanRockchipDevices();
+    const auto selected = zzrk::cli::selectLoaderDevice(scan, portPath);
+    if (!selected) {
+        zzrk::logging::error(
+            "Reset requires the validated RK3588 Loader at the selected port");
+        return EXIT_FAILURE;
+    }
+
+    auto opened = zzrk::transport::LibusbBulkTransport::open(*selected.device);
+    if (const auto* error =
+            std::get_if<zzrk::transport::LibusbOpenError>(&opened)) {
+        std::ostringstream message;
+        message << "Reset could not open Loader: "
+                << describeOpenError(error->code);
+        if (error->nativeCode != 0) {
+            message << " (libusb " << error->nativeCode << ')';
+        }
+        zzrk::logging::error(message.str());
+        return EXIT_FAILURE;
+    }
+
+    auto transport = std::move(
+        std::get<std::unique_ptr<zzrk::transport::LibusbBulkTransport>>(opened));
+    zzrk::session::RockusbSession rockusb{*transport};
+    const auto result = zzrk::session::resetDevice(rockusb);
+    const bool accepted =
+        std::holds_alternative<zzrk::session::SessionSuccess>(result);
+    const int releaseResult = transport->close();
+    transport.reset();
+    if (!accepted) {
+        logReadFailure(std::get<zzrk::session::SessionError>(result),
+                       "ResetDevice");
+        if (releaseResult < 0) {
+            zzrk::logging::error(
+                "ResetDevice also failed to release the Loader interface");
+        }
+        return EXIT_FAILURE;
+    }
+
+    if (releaseResult < 0) {
+        zzrk::logging::debug(
+            "Loader disconnected before its claimed interface was released");
+    }
+    zzrk::logging::info(
+        "Reset command accepted; the device is leaving Loader mode");
+    return EXIT_SUCCESS;
+}
+
 [[nodiscard]] bool parseUnsigned(std::string_view text,
                                  std::uint64_t& value) noexcept
 {
@@ -723,7 +776,7 @@ int planImage(const std::string_view path)
 }
 
 int flashImage(const std::string_view portPath,
-               const std::filesystem::path& imagePath)
+               const std::filesystem::path& imagePath, const bool reboot)
 {
     zzrk::logging::info("Parsing and validating the complete firmware image");
     auto parsed = zzrk::image::parseRkFirmwareImage(imagePath);
@@ -787,13 +840,19 @@ int flashImage(const std::string_view portPath,
     }
     auto transport = std::move(
         std::get<std::unique_ptr<zzrk::transport::LibusbBulkTransport>>(opened));
-    auto closeTransport = [&transport] {
+    auto closeTransport = [&transport](const bool resetAccepted = false) {
         const int result = transport->close();
         if (result < 0) {
-            std::ostringstream message;
-            message << "Could not release Loader interface (libusb " << result
-                    << ')';
-            zzrk::logging::error(message.str());
+            if (resetAccepted) {
+                zzrk::logging::debug(
+                    "Loader disconnected before its claimed interface was "
+                    "released");
+            } else {
+                std::ostringstream message;
+                message << "Could not release Loader interface (libusb "
+                        << result << ')';
+                zzrk::logging::error(message.str());
+            }
         }
         return result;
     };
@@ -879,10 +938,10 @@ int flashImage(const std::string_view portPath,
 
     const auto result = zzrk::image::flashRkFirmwareImage(
         rockusb, image, plan, deviceSectors, {}, progress);
-    const int releaseResult = closeTransport();
-    transport.reset();
     if (const auto* error =
             std::get_if<zzrk::image::FirmwareFlashError>(&result)) {
+        static_cast<void>(closeTransport());
+        transport.reset();
         std::ostringstream message;
         message << "System flash failed at " << error->target << ": "
                 << describeFlashError(error->code);
@@ -895,9 +954,7 @@ int flashImage(const std::string_view portPath,
         }
         return EXIT_FAILURE;
     }
-    if (releaseResult < 0) {
-        return EXIT_FAILURE;
-    }
+
     const auto& success =
         std::get<zzrk::image::FirmwareFlashSuccess>(result);
     std::ostringstream message;
@@ -908,6 +965,36 @@ int flashImage(const std::string_view portPath,
             << (success.loaderWritten ? "written" : "not written")
             << (success.loaderVerified ? " and verified" : "");
     zzrk::logging::info(message.str());
+
+    bool resetAccepted = false;
+    std::optional<zzrk::session::SessionError> resetError;
+    if (reboot) {
+        const auto resetResult = zzrk::session::resetDevice(rockusb);
+        if (const auto* error =
+                std::get_if<zzrk::session::SessionError>(&resetResult)) {
+            resetError = *error;
+        } else {
+            resetAccepted = true;
+        }
+    }
+    const int releaseResult = closeTransport(resetAccepted);
+    transport.reset();
+
+    if (resetError.has_value()) {
+        logReadFailure(*resetError,
+                       "System flash succeeded but ResetDevice");
+        return EXIT_FAILURE;
+    }
+    if (resetAccepted) {
+        zzrk::logging::info(
+            "Reset command accepted; the device is booting the new system");
+        return EXIT_SUCCESS;
+    }
+    if (releaseResult < 0) {
+        return EXIT_FAILURE;
+    }
+    zzrk::logging::info(
+        "Automatic reboot disabled; the device remains in Loader mode");
     return EXIT_SUCCESS;
 }
 
@@ -933,12 +1020,21 @@ int main(const int argc, char* argv[])
     }
     if (argc == 5 && std::string_view{argv[1]} == "flash-image"
         && std::string_view{argv[4]} == "--yes") {
-        return flashImage(argv[2], argv[3]);
+        return flashImage(argv[2], argv[3], true);
+    }
+    if (argc == 6 && std::string_view{argv[1]} == "flash-image"
+        && std::string_view{argv[4]} == "--yes"
+        && std::string_view{argv[5]} == "--no-reboot") {
+        return flashImage(argv[2], argv[3], false);
     }
     if (argc >= 2 && std::string_view{argv[1]} == "flash-image") {
         zzrk::logging::error(
-            "flash-image requires: <port-path> <update.img> --yes");
+            "flash-image requires: <port-path> <update.img> --yes "
+            "[--no-reboot]");
         return 64;
+    }
+    if (argc == 3 && std::string_view{argv[1]} == "reset") {
+        return resetDeviceCommand(argv[2]);
     }
     if (argc == 3 && std::string_view{argv[1]} == "probe") {
         return probeDevice(argv[2]);
