@@ -18,6 +18,7 @@ enum class FirmwareFlashPhase {
     verifyPartitionTable,
     erasePartition,
     writePartition,
+    verifyPartition,
     writeLoader,
     verifyLoader,
 };
@@ -32,12 +33,17 @@ struct FirmwareFlashProgress {
 using FirmwareFlashProgressCallback =
     std::function<void(const FirmwareFlashProgress&)>;
 
+enum class FirmwareVerifyMode {
+    none,
+    critical,
+    all,
+};
+
 struct FirmwareFlashOptions {
     bool writePartitionTable{true};
-    bool verifyPartitionTable{true};
     bool eraseSparsePartitions{true};
     bool upgradeLoader{true};
-    bool verifyLoader{true};
+    FirmwareVerifyMode verifyMode{FirmwareVerifyMode::critical};
 };
 
 enum class FirmwareFlashErrorCode {
@@ -66,6 +72,7 @@ struct FirmwareFlashError {
 struct FirmwareFlashSuccess {
     std::uint64_t partitionBytesWritten{};
     std::uint64_t sectorsErased{};
+    std::uint32_t partitionsVerified{};
     bool partitionTableWritten{};
     bool partitionTableVerified{};
     bool loaderWritten{};

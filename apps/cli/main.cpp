@@ -43,7 +43,8 @@ void printUsage(const std::string_view executable, std::ostream& output)
            << "       " << executable << " inspect-image <update.img>\n"
            << "       " << executable << " plan-image <update.img>\n"
            << "       " << executable
-           << " flash-image <port-path> <update.img> --yes [--no-reboot]\n"
+           << " flash-image <port-path> <update.img> --yes "
+              "[--verify critical|all|none] [--no-reboot]\n"
            << "       " << executable << " reset <port-path>\n"
            << "       " << executable << " probe <port-path>\n"
            << "       " << executable << " read-chip-info <port-path>\n"
@@ -268,6 +269,8 @@ void logReadFailure(const zzrk::session::SessionError& error,
         return "erase";
     case FirmwareFlashPhase::writePartition:
         return "write";
+    case FirmwareFlashPhase::verifyPartition:
+        return "verify";
     case FirmwareFlashPhase::writeLoader:
         return "write Loader";
     case FirmwareFlashPhase::verifyLoader:
@@ -775,8 +778,75 @@ int planImage(const std::string_view path)
     return EXIT_SUCCESS;
 }
 
+[[nodiscard]] std::string_view describeVerifyMode(
+    const zzrk::image::FirmwareVerifyMode mode) noexcept
+{
+    using zzrk::image::FirmwareVerifyMode;
+    switch (mode) {
+    case FirmwareVerifyMode::none:
+        return "none";
+    case FirmwareVerifyMode::critical:
+        return "critical";
+    case FirmwareVerifyMode::all:
+        return "all";
+    }
+    return "unknown";
+}
+
+struct FlashCommandOptions {
+    bool reboot{true};
+    zzrk::image::FirmwareVerifyMode verifyMode{
+        zzrk::image::FirmwareVerifyMode::critical};
+};
+
+[[nodiscard]] std::optional<FlashCommandOptions>
+parseFlashCommandOptions(const int argc, char* argv[]) noexcept
+{
+    if (argc < 5) {
+        return std::nullopt;
+    }
+    FlashCommandOptions options{};
+    bool confirmed = false;
+    bool rebootSpecified = false;
+    bool verifySpecified = false;
+    for (int index = 4; index < argc; ++index) {
+        const std::string_view argument{argv[index]};
+        if (argument == "--yes" && !confirmed) {
+            confirmed = true;
+            continue;
+        }
+        if (argument == "--no-reboot" && !rebootSpecified) {
+            rebootSpecified = true;
+            options.reboot = false;
+            continue;
+        }
+        if (argument == "--verify" && !verifySpecified
+            && index + 1 < argc) {
+            verifySpecified = true;
+            const std::string_view value{argv[++index]};
+            if (value == "critical") {
+                options.verifyMode =
+                    zzrk::image::FirmwareVerifyMode::critical;
+            } else if (value == "all") {
+                options.verifyMode = zzrk::image::FirmwareVerifyMode::all;
+            } else if (value == "none") {
+                options.verifyMode = zzrk::image::FirmwareVerifyMode::none;
+            } else {
+                return std::nullopt;
+            }
+            continue;
+        }
+        return std::nullopt;
+    }
+    if (!confirmed) {
+        return std::nullopt;
+    }
+    return options;
+}
+
 int flashImage(const std::string_view portPath,
-               const std::filesystem::path& imagePath, const bool reboot)
+               const std::filesystem::path& imagePath, const bool reboot,
+               const zzrk::image::FirmwareVerifyMode verifyMode)
 {
     zzrk::logging::info("Parsing and validating the complete firmware image");
     auto parsed = zzrk::image::parseRkFirmwareImage(imagePath);
@@ -906,7 +976,8 @@ int flashImage(const std::string_view portPath,
                 << " sectors, partition payload "
                 << plan.totalPartitionBytes
                 << " bytes; embedded Loader will be upgraded last and "
-                   "verified";
+                   "verification mode is "
+                << describeVerifyMode(verifyMode);
         zzrk::logging::warning(summary.str());
     }
 
@@ -936,8 +1007,11 @@ int flashImage(const std::string_view portPath,
         zzrk::logging::info(message.str());
     };
 
+    const zzrk::image::FirmwareFlashOptions flashOptions{
+        .verifyMode = verifyMode,
+    };
     const auto result = zzrk::image::flashRkFirmwareImage(
-        rockusb, image, plan, deviceSectors, {}, progress);
+        rockusb, image, plan, deviceSectors, flashOptions, progress);
     if (const auto* error =
             std::get_if<zzrk::image::FirmwareFlashError>(&result)) {
         static_cast<void>(closeTransport());
@@ -960,10 +1034,13 @@ int flashImage(const std::string_view portPath,
     std::ostringstream message;
     message << "System flash completed: " << success.partitionBytesWritten
             << " partition bytes processed, " << success.sectorsErased
-            << " sectors erased, primary GPT verified, backup GPT write "
-               "submitted, Loader "
+            << " sectors erased, primary GPT "
+            << (success.partitionTableVerified ? "verified" : "not verified")
+            << ", backup GPT write submitted, Loader "
             << (success.loaderWritten ? "written" : "not written")
-            << (success.loaderVerified ? " and verified" : "");
+            << (success.loaderVerified ? " and verified" : "")
+            << ", " << success.partitionsVerified
+            << " partition payloads verified";
     zzrk::logging::info(message.str());
 
     bool resetAccepted = false;
@@ -1018,19 +1095,15 @@ int main(const int argc, char* argv[])
     if (argc == 3 && std::string_view{argv[1]} == "plan-image") {
         return planImage(argv[2]);
     }
-    if (argc == 5 && std::string_view{argv[1]} == "flash-image"
-        && std::string_view{argv[4]} == "--yes") {
-        return flashImage(argv[2], argv[3], true);
-    }
-    if (argc == 6 && std::string_view{argv[1]} == "flash-image"
-        && std::string_view{argv[4]} == "--yes"
-        && std::string_view{argv[5]} == "--no-reboot") {
-        return flashImage(argv[2], argv[3], false);
-    }
     if (argc >= 2 && std::string_view{argv[1]} == "flash-image") {
+        const auto options = parseFlashCommandOptions(argc, argv);
+        if (options.has_value()) {
+            return flashImage(argv[2], argv[3], options->reboot,
+                              options->verifyMode);
+        }
         zzrk::logging::error(
             "flash-image requires: <port-path> <update.img> --yes "
-            "[--no-reboot]");
+            "[--verify critical|all|none] [--no-reboot]");
         return 64;
     }
     if (argc == 3 && std::string_view{argv[1]} == "reset") {
