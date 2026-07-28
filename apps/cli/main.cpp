@@ -1019,7 +1019,7 @@ int flashImage(const std::string_view portPath,
                 << image.model << ", eMMC " << deviceSectors
                 << " sectors, partition payload "
                 << plan.totalPartitionBytes
-                << " bytes; embedded Loader will be upgraded last and "
+                << " bytes; embedded Loader will be upgraded first and "
                    "verification mode is "
                 << describeVerifyMode(verifyMode);
         zzrk::logging::warning(summary.str());

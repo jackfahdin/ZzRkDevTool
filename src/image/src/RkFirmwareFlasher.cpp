@@ -978,8 +978,33 @@ FirmwareFlashResult flashRkFirmwareImage(
         }
     }
 
-    std::optional<GptBuffers> gpt;
     FirmwareFlashSuccess success{};
+    if (idBlock.has_value()) {
+        report(progress, FirmwareFlashPhase::writeLoader, kLoaderTarget, 0,
+               idBlock->size());
+        if (auto error =
+                writeBuffer(rockusb, *idBlock, kLoaderLba, kLoaderTarget,
+                            0, cancellation)) {
+            return *error;
+        }
+        success.loaderWritten = true;
+        report(progress, FirmwareFlashPhase::writeLoader, kLoaderTarget,
+               idBlock->size(), idBlock->size());
+
+        if (options.verifyMode != FirmwareVerifyMode::none) {
+            report(progress, FirmwareFlashPhase::verifyLoader,
+                   kLoaderTarget, 0, idBlock->size());
+            if (auto error = verifyBuffer(rockusb, *idBlock, kLoaderLba,
+                                          kLoaderTarget, cancellation)) {
+                return *error;
+            }
+            success.loaderVerified = true;
+            report(progress, FirmwareFlashPhase::verifyLoader,
+                   kLoaderTarget, idBlock->size(), idBlock->size());
+        }
+    }
+
+    std::optional<GptBuffers> gpt;
     if (options.writePartitionTable) {
         auto generated = makeGpt(image, deviceSectors);
         if (const auto* error = std::get_if<FirmwareFlashError>(&generated)) {
@@ -1106,30 +1131,6 @@ FirmwareFlashResult flashRkFirmwareImage(
         verifiedPlanOffset += entry.logicalSize;
     }
 
-    if (idBlock.has_value()) {
-        report(progress, FirmwareFlashPhase::writeLoader, kLoaderTarget, 0,
-               idBlock->size());
-        if (auto error =
-                writeBuffer(rockusb, *idBlock, kLoaderLba, kLoaderTarget,
-                            0, cancellation)) {
-            return *error;
-        }
-        success.loaderWritten = true;
-        report(progress, FirmwareFlashPhase::writeLoader, kLoaderTarget,
-               idBlock->size(), idBlock->size());
-
-        if (options.verifyMode != FirmwareVerifyMode::none) {
-            report(progress, FirmwareFlashPhase::verifyLoader,
-                   kLoaderTarget, 0, idBlock->size());
-            if (auto error = verifyBuffer(rockusb, *idBlock, kLoaderLba,
-                                          kLoaderTarget, cancellation)) {
-                return *error;
-            }
-            success.loaderVerified = true;
-            report(progress, FirmwareFlashPhase::verifyLoader,
-                   kLoaderTarget, idBlock->size(), idBlock->size());
-        }
-    }
     return success;
 }
 
