@@ -103,6 +103,26 @@ if(TARGET zzrk_transport)
         PRIVATE zzrk_project_options zzrk_project_warnings
     )
     add_test(NAME libusb_bulk_transport COMMAND libusb_bulk_transport_test)
+
+    if(TARGET zzrk_workflow)
+        add_executable(firmware_upgrade_workflow_test
+                       firmware_upgrade_workflow_test.cpp)
+        target_link_libraries(
+            firmware_upgrade_workflow_test
+            PRIVATE zzrk::workflow zzrk_project_warnings
+        )
+        add_test(NAME firmware_upgrade_workflow
+                 COMMAND firmware_upgrade_workflow_test)
+    endif()
+endif()
+
+if(TARGET zzrk_storage)
+    add_executable(gpt_partition_table_test gpt_partition_table_test.cpp)
+    target_link_libraries(
+        gpt_partition_table_test
+        PRIVATE zzrk::storage zzrk_project_warnings
+    )
+    add_test(NAME gpt_partition_table COMMAND gpt_partition_table_test)
 endif()
 
 if(TARGET zzrk_cli_support)

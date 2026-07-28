@@ -39,16 +39,27 @@ Run the CLI from the selected preset's build directory:
 
 ```bash
 ./build/linux-debug/apps/cli/zzrkdevtool-cli list
+./build/linux-debug/apps/cli/zzrkdevtool-cli list --json
+./build/linux-debug/apps/cli/zzrkdevtool-cli info 1-5 --json
 ./build/linux-debug/apps/cli/zzrkdevtool-cli probe 1-5
 ./build/linux-debug/apps/cli/zzrkdevtool-cli read-chip-info 1-5
 ./build/linux-debug/apps/cli/zzrkdevtool-cli read-flash-info 1-5
 ./build/linux-debug/apps/cli/zzrkdevtool-cli read-flash-id 1-5
 ./build/linux-debug/apps/cli/zzrkdevtool-cli inspect-image update.img
 ./build/linux-debug/apps/cli/zzrkdevtool-cli plan-image update.img
+./build/linux-debug/apps/cli/zzrkdevtool-cli inspect-image update.img --json
+./build/linux-debug/apps/cli/zzrkdevtool-cli plan-image update.img --json
+./build/linux-debug/apps/cli/zzrkdevtool-cli partitions 1-5 --json
+./build/linux-debug/apps/cli/zzrkdevtool-cli \
+    read-partition 1-5 boot_a --output boot_a.img
+./build/linux-debug/apps/cli/zzrkdevtool-cli \
+    write-partition 1-5 boot_a --input boot.img --yes
+./build/linux-debug/apps/cli/zzrkdevtool-cli \
+    erase-partition 1-5 cache --yes
 ./build/linux-debug/apps/cli/zzrkdevtool-cli \
     flash-image 1-5 update.img --yes --prepare-only
 ./build/linux-debug/apps/cli/zzrkdevtool-cli \
-    flash-image 1-5 update.img --yes --verify critical
+    flash-image 1-5 update.img --yes --verify critical --json
 ./build/linux-debug/apps/cli/zzrkdevtool-cli reset 1-5
 ./build/linux-debug/apps/gui/ZzRkDevTool
 ```
@@ -67,6 +78,14 @@ physical geometry or storage type. `read-flash-id` preserves its complete
 five-byte response and recognizes only the exact observed `EMMC ` marker as
 eMMC. That marker is not a CID, manufacturer, capacity or hardware-partition
 identifier; every other five-byte response remains opaque.
+
+`info` opens the selected Loader once and returns the device identity,
+interface, ChipInfo, capability, FlashInfo and FlashID under one typed result.
+`list`, `info`, `inspect-image`, `plan-image`, `partitions`, named partition
+operations and `flash-image` provide a versioned JSON contract. A structured
+`flash-image` run writes JSON Lines to stdout: zero or more `progress` records
+followed by one `result` record. Human logs remain on stderr, so stdout can be
+consumed without filtering log text. The current schema version is `1`.
 
 `inspect-image`, `plan-image`, and `flash-image` calculate the RKFW trailing
 MD5 with Qt 6 before accepting the image. Before any eMMC write, `flash-image`
@@ -87,6 +106,21 @@ device by default; `--no-reboot` leaves the RAM Loader active. `Ctrl+C` is
 observed between RockUSB transfer blocks, stops new storage commands,
 suppresses the automatic reset, and exits with status 130.
 
+`partitions` reads the eMMC primary GPT and requires valid header and entry
+array CRCs before exposing typed names and ranges. It attempts to validate the
+backup copy for diagnostics, but reports it as `unavailable` without rejecting
+a valid primary copy on the validated Loader. `read-partition`,
+`write-partition`, and `erase-partition` accept only an exact, unambiguous name
+from that validated primary GPT. Writes require `--yes`, must fit within the
+partition, zero-pad only the final partial sector, and are read back by default;
+`--no-verify` explicitly disables that read-back. These commands never select
+an eMMC hardware partition and never accept a caller-provided write LBA.
+
+The Qt Widgets application uses the same typed workflow directly. It supports
+firmware selection, asynchronous MD5 and plan preview, verification mode,
+post-flash reboot, progress, block-boundary cancellation and final results.
+Device polling is paused for the complete duration of an upgrade.
+
 `CMakeUserPresets.json` may add workstation-specific convenience presets and is
 intentionally ignored by Git. It is not required by the commands above.
 
@@ -97,7 +131,8 @@ deployed together on each supported host platform.
 ## Safety and current limits
 
 All device operations require the physical USB port path printed by `list`.
-Flashing additionally requires `--yes`, the validated Loader identity, the
+Flashing and named partition writes additionally require `--yes`, the
+validated Loader identity, the
 exact `EMMC ` media marker, sufficient eMMC capacity, a valid firmware MD5,
 and a complete typed flash plan. No CLI command exposes raw RockUSB CDB input.
 
@@ -106,7 +141,8 @@ partial scan, descriptor change, unexpected interface layout, active kernel
 driver, claim failure or release failure. It never selects the first matching
 VID/PID implicitly.
 
-Current write support is deliberately limited to the observed RK3588
+Current write support is deliberately limited to complete validated images or
+an exact primary-GPT partition name on the observed RK3588
 Loader/Maskrom identities and eMMC user area. It does not write eMMC boot0,
 boot1, or RPMB. The RK3588 Loader 0x0223 used for validation returns opaque data
 when reading the disk-tail backup GPT, so the tool verifies the primary GPT

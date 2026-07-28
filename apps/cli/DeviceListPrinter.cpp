@@ -2,6 +2,8 @@
 
 #include "DeviceListPrinter.hpp"
 
+#include "JsonWriter.hpp"
+
 #include <cstdlib>
 #include <iomanip>
 #include <ostream>
@@ -56,63 +58,22 @@ void printDevices(const transport::ScanResult& result, std::ostream& output)
     }
 }
 
-void printJsonString(const std::string_view value, std::ostream& output)
-{
-    constexpr char hexDigits[] = "0123456789abcdef";
-    output << '"';
-    for (const char rawCharacter : value) {
-        const auto character = static_cast<unsigned char>(rawCharacter);
-        switch (character) {
-        case '"':
-            output << "\\\"";
-            break;
-        case '\\':
-            output << "\\\\";
-            break;
-        case '\b':
-            output << "\\b";
-            break;
-        case '\f':
-            output << "\\f";
-            break;
-        case '\n':
-            output << "\\n";
-            break;
-        case '\r':
-            output << "\\r";
-            break;
-        case '\t':
-            output << "\\t";
-            break;
-        default:
-            if (character < 0x20U) {
-                output << "\\u00" << hexDigits[(character >> 4U) & 0x0fU]
-                       << hexDigits[character & 0x0fU];
-            } else {
-                output << static_cast<char>(character);
-            }
-            break;
-        }
-    }
-    output << '"';
-}
-
 void printJsonError(const transport::ScanError& error,
                     const std::string_view usbAccessHelp,
                     std::ostream& output)
 {
     output << "{\"code\":" << error.code << ",\"kind\":";
-    printJsonString(error.kind == transport::ScanErrorKind::AccessDenied
+    writeJsonString(error.kind == transport::ScanErrorKind::AccessDenied
                         ? "access-denied"
                         : "other",
                     output);
     output << ",\"message\":";
-    printJsonString(error.message, output);
+    writeJsonString(error.message, output);
     output << ",\"help\":";
     if (error.kind == transport::ScanErrorKind::AccessDenied) {
-        printJsonString(usbAccessHelp, output);
+        writeJsonString(usbAccessHelp, output);
     } else {
-        printJsonString({}, output);
+        writeJsonString({}, output);
     }
     output << '}';
 }
@@ -163,7 +124,7 @@ int printScanResultJson(const transport::ScanResult& result,
         }
         firstDevice = false;
         output << "{\"portPath\":";
-        printJsonString(device.portPath, output);
+        writeJsonString(device.portPath, output);
         output << ",\"vendorId\":" << device.vendorId
                << ",\"productId\":" << device.productId
                << ",\"bcdUsb\":" << device.bcdUsb
@@ -180,7 +141,7 @@ int printScanResultJson(const transport::ScanResult& result,
             output << static_cast<unsigned int>(device.portNumbers[index]);
         }
         output << "],\"mode\":";
-        printJsonString(transport::toString(device.mode), output);
+        writeJsonString(transport::toString(device.mode), output);
         output << ",\"rockusbOperable\":"
                << (device.mode == transport::DeviceMode::Loader ? "true"
                                                                   : "false")
