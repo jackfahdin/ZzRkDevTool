@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <csignal>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -36,6 +37,41 @@
 #include <vector>
 
 namespace {
+
+volatile std::sig_atomic_t gInterruptRequested = 0;
+
+extern "C" void requestInterrupt(int) noexcept
+{
+    gInterruptRequested = 1;
+}
+
+class InterruptHandlerGuard final {
+  public:
+    InterruptHandlerGuard() noexcept
+    {
+        gInterruptRequested = 0;
+        previous_ = std::signal(SIGINT, requestInterrupt);
+    }
+
+    ~InterruptHandlerGuard()
+    {
+        if (previous_ != SIG_ERR) {
+            static_cast<void>(std::signal(SIGINT, previous_));
+        }
+    }
+
+    InterruptHandlerGuard(const InterruptHandlerGuard&) = delete;
+    InterruptHandlerGuard& operator=(const InterruptHandlerGuard&) = delete;
+
+    [[nodiscard]] static bool requested() noexcept
+    {
+        return gInterruptRequested != 0;
+    }
+
+  private:
+    using Handler = void (*)(int);
+    Handler previous_{};
+};
 
 void printUsage(const std::string_view executable, std::ostream& output)
 {
@@ -252,6 +288,8 @@ void logReadFailure(const zzrk::session::SessionError& error,
         return "eMMC write failed";
     case FirmwareFlashErrorCode::verifyFailed:
         return "eMMC read-back verification failed";
+    case FirmwareFlashErrorCode::cancelled:
+        return "the operation was cancelled";
     }
     return "unknown flash error";
 }
@@ -848,6 +886,7 @@ int flashImage(const std::string_view portPath,
                const std::filesystem::path& imagePath, const bool reboot,
                const zzrk::image::FirmwareVerifyMode verifyMode)
 {
+    const InterruptHandlerGuard interruptHandler;
     zzrk::logging::info("Parsing and validating the complete firmware image");
     auto parsed = zzrk::image::parseRkFirmwareImage(imagePath);
     if (const auto* error =
@@ -874,6 +913,11 @@ int flashImage(const std::string_view portPath,
         }
         zzrk::logging::error(message.str());
         return EXIT_FAILURE;
+    }
+    if (InterruptHandlerGuard::requested()) {
+        zzrk::logging::warning(
+            "Flash cancelled before opening the Loader device");
+        return 130;
     }
     auto planned = zzrk::image::buildRkFirmwareFlashPlan(image);
     if (const auto* error =
@@ -1010,23 +1054,39 @@ int flashImage(const std::string_view portPath,
     const zzrk::image::FirmwareFlashOptions flashOptions{
         .verifyMode = verifyMode,
     };
+    const auto cancellation = [] {
+        return InterruptHandlerGuard::requested();
+    };
     const auto result = zzrk::image::flashRkFirmwareImage(
-        rockusb, image, plan, deviceSectors, flashOptions, progress);
+        rockusb, image, plan, deviceSectors, flashOptions, progress,
+        cancellation);
     if (const auto* error =
             std::get_if<zzrk::image::FirmwareFlashError>(&result)) {
         static_cast<void>(closeTransport());
         transport.reset();
         std::ostringstream message;
-        message << "System flash failed at " << error->target << ": "
-                << describeFlashError(error->code);
+        if (error->code == zzrk::image::FirmwareFlashErrorCode::cancelled) {
+            message << "System flash cancelled at " << error->target;
+        } else {
+            message << "System flash failed at " << error->target << ": "
+                    << describeFlashError(error->code);
+        }
         if (error->completedBytes != 0U) {
             message << " after " << error->completedBytes << " bytes";
         }
-        zzrk::logging::error(message.str());
+        if (error->code == zzrk::image::FirmwareFlashErrorCode::cancelled) {
+            message << "; no reboot command was sent, rerun the complete flash "
+                       "before booting the device";
+            zzrk::logging::warning(message.str());
+        } else {
+            zzrk::logging::error(message.str());
+        }
         if (error->sessionError.has_value()) {
             logReadFailure(*error->sessionError, "RockUSB flash command");
         }
-        return EXIT_FAILURE;
+        return error->code == zzrk::image::FirmwareFlashErrorCode::cancelled
+                   ? 130
+                   : EXIT_FAILURE;
     }
 
     const auto& success =
@@ -1045,7 +1105,7 @@ int flashImage(const std::string_view portPath,
 
     bool resetAccepted = false;
     std::optional<zzrk::session::SessionError> resetError;
-    if (reboot) {
+    if (reboot && !InterruptHandlerGuard::requested()) {
         const auto resetResult = zzrk::session::resetDevice(rockusb);
         if (const auto* error =
                 std::get_if<zzrk::session::SessionError>(&resetResult)) {
@@ -1061,6 +1121,12 @@ int flashImage(const std::string_view portPath,
         logReadFailure(*resetError,
                        "System flash succeeded but ResetDevice");
         return EXIT_FAILURE;
+    }
+    if (InterruptHandlerGuard::requested() && !resetAccepted) {
+        zzrk::logging::warning(
+            "System flash completed, but automatic reboot was cancelled; "
+            "the device remains in Loader mode");
+        return 130;
     }
     if (resetAccepted) {
         zzrk::logging::info(

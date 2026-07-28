@@ -32,6 +32,7 @@ struct FirmwareFlashProgress {
 
 using FirmwareFlashProgressCallback =
     std::function<void(const FirmwareFlashProgress&)>;
+using FirmwareFlashCancellationCallback = std::function<bool()>;
 
 enum class FirmwareVerifyMode {
     none,
@@ -60,6 +61,7 @@ enum class FirmwareFlashErrorCode {
     eraseFailed,
     writeFailed,
     verifyFailed,
+    cancelled,
 };
 
 struct FirmwareFlashError {
@@ -86,6 +88,7 @@ using FirmwareFlashResult =
     session::RockusbSession& session, const RkFirmwareImage& image,
     const RkFirmwareFlashPlan& plan, std::uint64_t deviceSectors,
     const FirmwareFlashOptions& options = {},
-    const FirmwareFlashProgressCallback& progress = {});
+    const FirmwareFlashProgressCallback& progress = {},
+    const FirmwareFlashCancellationCallback& cancellation = {});
 
 } // namespace zzrk::image

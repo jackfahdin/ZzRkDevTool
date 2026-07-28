@@ -428,7 +428,8 @@ makeIdBlock(std::ifstream& stream, const RkFirmwareImage& image,
 writeBuffer(session::RockusbSession& rockusb,
             const std::span<const std::byte> source, std::uint64_t firstLba,
             const std::string_view target,
-            const std::uint64_t completedBefore = 0)
+            const std::uint64_t completedBefore,
+            const FirmwareFlashCancellationCallback& cancellation)
 {
     if (source.empty() || source.size() % kSectorSize != 0U) {
         return makeError(FirmwareFlashErrorCode::invalidPlan,
@@ -436,6 +437,10 @@ writeBuffer(session::RockusbSession& rockusb,
     }
     std::size_t offset = 0;
     while (offset < source.size()) {
+        if (cancellation && cancellation()) {
+            return makeError(FirmwareFlashErrorCode::cancelled,
+                             std::string{target}, completedBefore + offset);
+        }
         const std::size_t bytes =
             std::min(kTransferBytes, source.size() - offset);
         const std::uint64_t sectors = bytes / kSectorSize;
@@ -456,13 +461,19 @@ writeBuffer(session::RockusbSession& rockusb,
 [[nodiscard]] std::optional<FirmwareFlashError>
 eraseRange(session::RockusbSession& rockusb, std::uint64_t firstLba,
            std::uint64_t sectorCount, const std::string_view target,
-           const FirmwareFlashProgressCallback& progress)
+           const FirmwareFlashProgressCallback& progress,
+           const FirmwareFlashCancellationCallback& cancellation)
 {
     const std::uint64_t totalBytes = sectorCount * core::kSectorSize;
     std::uint64_t erased = 0;
     report(progress, FirmwareFlashPhase::erasePartition, target, 0,
            totalBytes);
     while (erased < sectorCount) {
+        if (cancellation && cancellation()) {
+            return makeError(FirmwareFlashErrorCode::cancelled,
+                             std::string{target},
+                             erased * core::kSectorSize);
+        }
         const std::uint64_t sectors = std::min(
             session::kMaximumEraseLbaSectorsPerCommand,
             sectorCount - erased);
@@ -484,7 +495,8 @@ eraseRange(session::RockusbSession& rockusb, std::uint64_t firstLba,
 [[nodiscard]] std::optional<FirmwareFlashError>
 writeRawEntry(session::RockusbSession& rockusb, std::ifstream& stream,
               const FirmwareEntry& entry, const FirmwareFlashStep& step,
-              const FirmwareFlashProgressCallback& progress)
+              const FirmwareFlashProgressCallback& progress,
+              const FirmwareFlashCancellationCallback& cancellation)
 {
     if (!seekTo(stream, entry.fileOffset)) {
         return makeError(FirmwareFlashErrorCode::imageSeekFailed, step.target);
@@ -508,7 +520,7 @@ writeRawEntry(session::RockusbSession& rockusb, std::ifstream& stream,
             step.firstLba + consumed / core::kSectorSize;
         if (auto error = writeBuffer(
                 rockusb, std::span<const std::byte>{buffer}.first(transferBytes),
-                lba, step.target, consumed)) {
+                lba, step.target, consumed, cancellation)) {
             return error;
         }
         consumed += bytes;
@@ -521,7 +533,8 @@ writeRawEntry(session::RockusbSession& rockusb, std::ifstream& stream,
 [[nodiscard]] std::optional<FirmwareFlashError>
 writeSparseEntry(session::RockusbSession& rockusb, std::ifstream& stream,
                  const FirmwareEntry& entry, const FirmwareFlashStep& step,
-                 const FirmwareFlashProgressCallback& progress)
+                 const FirmwareFlashProgressCallback& progress,
+                 const FirmwareFlashCancellationCallback& cancellation)
 {
     if (!seekTo(stream, entry.fileOffset)) {
         return makeError(FirmwareFlashErrorCode::imageSeekFailed, step.target);
@@ -589,7 +602,8 @@ writeSparseEntry(session::RockusbSession& rockusb, std::ifstream& stream,
                 if (auto error = writeBuffer(
                         rockusb,
                         std::span<const std::byte>{buffer}.first(bytes),
-                        currentLba, step.target, logicalBytes)) {
+                        currentLba, step.target, logicalBytes,
+                        cancellation)) {
                     return error;
                 }
                 const std::uint64_t sectors = bytes / kSectorSize;
@@ -619,7 +633,8 @@ writeSparseEntry(session::RockusbSession& rockusb, std::ifstream& stream,
                 if (auto error = writeBuffer(
                         rockusb,
                         std::span<const std::byte>{buffer}.first(bytes),
-                        currentLba, step.target, logicalBytes)) {
+                        currentLba, step.target, logicalBytes,
+                        cancellation)) {
                     return error;
                 }
                 const std::uint64_t sectors = bytes / kSectorSize;
@@ -663,7 +678,8 @@ writeSparseEntry(session::RockusbSession& rockusb, std::ifstream& stream,
 [[nodiscard]] std::optional<FirmwareFlashError>
 verifyBuffer(session::RockusbSession& rockusb,
              const std::span<const std::byte> expected,
-             const std::uint64_t firstLba, const std::string_view target)
+             const std::uint64_t firstLba, const std::string_view target,
+             const FirmwareFlashCancellationCallback& cancellation)
 {
     if (expected.empty() || expected.size() % kSectorSize != 0U) {
         return makeError(FirmwareFlashErrorCode::invalidPlan,
@@ -672,6 +688,10 @@ verifyBuffer(session::RockusbSession& rockusb,
     std::vector<std::byte> actual(kTransferBytes);
     std::size_t offset = 0;
     while (offset < expected.size()) {
+        if (cancellation && cancellation()) {
+            return makeError(FirmwareFlashErrorCode::cancelled,
+                             std::string{target}, offset);
+        }
         const std::size_t bytes =
             std::min(actual.size(), expected.size() - offset);
         auto destination = std::span<std::byte>{actual}.first(bytes);
@@ -718,7 +738,8 @@ verifyBuffer(session::RockusbSession& rockusb,
 [[nodiscard]] std::optional<FirmwareFlashError>
 verifyRawEntry(session::RockusbSession& rockusb, std::ifstream& stream,
                const FirmwareEntry& entry, const FirmwareFlashStep& step,
-               const FirmwareFlashProgressCallback& progress)
+               const FirmwareFlashProgressCallback& progress,
+               const FirmwareFlashCancellationCallback& cancellation)
 {
     if (!seekTo(stream, entry.fileOffset)) {
         return makeError(FirmwareFlashErrorCode::imageSeekFailed, step.target);
@@ -742,7 +763,8 @@ verifyRawEntry(session::RockusbSession& rockusb, std::ifstream& stream,
         if (auto error = verifyBuffer(
                 rockusb,
                 std::span<const std::byte>{expected}.first(transferBytes),
-                step.firstLba + consumed / core::kSectorSize, step.target)) {
+                step.firstLba + consumed / core::kSectorSize, step.target,
+                cancellation)) {
             error->completedBytes += consumed;
             return error;
         }
@@ -756,7 +778,8 @@ verifyRawEntry(session::RockusbSession& rockusb, std::ifstream& stream,
 [[nodiscard]] std::optional<FirmwareFlashError>
 verifySparseEntry(session::RockusbSession& rockusb, std::ifstream& stream,
                   const FirmwareEntry& entry, const FirmwareFlashStep& step,
-                  const FirmwareFlashProgressCallback& progress)
+                  const FirmwareFlashProgressCallback& progress,
+                  const FirmwareFlashCancellationCallback& cancellation)
 {
     if (!seekTo(stream, entry.fileOffset)) {
         return makeError(FirmwareFlashErrorCode::imageSeekFailed, step.target);
@@ -820,8 +843,9 @@ verifySparseEntry(session::RockusbSession& rockusb, std::ifstream& stream,
                     return makeError(FirmwareFlashErrorCode::imageReadFailed,
                                      step.target, logicalBytes);
                 }
-                if (auto error = verifyBuffer(rockusb, expectedBytes,
-                                              currentLba, step.target)) {
+                if (auto error = verifyBuffer(
+                        rockusb, expectedBytes, currentLba, step.target,
+                        cancellation)) {
                     error->completedBytes += logicalBytes;
                     return error;
                 }
@@ -851,7 +875,7 @@ verifySparseEntry(session::RockusbSession& rockusb, std::ifstream& stream,
                 if (auto error = verifyBuffer(
                         rockusb,
                         std::span<const std::byte>{expected}.first(bytes),
-                        currentLba, step.target)) {
+                        currentLba, step.target, cancellation)) {
                     error->completedBytes += logicalBytes;
                     return error;
                 }
@@ -898,8 +922,12 @@ FirmwareFlashResult flashRkFirmwareImage(
     session::RockusbSession& rockusb, const RkFirmwareImage& image,
     const RkFirmwareFlashPlan& plan, const std::uint64_t deviceSectors,
     const FirmwareFlashOptions& options,
-    const FirmwareFlashProgressCallback& progress)
+    const FirmwareFlashProgressCallback& progress,
+    const FirmwareFlashCancellationCallback& cancellation)
 {
+    if (cancellation && cancellation()) {
+        return makeError(FirmwareFlashErrorCode::cancelled, "image");
+    }
     if (plan.targetChip != "RK3588" || plan.sourcePath != image.sourcePath
         || plan.minimumDeviceSectors == 0U) {
         return makeError(FirmwareFlashErrorCode::invalidPlan, "image");
@@ -958,12 +986,13 @@ FirmwareFlashResult flashRkFirmwareImage(
         gpt = std::get<GptBuffers>(std::move(generated));
         report(progress, FirmwareFlashPhase::writePartitionTable, "GPT", 0,
                (kPrimaryGptSectors + kBackupGptSectors) * kSectorSize);
-        if (auto error = writeBuffer(rockusb, gpt->primary, 0, "primary GPT")) {
+        if (auto error = writeBuffer(rockusb, gpt->primary, 0, "primary GPT",
+                                     0, cancellation)) {
             return *error;
         }
         if (auto error = writeBuffer(rockusb, gpt->backup,
                                      deviceSectors - kBackupGptSectors,
-                                     "backup GPT")) {
+                                     "backup GPT", 0, cancellation)) {
             return *error;
         }
         success.partitionTableWritten = true;
@@ -978,7 +1007,7 @@ FirmwareFlashResult flashRkFirmwareImage(
         report(progress, FirmwareFlashPhase::verifyPartitionTable, "GPT", 0,
                kPrimaryGptSectors * kSectorSize);
         if (auto error = verifyBuffer(rockusb, gpt->primary, 0,
-                                      "primary GPT")) {
+                                      "primary GPT", cancellation)) {
             return *error;
         }
         success.partitionTableVerified = true;
@@ -1019,7 +1048,7 @@ FirmwareFlashResult flashRkFirmwareImage(
             && options.eraseSparsePartitions) {
             if (auto error = eraseRange(rockusb, step.firstLba,
                                         step.sectorCount, step.target,
-                                        progress)) {
+                                        progress, cancellation)) {
                 return *error;
             }
             success.sectorsErased += step.sectorCount;
@@ -1027,9 +1056,11 @@ FirmwareFlashResult flashRkFirmwareImage(
 
         std::optional<FirmwareFlashError> error;
         if (entry.format == PayloadFormat::raw) {
-            error = writeRawEntry(rockusb, stream, entry, step, progress);
+            error = writeRawEntry(rockusb, stream, entry, step, progress,
+                                  cancellation);
         } else if (entry.format == PayloadFormat::androidSparse) {
-            error = writeSparseEntry(rockusb, stream, entry, step, progress);
+            error = writeSparseEntry(rockusb, stream, entry, step, progress,
+                                     cancellation);
         } else {
             error = makeError(FirmwareFlashErrorCode::unsupportedPayload,
                               step.target, success.partitionBytesWritten);
@@ -1042,10 +1073,11 @@ FirmwareFlashResult flashRkFirmwareImage(
 
         if (shouldVerifyPartition(options.verifyMode, step.target)) {
             if (entry.format == PayloadFormat::raw) {
-                error = verifyRawEntry(rockusb, stream, entry, step, progress);
+                error = verifyRawEntry(rockusb, stream, entry, step, progress,
+                                       cancellation);
             } else {
                 error = verifySparseEntry(rockusb, stream, entry, step,
-                                          progress);
+                                          progress, cancellation);
             }
             if (error.has_value()) {
                 error->completedBytes +=
@@ -1060,7 +1092,8 @@ FirmwareFlashResult flashRkFirmwareImage(
         report(progress, FirmwareFlashPhase::writeLoader, "eMMC IDBlock", 0,
                idBlock->size());
         if (auto error =
-                writeBuffer(rockusb, *idBlock, kLoaderLba, "eMMC IDBlock")) {
+                writeBuffer(rockusb, *idBlock, kLoaderLba, "eMMC IDBlock",
+                            0, cancellation)) {
             return *error;
         }
         success.loaderWritten = true;
@@ -1071,7 +1104,7 @@ FirmwareFlashResult flashRkFirmwareImage(
             report(progress, FirmwareFlashPhase::verifyLoader,
                    "eMMC IDBlock", 0, idBlock->size());
             if (auto error = verifyBuffer(rockusb, *idBlock, kLoaderLba,
-                                          "eMMC IDBlock")) {
+                                          "eMMC IDBlock", cancellation)) {
                 return *error;
             }
             success.loaderVerified = true;
