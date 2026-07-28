@@ -713,6 +713,12 @@ parseRkFirmwareImage(const std::filesystem::path& path) noexcept
 RkFirmwareFlashPlanResult
 buildRkFirmwareFlashPlan(const RkFirmwareImage& image) noexcept
 {
+    if (!image.trailingMd5Verified) {
+        return FirmwarePlanError{
+            .code = FirmwarePlanErrorCode::firmwareMd5NotVerified,
+            .target = "firmware MD5",
+        };
+    }
     if (image.chip != "3588") {
         return FirmwarePlanError{
             .code = FirmwarePlanErrorCode::unsupportedTargetChip,

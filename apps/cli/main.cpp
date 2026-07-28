@@ -2,6 +2,7 @@
 
 #include "DeviceListPrinter.hpp"
 #include "FirmwareImagePrinter.hpp"
+#include "FirmwareMd5Verifier.hpp"
 #include "ProbeSupport.hpp"
 
 #include <zzrk/image/RkFirmwareFlasher.hpp>
@@ -643,7 +644,7 @@ int listDevices(const bool json)
 int inspectImage(const std::string_view path)
 {
     zzrk::logging::info("Inspecting Rockchip firmware image");
-    const auto parsed = zzrk::image::parseRkFirmwareImage(std::string{path});
+    auto parsed = zzrk::image::parseRkFirmwareImage(std::string{path});
     if (const auto* error =
             std::get_if<zzrk::image::FirmwareImageError>(&parsed)) {
         std::ostringstream message;
@@ -657,15 +658,30 @@ int inspectImage(const std::string_view path)
         zzrk::logging::error(message.str());
         return EXIT_FAILURE;
     }
-    zzrk::cli::printFirmwareImage(
-        std::get<zzrk::image::RkFirmwareImage>(parsed), std::cout);
+    auto image =
+        std::get<zzrk::image::RkFirmwareImage>(std::move(parsed));
+    zzrk::logging::info("Verifying firmware MD5 with Qt 6");
+    const auto verified = zzrk::cli::verifyFirmwareMd5(image);
+    if (const auto* error =
+            std::get_if<zzrk::cli::FirmwareMd5Error>(&verified)) {
+        std::ostringstream message;
+        message << "Image inspection failed: "
+                << zzrk::cli::describeFirmwareMd5Error(error->code);
+        if (error->code == zzrk::cli::FirmwareMd5ErrorCode::mismatch) {
+            message << " (expected " << image.trailingMd5.data()
+                    << ", actual " << error->actualMd5.data() << ')';
+        }
+        zzrk::logging::error(message.str());
+        return EXIT_FAILURE;
+    }
+    zzrk::cli::printFirmwareImage(image, std::cout);
     return EXIT_SUCCESS;
 }
 
 int planImage(const std::string_view path)
 {
     zzrk::logging::info("Building complete firmware flash plan");
-    const auto parsed = zzrk::image::parseRkFirmwareImage(std::string{path});
+    auto parsed = zzrk::image::parseRkFirmwareImage(std::string{path});
     if (const auto* error =
             std::get_if<zzrk::image::FirmwareImageError>(&parsed)) {
         std::ostringstream message;
@@ -675,8 +691,23 @@ int planImage(const std::string_view path)
         zzrk::logging::error(message.str());
         return EXIT_FAILURE;
     }
-    const auto plan = zzrk::image::buildRkFirmwareFlashPlan(
-        std::get<zzrk::image::RkFirmwareImage>(parsed));
+    auto image =
+        std::get<zzrk::image::RkFirmwareImage>(std::move(parsed));
+    zzrk::logging::info("Verifying firmware MD5 with Qt 6");
+    const auto verified = zzrk::cli::verifyFirmwareMd5(image);
+    if (const auto* error =
+            std::get_if<zzrk::cli::FirmwareMd5Error>(&verified)) {
+        std::ostringstream message;
+        message << "Image planning failed: "
+                << zzrk::cli::describeFirmwareMd5Error(error->code);
+        if (error->code == zzrk::cli::FirmwareMd5ErrorCode::mismatch) {
+            message << " (expected " << image.trailingMd5.data()
+                    << ", actual " << error->actualMd5.data() << ')';
+        }
+        zzrk::logging::error(message.str());
+        return EXIT_FAILURE;
+    }
+    const auto plan = zzrk::image::buildRkFirmwareFlashPlan(image);
     if (const auto* error =
             std::get_if<zzrk::image::FirmwarePlanError>(&plan)) {
         std::ostringstream message;
@@ -707,6 +738,20 @@ int flashImage(const std::string_view portPath,
     }
     auto image =
         std::get<zzrk::image::RkFirmwareImage>(std::move(parsed));
+    zzrk::logging::info("Verifying firmware MD5 with Qt 6");
+    const auto verified = zzrk::cli::verifyFirmwareMd5(image);
+    if (const auto* error =
+            std::get_if<zzrk::cli::FirmwareMd5Error>(&verified)) {
+        std::ostringstream message;
+        message << "Flash refused: "
+                << zzrk::cli::describeFirmwareMd5Error(error->code);
+        if (error->code == zzrk::cli::FirmwareMd5ErrorCode::mismatch) {
+            message << " (expected " << image.trailingMd5.data()
+                    << ", actual " << error->actualMd5.data() << ')';
+        }
+        zzrk::logging::error(message.str());
+        return EXIT_FAILURE;
+    }
     auto planned = zzrk::image::buildRkFirmwareFlashPlan(image);
     if (const auto* error =
             std::get_if<zzrk::image::FirmwarePlanError>(&planned)) {

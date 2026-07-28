@@ -85,7 +85,9 @@ void printFirmwareImage(const image::RkFirmwareImage& firmware,
            << firmware.bootOffset << ", " << firmware.bootSize << " bytes\n"
            << "RKAF: " << firmware.firmwareOffset << ", "
            << firmware.firmwareSize << " bytes\n"
-           << "Trailing MD5: " << firmware.trailingMd5.data() << '\n'
+           << "Trailing MD5: " << firmware.trailingMd5.data()
+           << (firmware.trailingMd5Verified ? " (verified)" : " (not verified)")
+           << '\n'
            << "Entries: " << firmware.entries.size() << '\n';
 
     if (firmware.loader.has_value()) {
@@ -139,6 +141,8 @@ std::string_view describeFirmwarePlanError(
         return "the firmware has no embedded Loader";
     case FirmwarePlanErrorCode::missingParameter:
         return "the firmware has no usable parameter partition layout";
+    case FirmwarePlanErrorCode::firmwareMd5NotVerified:
+        return "the firmware MD5 has not been verified";
     case FirmwarePlanErrorCode::duplicatePartition:
         return "the partition layout contains duplicate names";
     case FirmwarePlanErrorCode::targetPartitionMissing:

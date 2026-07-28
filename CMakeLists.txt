@@ -146,12 +146,16 @@ endif()
 
 add_subdirectory(src)
 
+if(ZZRK_BUILD_CLI OR ZZRK_BUILD_GUI)
+    find_package(Qt6 6.11 REQUIRED COMPONENTS Core)
+endif()
+
 if(ZZRK_BUILD_CLI)
     add_subdirectory(apps/cli)
 endif()
 
 if(ZZRK_BUILD_GUI)
-    find_package(Qt6 6.11 REQUIRED COMPONENTS Core Gui Widgets)
+    find_package(Qt6 6.11 REQUIRED COMPONENTS Gui Widgets)
     add_subdirectory(apps/gui)
 endif()
 
