@@ -42,3 +42,15 @@ jobs:
           cmake --preset portable-debug
           cmake --build --preset portable-debug --parallel
           ctest --preset portable-debug
+
+  portable-sanitize:
+    name: Linux portable ASan/UBSan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure, build, and test
+        run: |
+          cmake --preset portable-debug -DZZRK_ENABLE_SANITIZERS=ON
+          cmake --build --preset portable-debug --parallel
+          ctest --preset portable-debug

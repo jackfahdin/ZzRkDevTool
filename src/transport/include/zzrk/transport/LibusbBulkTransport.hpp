@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include <zzrk/session/IUsbTransport.hpp>
+#include <zzrk/transport/IFlashTransport.hpp>
 #include <zzrk/transport/UsbDeviceScanner.hpp>
 
 #include <cstdint>
@@ -41,19 +41,9 @@ struct LibusbOpenError {
 
 [[nodiscard]] bool isAccessDenied(const LibusbOpenError &error) noexcept;
 
-struct LibusbInterfaceInfo {
-  std::uint8_t interfaceNumber{};
-  std::uint8_t alternateSetting{};
-  std::uint8_t bulkInEndpoint{};
-  std::uint8_t bulkOutEndpoint{};
-  std::uint16_t bulkInMaxPacketSize{};
-  std::uint16_t bulkOutMaxPacketSize{};
+using LibusbInterfaceInfo = FlashInterfaceInfo;
 
-  friend constexpr bool operator==(const LibusbInterfaceInfo &,
-                                   const LibusbInterfaceInfo &) = default;
-};
-
-class LibusbBulkTransport final : public session::IUsbTransport {
+class LibusbBulkTransport final : public IFlashTransport {
 public:
   using OpenResult =
       std::variant<std::unique_ptr<LibusbBulkTransport>, LibusbOpenError>;
@@ -73,12 +63,13 @@ public:
 
   ~LibusbBulkTransport() override;
 
-  [[nodiscard]] const LibusbInterfaceInfo &interfaceInfo() const noexcept;
+  [[nodiscard]] const LibusbInterfaceInfo &
+  interfaceInfo() const noexcept override;
 
   // Releases the interface before closing the handle and context. The
   // return value is LIBUSB_SUCCESS (also when already closed), or the native
   // libusb_release_interface error. All resources are closed in either case.
-  [[nodiscard]] int close() noexcept;
+  [[nodiscard]] int close() noexcept override;
 
   [[nodiscard]] session::TransferResult
   bulkOut(std::span<const std::byte> bytes,

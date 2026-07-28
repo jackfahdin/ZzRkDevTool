@@ -2,6 +2,7 @@
 
 #include "DeviceListPrinter.hpp"
 #include "ProbeSupport.hpp"
+#include "StructuredOutput.hpp"
 
 #include <zzrk/transport/UsbDeviceScanner.hpp>
 
@@ -12,6 +13,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 
 namespace {
 
@@ -454,6 +456,152 @@ void testOpaqueFlashIdOutputKeepsStorageUnknown() {
          "opaque flash ID output does not infer eMMC");
 }
 
+void testJsonFirmwareImageGoldenOutput() {
+  zzrk::image::FirmwareLoaderInfo loader{};
+  loader.version = 0x1234;
+  loader.chipType = 0x3588;
+  loader.idBlockSize = 2048;
+  zzrk::image::RkFirmwareImage image{
+      .sourcePath = "/tmp/update.img",
+      .fileSize = 4096,
+      .version = {.major = 1, .minor = 2, .patch = 3},
+      .timestamp = {.year = 2026,
+                    .month = 7,
+                    .day = 28,
+                    .hour = 12,
+                    .minute = 34,
+                    .second = 56},
+      .chip = "3588",
+      .model = "pudu\"rk",
+      .manufacturer = "PUDU",
+      .bootSignature = "BOOT",
+      .bootOffset = 128,
+      .bootSize = 256,
+      .firmwareOffset = 384,
+      .firmwareSize = 1024,
+      .trailingMd5 = {'0', '1', '2', '3', '4', '5', '6', '7',
+                      '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+                      '0', '1', '2', '3', '4', '5', '6', '7',
+                      '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', '\0'},
+      .trailingMd5Verified = true,
+      .entries = {{.name = "boot",
+                   .path = "boot.img",
+                   .fileOffset = 512,
+                   .storedSize = 4,
+                   .contentSize = 4,
+                   .logicalSize = 4,
+                   .format = zzrk::image::PayloadFormat::raw}},
+      .partitions = {{.name = "boot_a",
+                      .firstLba = 64,
+                      .sectorCount = 8,
+                      .grow = false}},
+      .loader = loader,
+  };
+  std::ostringstream output;
+  zzrk::cli::printFirmwareImageJson(image, output);
+  expect(
+      output.str() ==
+          "{\"schemaVersion\":1,\"success\":true,\"command\":\"inspect-image\",\"result\":{\"format\":\"rkfw-rkaf\",\"sourcePath\":\"/tmp/update.img\",\"fileSize\":4096,\"version\":{\"major\":1,\"minor\":2,\"patch\":3},\"timestamp\":{\"year\":2026,\"month\":7,\"day\":28,\"hour\":12,\"minute\":34,\"second\":56},\"chip\":\"3588\",\"model\":\"pudu\\\"rk\",\"manufacturer\":\"PUDU\",\"bootSignature\":\"BOOT\",\"bootOffset\":128,\"bootSize\":256,\"firmwareOffset\":384,\"firmwareSize\":1024,\"md5\":\"0123456789abcdef0123456789abcdef\",\"md5Verified\":true,\"loader\":{\"version\":4660,\"chipType\":13704,\"idBlockSize\":2048},\"entries\":[{\"name\":\"boot\",\"path\":\"boot.img\",\"fileOffset\":512,\"storedSize\":4,\"contentSize\":4,\"logicalSize\":4,\"format\":\"raw\",\"selfEntry\":false}],\"partitions\":[{\"name\":\"boot_a\",\"firstLba\":64,\"sectorCount\":8,\"grow\":false}]},\"error\":null}\n",
+      "firmware JSON uses the stable schemaVersion 1 golden contract");
+}
+
+void testJsonFlashPlanGoldenOutput() {
+  const zzrk::image::RkFirmwareFlashPlan plan{
+      .sourcePath = "/tmp/update.img",
+      .targetChip = "RK3588",
+      .targetModel = "pudu",
+      .minimumDeviceSectors = 1024,
+      .totalPartitionBytes = 512,
+      .steps = {{.kind = zzrk::image::FirmwareFlashStepKind::writePartition,
+                 .target = "boot_a",
+                 .entryIndex = 2,
+                 .firstLba = 64,
+                 .sectorCount = 8,
+                 .inputSize = 443,
+                 .outputSize = 443,
+                 .format = zzrk::image::PayloadFormat::raw}},
+  };
+  std::ostringstream output;
+  zzrk::cli::printFirmwareFlashPlanJson(plan, output);
+  expect(output.str() ==
+             "{\"schemaVersion\":1,\"success\":true,\"command\":\"plan-image\",\"result\":{\"sourcePath\":\"/tmp/update.img\",\"targetChip\":\"RK3588\",\"targetModel\":\"pudu\",\"minimumDeviceSectors\":1024,\"totalPartitionBytes\":512,\"steps\":[{\"index\":0,\"kind\":\"write-partition\",\"target\":\"boot_a\",\"entryIndex\":2,\"firstLba\":64,\"sectorCount\":8,\"inputSize\":443,\"outputSize\":443,\"format\":\"raw\"}]},\"error\":null}\n",
+         "flash plan JSON uses the stable schemaVersion 1 golden contract");
+}
+
+void testJsonFlashLinesGoldenOutput() {
+  const zzrk::workflow::FirmwareUpgradeEvent progress{
+      .stage = zzrk::workflow::FirmwareUpgradeStage::flash,
+      .target = "boot_a",
+      .completedBytes = 256,
+      .totalBytes = 512,
+      .flashPhase = zzrk::image::FirmwareFlashPhase::writePartition,
+  };
+  std::ostringstream progressOutput;
+  zzrk::cli::printFirmwareUpgradeEventJson(progress, progressOutput);
+  expect(progressOutput.str() ==
+             "{\"schemaVersion\":1,\"type\":\"progress\",\"command\":\"flash-image\",\"stage\":\"flash\",\"target\":\"boot_a\",\"phase\":\"write-partition\",\"completedBytes\":256,\"totalBytes\":512}\n",
+         "flash JSON Lines progress uses the versioned golden contract");
+
+  zzrk::workflow::FirmwareUpgradeError error{};
+  error.code = zzrk::workflow::FirmwareUpgradeErrorCode::flashFailed;
+  error.stage = zzrk::workflow::FirmwareUpgradeStage::flash;
+  error.target = "boot_a";
+  error.completedBytes = 256;
+  std::ostringstream errorOutput;
+  zzrk::cli::printFirmwareUpgradeErrorJson(error, "write failed", errorOutput);
+  expect(errorOutput.str() ==
+             "{\"schemaVersion\":1,\"type\":\"result\",\"command\":\"flash-image\",\"success\":false,\"result\":null,\"error\":{\"code\":\"flash-failed\",\"message\":\"write failed\",\"stage\":\"flash\",\"target\":\"boot_a\",\"completedBytes\":256}}\n",
+         "flash JSON Lines error uses the versioned golden contract");
+}
+
+void testJsonInfoGoldenOutput() {
+  zzrk::cli::DeviceInfoReport report{};
+  report.device = makeLoaderDevice();
+  report.interfaceInfo = {
+      .interfaceNumber = 0,
+      .alternateSetting = 0,
+      .bulkInEndpoint = 0x81,
+      .bulkOutEndpoint = 0x02,
+      .bulkInMaxPacketSize = 512,
+      .bulkOutMaxPacketSize = 512,
+  };
+  report.chipInfo.bytes[0] = std::byte{'8'};
+  report.capability.rawBytes[0] = std::byte{0x01};
+  report.flashId.rawBytes = {std::byte{'E'}, std::byte{'M'}, std::byte{'M'},
+                             std::byte{'C'}, std::byte{' '}};
+  report.flashInfo.rawBytes[0] = std::byte{0xaa};
+  report.flashInfo.legacy.sectorCount = 1024;
+  report.flashInfo.legacy.blockSizeCode = 64;
+  report.flashInfo.legacy.pageSizeCode = 4;
+  report.flashInfo.legacy.eccBits = 8;
+  report.flashInfo.legacy.accessTime = 40;
+  report.flashInfo.legacy.manufacturerCode = 10;
+  report.flashInfo.legacy.flashMask = 1;
+  std::ostringstream output;
+  zzrk::cli::printDeviceInfoJson(report, output);
+  expect(output.str() ==
+             "{\"schemaVersion\":1,\"success\":true,\"command\":\"info\",\"result\":{\"device\":{\"portPath\":\"1-5\",\"vendorId\":8711,\"productId\":13579,\"bcdUsb\":513,\"bcdDevice\":547,\"busNumber\":1,\"deviceAddress\":4,\"mode\":\"Loader\"},\"interface\":{\"interfaceNumber\":0,\"alternateSetting\":0,\"bulkInEndpoint\":129,\"bulkOutEndpoint\":2,\"bulkInMaxPacketSize\":512,\"bulkOutMaxPacketSize\":512},\"chipInfo\":\"38000000000000000000000000000000\",\"capability\":\"0100000000000000\",\"flashId\":\"454d4d4320\",\"storageType\":\"emmc\",\"flashInfo\":{\"raw\":\"aa00000000000000000000\",\"sectorCount\":1024,\"capacityBytes\":524288,\"blockSizeCode\":64,\"pageSizeCode\":4,\"eccBits\":8,\"accessTime\":40,\"manufacturerCode\":10,\"flashMask\":1}},\"error\":null}\n",
+         "unified info JSON uses the stable schemaVersion 1 golden contract");
+}
+
+void testJsonPartitionsGoldenOutput() {
+  zzrk::storage::GptPartitionTable table{};
+  table.firstUsableLba = 34;
+  table.lastUsableLba = 999;
+  table.backupStatus = zzrk::storage::BackupGptStatus::unavailable;
+  zzrk::storage::GptPartition partition{};
+  partition.name = "boot_a";
+  partition.firstLba = 64;
+  partition.lastLba = 127;
+  partition.attributes = 4;
+  table.partitions.push_back(partition);
+  std::ostringstream output;
+  zzrk::cli::printPartitionsJson(table, 1024, output);
+  expect(output.str() ==
+             "{\"schemaVersion\":1,\"success\":true,\"command\":\"partitions\",\"result\":{\"deviceSectors\":1024,\"primaryGpt\":\"verified\",\"backupGpt\":\"unavailable\",\"firstUsableLba\":34,\"lastUsableLba\":999,\"partitions\":[{\"name\":\"boot_a\",\"firstLba\":64,\"lastLba\":127,\"sectorCount\":64,\"byteSize\":32768,\"attributes\":4}]},\"error\":null}\n",
+         "partition JSON keeps backup-unavailable separate from primary validity");
+}
+
 } // namespace
 
 int main() {
@@ -473,5 +621,10 @@ int main() {
   testFlashInfoOutputUsesNeutralFieldsAndFixedWidthHex();
   testFlashIdOutputRecognizesOnlyEmmcMarker();
   testOpaqueFlashIdOutputKeepsStorageUnknown();
+  testJsonFirmwareImageGoldenOutput();
+  testJsonFlashPlanGoldenOutput();
+  testJsonFlashLinesGoldenOutput();
+  testJsonInfoGoldenOutput();
+  testJsonPartitionsGoldenOutput();
   return failures == 0 ? 0 : 1;
 }

@@ -148,6 +148,7 @@ add_subdirectory(src)
 
 if(ZZRK_BUILD_CLI OR ZZRK_BUILD_GUI)
     find_package(Qt6 6.11 REQUIRED COMPONENTS Core)
+    add_subdirectory(src/qt_support)
 endif()
 
 if(ZZRK_BUILD_CLI)

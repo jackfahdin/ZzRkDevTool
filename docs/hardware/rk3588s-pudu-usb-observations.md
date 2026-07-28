@@ -211,6 +211,27 @@ They are not a CID and do not establish manufacturer, capacity, physical
 geometry or the active eMMC hardware partition. Unknown five-byte responses
 remain opaque and have no guessed media mapping.
 
+## Complete Firmware Upgrade Verification
+
+On 2026-07-28 the same board and physical port completed a full upgrade of the
+validated `pudu_rk3588s` Android 12 RKFW/RKAF image with the default critical
+verification mode. The workflow reset the original Loader into Maskrom,
+downloaded the embedded `MiniLoaderAll.bin` DDR and usbplug stages, waited for
+the RAM Loader on port `1-5`, and passed typed RK3588 and eMMC readiness checks.
+
+The RAM Loader then wrote and read back the 317440-byte New IDBlock at eMMC LBA
+64, wrote the generated primary and backup GPT copies, wrote every payload
+present in the image, and read back 10 critical boot-chain payloads. The
+primary GPT verification passed, the typed reset command was accepted, and the
+board subsequently enumerated as ADB `2207:0006` on the same port. The complete
+image contained 5,543,633,782 partition payload bytes.
+
+The validated Loader returns opaque data for disk-tail backup-GPT reads even
+after accepting the write. The product therefore validates the readable
+primary GPT strictly and reports backup write submission separately. The new
+device GPT reader uses the same rule: primary header and entry-array CRCs are
+mandatory, while backup status may be `unavailable`.
+
 ## Not Yet Observed
 
 - A root-level usbmon/pcap capture of the ReadChipInfo, ReadFlashInfo or
@@ -219,3 +240,6 @@ remain opaque and have no guessed media mapping.
 - eMMC CID, physical manufacturer or active hardware-partition information
 - Physical geometry or manufacturer semantics for the legacy FlashInfo fields
 - Stall, timeout, short transfer and CSW residue behavior on hardware
+- Cold Maskrom `--prepare-only` after the shared workflow extraction
+- A complete `--verify all` pass
+- Unified `info` and CRC-validating `partitions` output in Loader mode
