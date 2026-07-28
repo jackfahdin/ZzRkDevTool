@@ -3,13 +3,14 @@
 add_library(
     zzrk_cli_support STATIC
     DeviceListPrinter.cpp
+    FirmwareMd5Verifier.cpp
     FirmwareImagePrinter.cpp
     ProbeSupport.cpp
 )
 target_include_directories(zzrk_cli_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(
     zzrk_cli_support
-    PUBLIC zzrk::image zzrk::transport
+    PUBLIC zzrk::image zzrk::transport Qt6::Core
     PRIVATE zzrk_project_warnings
 )
 

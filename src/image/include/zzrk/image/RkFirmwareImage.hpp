@@ -101,6 +101,7 @@ struct RkFirmwareImage {
     std::uint64_t firmwareOffset{};
     std::uint64_t firmwareSize{};
     std::array<char, 33> trailingMd5{};
+    bool trailingMd5Verified{};
     std::vector<FirmwareEntry> entries;
     std::vector<FirmwarePartition> partitions;
     std::optional<FirmwareLoaderInfo> loader;
@@ -171,6 +172,7 @@ enum class FirmwarePlanErrorCode {
     unsupportedTargetChip,
     missingLoader,
     missingParameter,
+    firmwareMd5NotVerified,
     duplicatePartition,
     targetPartitionMissing,
     targetPartitionTooSmall,
