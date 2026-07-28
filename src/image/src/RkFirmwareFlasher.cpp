@@ -697,6 +697,201 @@ verifyBuffer(session::RockusbSession& rockusb,
     return std::nullopt;
 }
 
+[[nodiscard]] bool shouldVerifyPartition(
+    const FirmwareVerifyMode mode, const std::string_view name) noexcept
+{
+    if (mode == FirmwareVerifyMode::all) {
+        return true;
+    }
+    if (mode == FirmwareVerifyMode::none) {
+        return false;
+    }
+    return name == "security" || name == "misc" || name == "recovery"
+           || name == "resource" || name == "baseparameter"
+           || name.starts_with("uboot_") || name.starts_with("trust_")
+           || name.starts_with("dtbo_") || name.starts_with("vbmeta_")
+           || name.starts_with("boot_")
+           || name.starts_with("vendor_boot_")
+           || name.starts_with("init_boot_");
+}
+
+[[nodiscard]] std::optional<FirmwareFlashError>
+verifyRawEntry(session::RockusbSession& rockusb, std::ifstream& stream,
+               const FirmwareEntry& entry, const FirmwareFlashStep& step,
+               const FirmwareFlashProgressCallback& progress)
+{
+    if (!seekTo(stream, entry.fileOffset)) {
+        return makeError(FirmwareFlashErrorCode::imageSeekFailed, step.target);
+    }
+    std::vector<std::byte> expected(kTransferBytes);
+    std::uint64_t consumed = 0;
+    report(progress, FirmwareFlashPhase::verifyPartition, step.target, 0,
+           entry.logicalSize);
+    while (consumed < entry.contentSize) {
+        std::fill(expected.begin(), expected.end(), std::byte{0});
+        const std::size_t bytes = static_cast<std::size_t>(
+            std::min<std::uint64_t>(expected.size(),
+                                    entry.contentSize - consumed));
+        if (!readExact(stream,
+                       std::span<std::byte>{expected}.first(bytes))) {
+            return makeError(FirmwareFlashErrorCode::imageReadFailed,
+                             step.target, consumed);
+        }
+        const std::size_t transferBytes =
+            ((bytes + kSectorSize - 1U) / kSectorSize) * kSectorSize;
+        if (auto error = verifyBuffer(
+                rockusb,
+                std::span<const std::byte>{expected}.first(transferBytes),
+                step.firstLba + consumed / core::kSectorSize, step.target)) {
+            error->completedBytes += consumed;
+            return error;
+        }
+        consumed += bytes;
+        report(progress, FirmwareFlashPhase::verifyPartition, step.target,
+               consumed, entry.logicalSize);
+    }
+    return std::nullopt;
+}
+
+[[nodiscard]] std::optional<FirmwareFlashError>
+verifySparseEntry(session::RockusbSession& rockusb, std::ifstream& stream,
+                  const FirmwareEntry& entry, const FirmwareFlashStep& step,
+                  const FirmwareFlashProgressCallback& progress)
+{
+    if (!seekTo(stream, entry.fileOffset)) {
+        return makeError(FirmwareFlashErrorCode::imageSeekFailed, step.target);
+    }
+    std::array<std::byte, 28> headerBytes{};
+    if (!readExact(stream, headerBytes)) {
+        return makeError(FirmwareFlashErrorCode::imageReadFailed, step.target);
+    }
+    const auto header = std::span<const std::byte>{headerBytes};
+    const std::uint32_t magic = readLe32(header, 0);
+    const std::uint16_t fileHeaderSize = readLe16(header, 8);
+    const std::uint16_t chunkHeaderSize = readLe16(header, 10);
+    const std::uint32_t blockSize = readLe32(header, 12);
+    const std::uint32_t totalChunks = readLe32(header, 20);
+    if (magic != kSparseMagic || fileHeaderSize < headerBytes.size()
+        || chunkHeaderSize < 12U || blockSize == 0U
+        || blockSize % core::kSectorSize != 0U
+        || !seekTo(stream, entry.fileOffset + fileHeaderSize)) {
+        return makeError(FirmwareFlashErrorCode::unsupportedPayload,
+                         step.target);
+    }
+
+    std::vector<std::byte> chunkHeader(chunkHeaderSize);
+    std::vector<std::byte> expected(kTransferBytes);
+    std::uint64_t logicalBytes = 0;
+    std::uint64_t currentLba = step.firstLba;
+    report(progress, FirmwareFlashPhase::verifyPartition, step.target, 0,
+           entry.logicalSize);
+    for (std::uint32_t chunkIndex = 0; chunkIndex < totalChunks;
+         ++chunkIndex) {
+        if (!readExact(stream, chunkHeader)) {
+            return makeError(FirmwareFlashErrorCode::imageReadFailed,
+                             step.target, logicalBytes);
+        }
+        const auto chunk = std::span<const std::byte>{chunkHeader};
+        const std::uint16_t type = readLe16(chunk, 0);
+        const std::uint32_t chunkBlocks = readLe32(chunk, 4);
+        const std::uint32_t totalSize = readLe32(chunk, 8);
+        const std::uint64_t chunkBytes =
+            static_cast<std::uint64_t>(chunkBlocks) * blockSize;
+        if (logicalBytes > entry.logicalSize
+            || chunkBytes > entry.logicalSize - logicalBytes
+            || totalSize < chunkHeaderSize) {
+            return makeError(FirmwareFlashErrorCode::unsupportedPayload,
+                             step.target, logicalBytes);
+        }
+
+        if (type == kSparseRawChunk) {
+            if (static_cast<std::uint64_t>(totalSize - chunkHeaderSize)
+                != chunkBytes) {
+                return makeError(FirmwareFlashErrorCode::unsupportedPayload,
+                                 step.target, logicalBytes);
+            }
+            std::uint64_t remaining = chunkBytes;
+            while (remaining > 0U) {
+                const std::size_t bytes = static_cast<std::size_t>(
+                    std::min<std::uint64_t>(expected.size(), remaining));
+                auto expectedBytes =
+                    std::span<std::byte>{expected}.first(bytes);
+                if (!readExact(stream, expectedBytes)) {
+                    return makeError(FirmwareFlashErrorCode::imageReadFailed,
+                                     step.target, logicalBytes);
+                }
+                if (auto error = verifyBuffer(rockusb, expectedBytes,
+                                              currentLba, step.target)) {
+                    error->completedBytes += logicalBytes;
+                    return error;
+                }
+                currentLba += bytes / kSectorSize;
+                logicalBytes += bytes;
+                remaining -= bytes;
+                report(progress, FirmwareFlashPhase::verifyPartition,
+                       step.target, logicalBytes, entry.logicalSize);
+            }
+        } else if (type == kSparseFillChunk) {
+            if (totalSize - chunkHeaderSize != 4U) {
+                return makeError(FirmwareFlashErrorCode::unsupportedPayload,
+                                 step.target, logicalBytes);
+            }
+            std::array<std::byte, 4> fill{};
+            if (!readExact(stream, fill)) {
+                return makeError(FirmwareFlashErrorCode::imageReadFailed,
+                                 step.target, logicalBytes);
+            }
+            for (std::size_t index = 0; index < expected.size(); ++index) {
+                expected[index] = fill[index % fill.size()];
+            }
+            std::uint64_t remaining = chunkBytes;
+            while (remaining > 0U) {
+                const std::size_t bytes = static_cast<std::size_t>(
+                    std::min<std::uint64_t>(expected.size(), remaining));
+                if (auto error = verifyBuffer(
+                        rockusb,
+                        std::span<const std::byte>{expected}.first(bytes),
+                        currentLba, step.target)) {
+                    error->completedBytes += logicalBytes;
+                    return error;
+                }
+                currentLba += bytes / kSectorSize;
+                logicalBytes += bytes;
+                remaining -= bytes;
+                report(progress, FirmwareFlashPhase::verifyPartition,
+                       step.target, logicalBytes, entry.logicalSize);
+            }
+        } else if (type == kSparseDontCareChunk) {
+            if (totalSize != chunkHeaderSize) {
+                return makeError(FirmwareFlashErrorCode::unsupportedPayload,
+                                 step.target, logicalBytes);
+            }
+            currentLba += chunkBytes / core::kSectorSize;
+            logicalBytes += chunkBytes;
+            report(progress, FirmwareFlashPhase::verifyPartition, step.target,
+                   logicalBytes, entry.logicalSize);
+        } else if (type == kSparseCrc32Chunk) {
+            if (totalSize - chunkHeaderSize != 4U || chunkBytes != 0U) {
+                return makeError(FirmwareFlashErrorCode::unsupportedPayload,
+                                 step.target, logicalBytes);
+            }
+            std::array<std::byte, 4> ignoredCrc{};
+            if (!readExact(stream, ignoredCrc)) {
+                return makeError(FirmwareFlashErrorCode::imageReadFailed,
+                                 step.target, logicalBytes);
+            }
+        } else {
+            return makeError(FirmwareFlashErrorCode::unsupportedPayload,
+                             step.target, logicalBytes);
+        }
+    }
+    if (logicalBytes != entry.logicalSize) {
+        return makeError(FirmwareFlashErrorCode::unsupportedPayload,
+                         step.target, logicalBytes);
+    }
+    return std::nullopt;
+}
+
 } // namespace
 
 FirmwareFlashResult flashRkFirmwareImage(
@@ -777,7 +972,7 @@ FirmwareFlashResult flashRkFirmwareImage(
                (kPrimaryGptSectors + kBackupGptSectors) * kSectorSize);
     }
 
-    if (options.verifyPartitionTable && gpt.has_value()) {
+    if (options.verifyMode != FirmwareVerifyMode::none && gpt.has_value()) {
         // RK3588 Loader 0x0223 returns 0xCC for the disk-tail backup GPT even
         // after a successful write. Verify the readable primary GPT strictly.
         report(progress, FirmwareFlashPhase::verifyPartitionTable, "GPT", 0,
@@ -844,6 +1039,21 @@ FirmwareFlashResult flashRkFirmwareImage(
             return *error;
         }
         success.partitionBytesWritten += entry.logicalSize;
+
+        if (shouldVerifyPartition(options.verifyMode, step.target)) {
+            if (entry.format == PayloadFormat::raw) {
+                error = verifyRawEntry(rockusb, stream, entry, step, progress);
+            } else {
+                error = verifySparseEntry(rockusb, stream, entry, step,
+                                          progress);
+            }
+            if (error.has_value()) {
+                error->completedBytes +=
+                    success.partitionBytesWritten - entry.logicalSize;
+                return *error;
+            }
+            ++success.partitionsVerified;
+        }
     }
 
     if (idBlock.has_value()) {
@@ -857,7 +1067,7 @@ FirmwareFlashResult flashRkFirmwareImage(
         report(progress, FirmwareFlashPhase::writeLoader, "eMMC IDBlock",
                idBlock->size(), idBlock->size());
 
-        if (options.verifyLoader) {
+        if (options.verifyMode != FirmwareVerifyMode::none) {
             report(progress, FirmwareFlashPhase::verifyLoader,
                    "eMMC IDBlock", 0, idBlock->size());
             if (auto error = verifyBuffer(rockusb, *idBlock, kLoaderLba,
