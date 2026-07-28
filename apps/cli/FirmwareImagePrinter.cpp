@@ -168,7 +168,7 @@ void printFirmwareFlashPlan(const image::RkFirmwareFlashPlan& plan,
         output << "  " << index + 1U << ". ";
         switch (step.kind) {
         case image::FirmwareFlashStepKind::upgradeLoader:
-            output << "Upgrade Loader";
+            output << "Upgrade MiniLoaderAll.bin to eMMC IDBlock";
             break;
         case image::FirmwareFlashStepKind::ensurePartitionTable:
             output << "Ensure GPT";
