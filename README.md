@@ -1,12 +1,10 @@
 # ZzRkDevTool
 
 ZzRkDevTool is an MIT-licensed C++20 and Qt 6 Rockchip flashing tool. The first
-development target is RK3588 with eMMC on Ubuntu 26.04 LTS. The current code is
-a non-writing technical preview: it enumerates Rockchip USB devices and can
-claim and release one explicitly selected RK3588 Loader interface. It can send
-fixed, typed ReadChipInfo, ReadFlashInfo and ReadFlashID commands. The exact
-observed `EMMC ` Flash ID marker identifies the current validated target as
-eMMC; the tool does not write or erase storage.
+validated target is RK3588 with eMMC on Ubuntu 26.04 LTS. Its CLI enumerates
+Rockchip USB devices, reads typed Loader information, inspects and plans RKFW /
+RKAF update images, and performs complete eMMC system upgrades from
+`update.img`.
 
 ## Development build
 
@@ -37,7 +35,7 @@ cmake --build --preset portable-debug
 ctest --preset portable-debug
 ```
 
-Run the read-only tools:
+Run the CLI from the selected preset's build directory:
 
 ```bash
 ./build/linux-debug/apps/cli/zzrkdevtool-cli list
@@ -45,6 +43,11 @@ Run the read-only tools:
 ./build/linux-debug/apps/cli/zzrkdevtool-cli read-chip-info 1-5
 ./build/linux-debug/apps/cli/zzrkdevtool-cli read-flash-info 1-5
 ./build/linux-debug/apps/cli/zzrkdevtool-cli read-flash-id 1-5
+./build/linux-debug/apps/cli/zzrkdevtool-cli inspect-image update.img
+./build/linux-debug/apps/cli/zzrkdevtool-cli plan-image update.img
+./build/linux-debug/apps/cli/zzrkdevtool-cli \
+    flash-image 1-5 update.img --yes --verify critical
+./build/linux-debug/apps/cli/zzrkdevtool-cli reset 1-5
 ./build/linux-debug/apps/gui/ZzRkDevTool
 ```
 
@@ -61,6 +64,20 @@ five-byte response and recognizes only the exact observed `EMMC ` marker as
 eMMC. That marker is not a CID, manufacturer, capacity or hardware-partition
 identifier; every other five-byte response remains opaque.
 
+`inspect-image`, `plan-image`, and `flash-image` calculate the RKFW trailing
+MD5 with Qt 6 before accepting the image. `flash-image` writes generated GPT,
+every partition payload actually present in the image, and the embedded
+`MiniLoaderAll.bin` converted to a New IDBlock at eMMC LBA 64. A partition that
+exists only in `parameter` and has no image payload is left unchanged.
+
+The default `--verify critical` mode reads back GPT, Loader, and boot-chain
+partition payloads. `--verify all` also checks all written Raw and Android
+Sparse RAW/FILL extents; Sparse DONT_CARE extents are intentionally skipped.
+`--verify none` disables read-back verification. A successful flash resets the
+device by default; `--no-reboot` leaves it in Loader mode. `Ctrl+C` is observed
+between RockUSB transfer blocks, stops new storage commands, suppresses the
+automatic reset, and exits with status 130.
+
 `CMakeUserPresets.json` may add workstation-specific convenience presets and is
 intentionally ignored by Git. It is not required by the commands above.
 
@@ -68,19 +85,22 @@ This technical preview is a development-tree build. Installation and release
 packaging stay disabled until Qt, its platform plugins, and libusb can be
 deployed together on each supported host platform.
 
-## Safety
+## Safety and current limits
 
-No write, erase, loader download, or reset operation belongs in the first
-milestone. Such operations will only be added behind typed plans, device and
-range validation, explicit confirmation, and hardware tests.
+All device operations require the physical USB port path printed by `list`.
+Flashing additionally requires `--yes`, the validated Loader identity, the
+exact `EMMC ` media marker, sufficient eMMC capacity, a valid firmware MD5,
+and a complete typed flash plan. No CLI command exposes raw RockUSB CDB input.
 
 The claim-only probe requires an exact physical port and fails closed on a
 partial scan, descriptor change, unexpected interface layout, active kernel
 driver, claim failure or release failure. It never selects the first matching
 VID/PID implicitly.
 
-The target-private `RockusbSession` executor supports data-in transactions only.
-The CLI reaches it solely through the fixed typed `readChipInfo`,
-`readFlashInfo` and `readFlashId` operations; raw command blocks, tags, lengths
-and LUNs are not accepted from CLI or GUI input. Future public operations will
-follow the same typed boundary.
+Current write support is deliberately limited to the observed RK3588 Loader
+revision and eMMC user area. It does not write eMMC boot0, boot1, or RPMB. The
+RK3588 Loader 0x0223 used for validation returns opaque data when reading the
+disk-tail backup GPT, so the tool verifies the primary GPT strictly and reports
+the backup GPT as write-submitted. Maskrom Loader download, additional Loader
+revisions, Windows/macOS hardware validation, and release packaging remain
+future work.

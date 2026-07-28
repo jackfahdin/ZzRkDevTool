@@ -41,6 +41,8 @@ constexpr std::uint16_t kSparseCrc32Chunk = 0xcac4U;
 constexpr std::uint64_t kLoaderLba = 64U;
 constexpr std::size_t kLoaderAlignment = 2048U;
 constexpr std::size_t kMaximumIdBlockBytes = 64U * 1024U * 1024U;
+constexpr std::string_view kLoaderTarget =
+    "MiniLoaderAll.bin -> eMMC IDBlock";
 constexpr std::array<std::uint8_t, 16> kRockchipRc4Key{
     124U, 78U, 3U,  4U,  85U, 5U,  9U,  7U,
     45U,  44U, 123U, 56U, 23U, 13U, 23U, 17U,
@@ -363,7 +365,7 @@ makeIdBlock(std::ifstream& stream, const RkFirmwareImage& image,
         || *loaderStep->entryIndex >= image.entries.size()
         || loaderStep->outputSize != image.loader->idBlockSize) {
         return makeError(FirmwareFlashErrorCode::invalidLoader,
-                         "eMMC IDBlock");
+                         std::string{kLoaderTarget});
     }
 
     const auto& info = *image.loader;
@@ -372,7 +374,7 @@ makeIdBlock(std::ifstream& stream, const RkFirmwareImage& image,
         || info.idBlockSize > kMaximumIdBlockBytes
         || info.idBlockSize % kSectorSize != 0U) {
         return makeError(FirmwareFlashErrorCode::invalidLoader,
-                         "eMMC IDBlock");
+                         std::string{kLoaderTarget});
     }
 
     std::vector<std::byte> idBlock(static_cast<std::size_t>(info.idBlockSize));
@@ -391,7 +393,7 @@ makeIdBlock(std::ifstream& stream, const RkFirmwareImage& image,
             || component.size
                    > entry.contentSize - component.relativeOffset) {
             return makeError(FirmwareFlashErrorCode::invalidLoader,
-                             "eMMC IDBlock");
+                             std::string{kLoaderTarget});
         }
         if (!seekTo(stream, entry.fileOffset + component.relativeOffset)) {
             return makeError(FirmwareFlashErrorCode::imageSeekFailed,
@@ -957,7 +959,7 @@ FirmwareFlashResult flashRkFirmwareImage(
         if (kLoaderLba > deviceSectors
             || loaderSectors > deviceSectors - kLoaderLba) {
             return makeError(FirmwareFlashErrorCode::deviceTooSmall,
-                             "eMMC IDBlock");
+                             std::string{kLoaderTarget});
         }
 
         const auto capabilityResult = session::readCapability(rockusb);
@@ -1089,27 +1091,27 @@ FirmwareFlashResult flashRkFirmwareImage(
     }
 
     if (idBlock.has_value()) {
-        report(progress, FirmwareFlashPhase::writeLoader, "eMMC IDBlock", 0,
+        report(progress, FirmwareFlashPhase::writeLoader, kLoaderTarget, 0,
                idBlock->size());
         if (auto error =
-                writeBuffer(rockusb, *idBlock, kLoaderLba, "eMMC IDBlock",
+                writeBuffer(rockusb, *idBlock, kLoaderLba, kLoaderTarget,
                             0, cancellation)) {
             return *error;
         }
         success.loaderWritten = true;
-        report(progress, FirmwareFlashPhase::writeLoader, "eMMC IDBlock",
+        report(progress, FirmwareFlashPhase::writeLoader, kLoaderTarget,
                idBlock->size(), idBlock->size());
 
         if (options.verifyMode != FirmwareVerifyMode::none) {
             report(progress, FirmwareFlashPhase::verifyLoader,
-                   "eMMC IDBlock", 0, idBlock->size());
+                   kLoaderTarget, 0, idBlock->size());
             if (auto error = verifyBuffer(rockusb, *idBlock, kLoaderLba,
-                                          "eMMC IDBlock", cancellation)) {
+                                          kLoaderTarget, cancellation)) {
                 return *error;
             }
             success.loaderVerified = true;
             report(progress, FirmwareFlashPhase::verifyLoader,
-                   "eMMC IDBlock", idBlock->size(), idBlock->size());
+                   kLoaderTarget, idBlock->size(), idBlock->size());
         }
     }
     return success;
