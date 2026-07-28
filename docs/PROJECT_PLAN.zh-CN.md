@@ -713,9 +713,9 @@ RK3566/3568、RK3576、RK3399、旧 RK32xx、SPI NOR、SPI NAND、NAND 和 UFS �
 - target-private `RockusbSession` executor 内部生成 tag，严格执行 CBW、DATA、CSW，短传输或失步错误后进入 Faulted；写入、擦除和复位均通过 typed API 暴露，CLI 和 GUI 不接受 raw CDB。
 - 应用日志通过 `zzrk_logging` 封装 spdlog v2；协议与 session 保持无日志副作用，CLI 的结构化结果继续使用 stdout。
 
-RKFW/RKAF、parameter、Raw 和 Android Sparse 已实现有界流式解析。Qt 6 `QCryptographicHash::Md5` 在任何计划或写盘前校验固件尾部 MD5；flash plan 按真实 eMMC 容量展开 grow 分区，写入主/备 GPT、固件实际携带的全部分区 payload，并把 `MiniLoaderAll.bin` 转换为 New IDBlock 后最后写入 LBA 64。
+RKFW/RKAF、parameter、Raw 和 Android Sparse 已实现有界流式解析。Qt 6 `QCryptographicHash::Md5` 在任何计划或写盘前校验固件尾部 MD5；flash plan 按真实 eMMC 容量展开 grow 分区，把 `MiniLoaderAll.bin` 转换为 New IDBlock 并按 RK3588 官方升级顺序先写入 LBA 64，然后写入主/备 GPT 和固件实际携带的全部分区 payload。
 
-Ubuntu 26.04 真机已完成 `pudu_rk3588s` 的整包烧录：主 GPT 回读通过、11 个实际 payload 写入成功、Sparse super 写入成功、317440-byte Loader IDBlock 写入并回读通过。Loader 0x0223 对盘尾备份 GPT 固定返回不透明数据，因此当前严格验证主 GPT并仅报告备份 GPT 写入已提交。
+Ubuntu 26.04 真机已跑通 `pudu_rk3588s` 的完整镜像解析、主 GPT 和低位分区写入。后续 `--verify all` 验收发现旧流程先写分区、最后写 IDBlock 时，从 LBA `0x10000` 开始的写命令虽然返回成功但未实际落盘；当前已改为与 RK3588 官方 `upgrade_tool` 一致的 New IDBlock 优先顺序，等待重新完成整包真机验收。Loader 0x0223 对盘尾备份 GPT 固定返回不透明数据，因此当前严格验证主 GPT 并仅报告备份 GPT 写入已提交。
 
 CLI 默认 `--verify critical`，支持 `all` 和 `none`；完整成功后默认 typed reset，`--no-reboot` 可保留 Loader。SIGINT 在 RockUSB 分块边界停止新命令、禁止自动复位并返回 130。当前仍不触碰 eMMC boot0、boot1 或 RPMB。
 
