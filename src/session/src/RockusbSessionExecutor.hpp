@@ -26,6 +26,8 @@ struct RockusbWriteRequest {
 struct RockusbNoDataRequest {
     std::uint8_t logicalUnit{};
     std::uint8_t commandLength{};
+    protocol::DataDirection direction{protocol::DataDirection::hostToDevice};
+    bool allowNonZeroResidue{};
     std::array<std::byte, protocol::kRockusbCommandBlockSize> commandBlock{};
 };
 

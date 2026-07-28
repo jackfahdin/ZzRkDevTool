@@ -33,6 +33,11 @@ enum class SessionState {
     faulted,
 };
 
+enum class StatusResiduePolicy {
+    requireZero,
+    allowNonZeroOnSuccess,
+};
+
 enum class SessionStage {
     request,
     command,
@@ -87,7 +92,9 @@ class RockusbSession final {
     // Calls are synchronous and not thread-safe. The owner serializes access
     // and keeps transport alive longer than this session.
     explicit RockusbSession(IUsbTransport& transport,
-                            SessionTimeouts timeouts = {}) noexcept;
+                            SessionTimeouts timeouts = {},
+                            StatusResiduePolicy statusResiduePolicy =
+                                StatusResiduePolicy::requireZero) noexcept;
 
     RockusbSession(const RockusbSession&) = delete;
     RockusbSession& operator=(const RockusbSession&) = delete;
@@ -103,6 +110,7 @@ class RockusbSession final {
 
     IUsbTransport& transport_;
     SessionTimeouts timeouts_;
+    StatusResiduePolicy statusResiduePolicy_;
     SessionState state_{SessionState::ready};
     std::uint32_t nextTag_{1};
 };

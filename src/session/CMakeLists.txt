@@ -8,6 +8,7 @@ add_library(
     src/ReadFlashInfo.cpp
     src/ReadLba.cpp
     src/ResetDevice.cpp
+    src/TestUnitReady.cpp
     src/WriteLba.cpp
     src/EraseLba.cpp
     src/RockusbSession.cpp

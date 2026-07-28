@@ -74,8 +74,11 @@ validateTransfer(const TransferResult& result, const SessionStage stage,
 } // namespace
 
 RockusbSession::RockusbSession(IUsbTransport& transport,
-                               const SessionTimeouts timeouts) noexcept
-    : transport_(transport), timeouts_(timeouts)
+                               const SessionTimeouts timeouts,
+                               const StatusResiduePolicy statusResiduePolicy)
+    noexcept
+    : transport_(transport), timeouts_(timeouts),
+      statusResiduePolicy_(statusResiduePolicy)
 {
 }
 
@@ -175,7 +178,8 @@ SessionResult detail::RockusbSessionExecutor::executeRead(
         }
         return session.fault(std::move(error));
     }
-    if (status->dataResidue != 0U) {
+    if (status->dataResidue != 0U &&
+        session.statusResiduePolicy_ == StatusResiduePolicy::requireZero) {
         auto error = makeError(SessionErrorCode::nonZeroResidue,
                                SessionStage::status);
         error.residue = status->dataResidue;
@@ -281,7 +285,8 @@ SessionResult detail::RockusbSessionExecutor::executeWrite(
         }
         return session.fault(std::move(error));
     }
-    if (status->dataResidue != 0U) {
+    if (status->dataResidue != 0U &&
+        session.statusResiduePolicy_ == StatusResiduePolicy::requireZero) {
         auto error = makeError(SessionErrorCode::nonZeroResidue,
                                SessionStage::status);
         error.residue = status->dataResidue;
@@ -313,7 +318,7 @@ SessionResult detail::RockusbSessionExecutor::executeNoData(
     const protocol::RockusbCommand command{
         .tag = session.nextTag_,
         .transferLength = 0,
-        .direction = protocol::DataDirection::hostToDevice,
+        .direction = request.direction,
         .logicalUnit = request.logicalUnit,
         .commandLength = request.commandLength,
         .commandBlock = request.commandBlock,
@@ -360,7 +365,8 @@ SessionResult detail::RockusbSessionExecutor::executeNoData(
         }
         return session.fault(std::move(error));
     }
-    if (status->dataResidue != 0U) {
+    if (status->dataResidue != 0U && !request.allowNonZeroResidue &&
+        session.statusResiduePolicy_ == StatusResiduePolicy::requireZero) {
         auto error = makeError(SessionErrorCode::nonZeroResidue,
                                SessionStage::status);
         error.residue = status->dataResidue;
