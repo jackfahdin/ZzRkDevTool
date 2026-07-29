@@ -53,6 +53,13 @@ target_link_libraries(
 )
 add_test(NAME rk_maskrom_loader COMMAND rk_maskrom_loader_test)
 
+add_executable(standalone_image_test standalone_image_test.cpp)
+target_link_libraries(
+    standalone_image_test
+    PRIVATE zzrk::image zzrk_project_warnings
+)
+add_test(NAME standalone_image COMMAND standalone_image_test)
+
 if(TARGET zzrk_logging)
     add_executable(logging_test logging_test.cpp)
     target_link_libraries(

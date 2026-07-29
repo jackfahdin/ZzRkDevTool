@@ -354,23 +354,10 @@ void rockchipRc4(const std::span<std::byte> bytes) noexcept
 }
 
 [[nodiscard]] std::variant<std::vector<std::byte>, FirmwareFlashError>
-makeIdBlock(std::ifstream& stream, const RkFirmwareImage& image,
-            const RkFirmwareFlashPlan& plan)
+makeIdBlock(std::ifstream& stream, const FirmwarePayloadSource& source,
+            const FirmwareLoaderInfo& info)
 {
-    const auto loaderStep = std::ranges::find(
-        plan.steps, FirmwareFlashStepKind::upgradeLoader,
-        &FirmwareFlashStep::kind);
-    if (!image.loader.has_value() || loaderStep == plan.steps.end()
-        || !loaderStep->entryIndex.has_value()
-        || *loaderStep->entryIndex >= image.entries.size()
-        || loaderStep->outputSize != image.loader->idBlockSize) {
-        return makeError(FirmwareFlashErrorCode::invalidLoader,
-                         std::string{kLoaderTarget});
-    }
-
-    const auto& info = *image.loader;
-    const auto& entry = image.entries[*loaderStep->entryIndex];
-    if (entry.name != "bootloader" || info.idBlockSize == 0U
+    if (source.contentSize == 0U || info.idBlockSize == 0U
         || info.idBlockSize > kMaximumIdBlockBytes
         || info.idBlockSize % kSectorSize != 0U) {
         return makeError(FirmwareFlashErrorCode::invalidLoader,
@@ -389,21 +376,21 @@ makeIdBlock(std::ifstream& stream, const RkFirmwareImage& image,
         if (component.size == 0U || component.size % kSectorSize != 0U
             || destinationOffset > idBlock.size()
             || component.size > idBlock.size() - destinationOffset
-            || component.relativeOffset > entry.contentSize
+            || component.relativeOffset > source.contentSize
             || component.size
-                   > entry.contentSize - component.relativeOffset) {
+                   > source.contentSize - component.relativeOffset) {
             return makeError(FirmwareFlashErrorCode::invalidLoader,
                              std::string{kLoaderTarget});
         }
-        if (!seekTo(stream, entry.fileOffset + component.relativeOffset)) {
+        if (!seekTo(stream, source.fileOffset + component.relativeOffset)) {
             return makeError(FirmwareFlashErrorCode::imageSeekFailed,
-                             "embedded Loader");
+                             "Loader");
         }
         auto destination = std::span<std::byte>{idBlock}.subspan(
             destinationOffset, component.size);
         if (!readExact(stream, destination)) {
             return makeError(FirmwareFlashErrorCode::imageReadFailed,
-                             "embedded Loader");
+                             "Loader");
         }
         if (info.rc4Disable) {
             for (std::size_t offset = 0; offset < destination.size();
@@ -424,6 +411,37 @@ makeIdBlock(std::ifstream& stream, const RkFirmwareImage& image,
         return *error;
     }
     return idBlock;
+}
+
+[[nodiscard]] std::variant<std::vector<std::byte>, FirmwareFlashError>
+makeIdBlock(std::ifstream& stream, const RkFirmwareImage& image,
+            const RkFirmwareFlashPlan& plan)
+{
+    const auto loaderStep = std::ranges::find(
+        plan.steps, FirmwareFlashStepKind::upgradeLoader,
+        &FirmwareFlashStep::kind);
+    if (!image.loader.has_value() || loaderStep == plan.steps.end()
+        || !loaderStep->entryIndex.has_value()
+        || *loaderStep->entryIndex >= image.entries.size()
+        || loaderStep->outputSize != image.loader->idBlockSize) {
+        return makeError(FirmwareFlashErrorCode::invalidLoader,
+                         std::string{kLoaderTarget});
+    }
+    const auto& entry = image.entries[*loaderStep->entryIndex];
+    if (entry.name != "bootloader") {
+        return makeError(FirmwareFlashErrorCode::invalidLoader,
+                         std::string{kLoaderTarget});
+    }
+    return makeIdBlock(
+        stream,
+        FirmwarePayloadSource{
+            .sourcePath = image.sourcePath,
+            .fileOffset = entry.fileOffset,
+            .contentSize = entry.contentSize,
+            .logicalSize = entry.logicalSize,
+            .format = PayloadFormat::raw,
+        },
+        *image.loader);
 }
 
 [[nodiscard]] std::optional<FirmwareFlashError>
@@ -919,6 +937,251 @@ verifySparseEntry(session::RockusbSession& rockusb, std::ifstream& stream,
 }
 
 } // namespace
+
+FirmwarePayloadOperationResult writeFirmwarePayload(
+    session::RockusbSession& rockusb, const FirmwarePayloadSource& source,
+    const std::string_view target, const std::uint64_t firstLba,
+    const std::uint64_t sectorCount, const bool eraseSparse,
+    const FirmwareFlashProgressCallback& progress,
+    const FirmwareFlashCancellationCallback& cancellation)
+{
+    if (source.contentSize == 0U || source.logicalSize == 0U
+        || sectorCount == 0U
+        || sectorCount > std::numeric_limits<std::uint64_t>::max() / kSectorSize
+        || source.logicalSize > sectorCount * kSectorSize
+        || (source.format != PayloadFormat::raw
+            && source.format != PayloadFormat::androidSparse)) {
+        return makeError(FirmwareFlashErrorCode::invalidPlan,
+                         std::string{target});
+    }
+    std::ifstream stream{source.sourcePath, std::ios::binary};
+    if (!stream) {
+        return makeError(FirmwareFlashErrorCode::imageOpenFailed,
+                         source.sourcePath.string());
+    }
+    const FirmwareEntry entry{
+        .name = {},
+        .path = {},
+        .containerOffset = 0U,
+        .fileOffset = source.fileOffset,
+        .storedSize = source.contentSize,
+        .contentSize = source.contentSize,
+        .logicalSize = source.logicalSize,
+        .format = source.format,
+        .selfEntry = false,
+    };
+    const FirmwareFlashStep step{
+        .kind = FirmwareFlashStepKind::writePartition,
+        .target = std::string{target},
+        .entryIndex = std::nullopt,
+        .firstLba = firstLba,
+        .sectorCount = sectorCount,
+        .inputSize = source.contentSize,
+        .outputSize = source.logicalSize,
+        .format = source.format,
+    };
+    std::uint64_t sectorsErased = 0U;
+    if (source.format == PayloadFormat::androidSparse && eraseSparse) {
+        if (auto error = eraseRange(rockusb, firstLba, sectorCount, target,
+                                    progress, cancellation)) {
+            return *error;
+        }
+        sectorsErased = sectorCount;
+    }
+    std::optional<FirmwareFlashError> error;
+    if (source.format == PayloadFormat::raw) {
+        error = writeRawEntry(rockusb, stream, entry, step, progress,
+                              cancellation);
+    } else {
+        error = writeSparseEntry(rockusb, stream, entry, step, progress,
+                                 cancellation);
+    }
+    if (error.has_value()) {
+        return *error;
+    }
+    return FirmwarePayloadOperationSuccess{
+        .bytesProcessed = source.logicalSize,
+        .sectorsErased = sectorsErased,
+    };
+}
+
+FirmwarePayloadOperationResult verifyFirmwarePayload(
+    session::RockusbSession& rockusb, const FirmwarePayloadSource& source,
+    const std::string_view target, const std::uint64_t firstLba,
+    const std::uint64_t sectorCount,
+    const FirmwareFlashProgressCallback& progress,
+    const FirmwareFlashCancellationCallback& cancellation)
+{
+    if (source.contentSize == 0U || source.logicalSize == 0U
+        || sectorCount == 0U
+        || sectorCount > std::numeric_limits<std::uint64_t>::max() / kSectorSize
+        || source.logicalSize > sectorCount * kSectorSize
+        || (source.format != PayloadFormat::raw
+            && source.format != PayloadFormat::androidSparse)) {
+        return makeError(FirmwareFlashErrorCode::invalidPlan,
+                         std::string{target});
+    }
+    std::ifstream stream{source.sourcePath, std::ios::binary};
+    if (!stream) {
+        return makeError(FirmwareFlashErrorCode::imageOpenFailed,
+                         source.sourcePath.string());
+    }
+    const FirmwareEntry entry{
+        .name = {},
+        .path = {},
+        .containerOffset = 0U,
+        .fileOffset = source.fileOffset,
+        .storedSize = source.contentSize,
+        .contentSize = source.contentSize,
+        .logicalSize = source.logicalSize,
+        .format = source.format,
+        .selfEntry = false,
+    };
+    const FirmwareFlashStep step{
+        .kind = FirmwareFlashStepKind::writePartition,
+        .target = std::string{target},
+        .entryIndex = std::nullopt,
+        .firstLba = firstLba,
+        .sectorCount = sectorCount,
+        .inputSize = source.contentSize,
+        .outputSize = source.logicalSize,
+        .format = source.format,
+    };
+    std::optional<FirmwareFlashError> error;
+    if (source.format == PayloadFormat::raw) {
+        error = verifyRawEntry(rockusb, stream, entry, step, progress,
+                               cancellation);
+    } else {
+        error = verifySparseEntry(rockusb, stream, entry, step, progress,
+                                  cancellation);
+    }
+    if (error.has_value()) {
+        return *error;
+    }
+    return FirmwarePayloadOperationSuccess{
+        .bytesProcessed = source.logicalSize,
+    };
+}
+
+RkIdBlockResult buildRkNewIdBlock(const RkLoaderImage& loader)
+{
+    std::ifstream stream{loader.source.sourcePath, std::ios::binary};
+    if (!stream) {
+        return makeError(FirmwareFlashErrorCode::imageOpenFailed,
+                         loader.source.sourcePath.string());
+    }
+    return makeIdBlock(stream, loader.source, loader.info);
+}
+
+FirmwarePayloadOperationResult writeRkLoaderIdBlock(
+    session::RockusbSession& rockusb, const RkLoaderImage& loader,
+    const FirmwareFlashProgressCallback& progress,
+    const FirmwareFlashCancellationCallback& cancellation)
+{
+    auto prepared = buildRkNewIdBlock(loader);
+    if (const auto* error = std::get_if<FirmwareFlashError>(&prepared)) {
+        return *error;
+    }
+    const auto& idBlock = std::get<std::vector<std::byte>>(prepared);
+    report(progress, FirmwareFlashPhase::writeLoader, kLoaderTarget, 0U,
+           idBlock.size());
+    if (auto error = writeBuffer(rockusb, idBlock, kLoaderLba, kLoaderTarget,
+                                 0U, cancellation)) {
+        return *error;
+    }
+    report(progress, FirmwareFlashPhase::writeLoader, kLoaderTarget,
+           idBlock.size(), idBlock.size());
+    return FirmwarePayloadOperationSuccess{
+        .bytesProcessed = idBlock.size(),
+    };
+}
+
+FirmwarePayloadOperationResult verifyRkLoaderIdBlock(
+    session::RockusbSession& rockusb, const RkLoaderImage& loader,
+    const FirmwareFlashProgressCallback& progress,
+    const FirmwareFlashCancellationCallback& cancellation)
+{
+    auto prepared = buildRkNewIdBlock(loader);
+    if (const auto* error = std::get_if<FirmwareFlashError>(&prepared)) {
+        return *error;
+    }
+    const auto& idBlock = std::get<std::vector<std::byte>>(prepared);
+    report(progress, FirmwareFlashPhase::verifyLoader, kLoaderTarget, 0U,
+           idBlock.size());
+    if (auto error = verifyBuffer(rockusb, idBlock, kLoaderLba,
+                                  kLoaderTarget, cancellation)) {
+        return *error;
+    }
+    report(progress, FirmwareFlashPhase::verifyLoader, kLoaderTarget,
+           idBlock.size(), idBlock.size());
+    return FirmwarePayloadOperationSuccess{
+        .bytesProcessed = idBlock.size(),
+    };
+}
+
+FirmwarePayloadOperationResult writeRkPartitionTable(
+    session::RockusbSession& rockusb,
+    const RockchipParameterLayout& layout,
+    const std::uint64_t deviceSectors,
+    const FirmwareFlashProgressCallback& progress,
+    const FirmwareFlashCancellationCallback& cancellation)
+{
+    RkFirmwareImage image{};
+    image.model = layout.model.empty() ? "RK3588" : layout.model;
+    image.partitions = layout.partitions;
+    auto generated = makeGpt(image, deviceSectors);
+    if (const auto* error = std::get_if<FirmwareFlashError>(&generated)) {
+        return *error;
+    }
+    const auto& gpt = std::get<GptBuffers>(generated);
+    constexpr std::uint64_t totalBytes =
+        (kPrimaryGptSectors + kBackupGptSectors) * kSectorSize;
+    report(progress, FirmwareFlashPhase::writePartitionTable, "GPT", 0U,
+           totalBytes);
+    if (auto error = writeBuffer(rockusb, gpt.primary, 0U, "primary GPT", 0U,
+                                 cancellation)) {
+        return *error;
+    }
+    if (auto error = writeBuffer(rockusb, gpt.backup,
+                                 deviceSectors - kBackupGptSectors,
+                                 "backup GPT", 0U, cancellation)) {
+        return *error;
+    }
+    report(progress, FirmwareFlashPhase::writePartitionTable, "GPT",
+           totalBytes, totalBytes);
+    return FirmwarePayloadOperationSuccess{
+        .bytesProcessed = totalBytes,
+    };
+}
+
+FirmwarePayloadOperationResult verifyRkPartitionTable(
+    session::RockusbSession& rockusb,
+    const RockchipParameterLayout& layout,
+    const std::uint64_t deviceSectors,
+    const FirmwareFlashProgressCallback& progress,
+    const FirmwareFlashCancellationCallback& cancellation)
+{
+    RkFirmwareImage image{};
+    image.model = layout.model.empty() ? "RK3588" : layout.model;
+    image.partitions = layout.partitions;
+    auto generated = makeGpt(image, deviceSectors);
+    if (const auto* error = std::get_if<FirmwareFlashError>(&generated)) {
+        return *error;
+    }
+    const auto& gpt = std::get<GptBuffers>(generated);
+    constexpr std::uint64_t totalBytes = kPrimaryGptSectors * kSectorSize;
+    report(progress, FirmwareFlashPhase::verifyPartitionTable, "GPT", 0U,
+           totalBytes);
+    if (auto error = verifyBuffer(rockusb, gpt.primary, 0U, "primary GPT",
+                                  cancellation)) {
+        return *error;
+    }
+    report(progress, FirmwareFlashPhase::verifyPartitionTable, "GPT",
+           totalBytes, totalBytes);
+    return FirmwarePayloadOperationSuccess{
+        .bytesProcessed = totalBytes,
+    };
+}
 
 bool shouldVerifyFirmwarePartition(const FirmwareVerifyMode mode,
                                    const std::string_view name) noexcept

@@ -180,7 +180,32 @@ downloadRkMaskromLoader(session::IUsbTransport &transport,
     return makeError(MaskromLoaderErrorCode::invalidImage, "Loader");
   }
 
-  std::ifstream stream{image.sourcePath, std::ios::binary};
+  return downloadRkMaskromLoader(
+      transport,
+      RkLoaderImage{
+          .source = FirmwarePayloadSource{
+              .sourcePath = image.sourcePath,
+              .fileOffset = loaderEntry->fileOffset,
+              .contentSize = loaderEntry->contentSize,
+              .logicalSize = loaderEntry->logicalSize,
+              .format = PayloadFormat::raw,
+          },
+          .info = *image.loader,
+      },
+      progress, cancellation);
+}
+
+MaskromLoaderResult
+downloadRkMaskromLoader(session::IUsbTransport &transport,
+                        const RkLoaderImage &loader,
+                        const MaskromLoaderProgressCallback &progress,
+                        const MaskromLoaderCancellationCallback &cancellation) {
+  if (loader.source.contentSize == 0U || loader.info.code471.empty() ||
+      loader.info.code472.empty()) {
+    return makeError(MaskromLoaderErrorCode::invalidImage, "Loader");
+  }
+
+  std::ifstream stream{loader.source.sourcePath, std::ios::binary};
   if (!stream) {
     return makeError(MaskromLoaderErrorCode::imageOpenFailed, "Loader");
   }
@@ -191,7 +216,7 @@ downloadRkMaskromLoader(session::IUsbTransport &transport,
           const std::string_view stage) -> std::optional<MaskromLoaderError> {
     for (const auto &entry : entries) {
       if (auto error = sendEntry(
-              transport, stream, loaderEntry->fileOffset, entry, requestIndex,
+              transport, stream, loader.source.fileOffset, entry, requestIndex,
               stage, success.bytesDownloaded, progress, cancellation)) {
         return error;
       }
@@ -202,11 +227,11 @@ downloadRkMaskromLoader(session::IUsbTransport &transport,
   };
 
   if (auto error =
-          downloadEntries(image.loader->code471, 0x0471U, "DDR code")) {
+          downloadEntries(loader.info.code471, 0x0471U, "DDR code")) {
     return *error;
   }
   if (auto error =
-          downloadEntries(image.loader->code472, 0x0472U, "usbplug code")) {
+          downloadEntries(loader.info.code472, 0x0472U, "usbplug code")) {
     return *error;
   }
   return success;

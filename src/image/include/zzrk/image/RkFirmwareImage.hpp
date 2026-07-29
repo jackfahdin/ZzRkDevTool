@@ -56,8 +56,8 @@ struct FirmwareEntry {
   std::string path;
   std::uint64_t containerOffset{};
   std::uint64_t fileOffset{};
-  std::uint32_t storedSize{};
-  std::uint32_t contentSize{};
+  std::uint64_t storedSize{};
+  std::uint64_t contentSize{};
   std::uint64_t logicalSize{};
   PayloadFormat format{PayloadFormat::unknown};
   bool selfEntry{};
@@ -90,6 +90,25 @@ struct FirmwareLoaderInfo {
   FirmwareLoaderComponent flashData;
   FirmwareLoaderComponent flashBoot;
   std::uint64_t idBlockSize{};
+};
+
+struct FirmwarePayloadSource {
+  std::filesystem::path sourcePath;
+  std::uint64_t fileOffset{};
+  std::uint64_t contentSize{};
+  std::uint64_t logicalSize{};
+  PayloadFormat format{PayloadFormat::unknown};
+};
+
+struct RkLoaderImage {
+  FirmwarePayloadSource source;
+  FirmwareLoaderInfo info;
+};
+
+struct RockchipParameterLayout {
+  std::filesystem::path sourcePath;
+  std::string model;
+  std::vector<FirmwarePartition> partitions;
 };
 
 struct RkFirmwareImage {
@@ -144,8 +163,23 @@ struct FirmwareImageError {
 
 using RkFirmwareImageResult = std::variant<RkFirmwareImage, FirmwareImageError>;
 
+using FirmwarePayloadSourceResult =
+    std::variant<FirmwarePayloadSource, FirmwareImageError>;
+using RkLoaderImageResult = std::variant<RkLoaderImage, FirmwareImageError>;
+using RockchipParameterLayoutResult =
+    std::variant<RockchipParameterLayout, FirmwareImageError>;
+
 [[nodiscard]] RkFirmwareImageResult
 parseRkFirmwareImage(const std::filesystem::path &path) noexcept;
+
+[[nodiscard]] FirmwarePayloadSourceResult
+inspectFirmwarePayload(const std::filesystem::path &path) noexcept;
+
+[[nodiscard]] RkLoaderImageResult
+parseRkLoaderImage(const std::filesystem::path &path) noexcept;
+
+[[nodiscard]] RockchipParameterLayoutResult
+parseRockchipParameterFile(const std::filesystem::path &path) noexcept;
 
 enum class FirmwareFlashStepKind {
   upgradeLoader,
