@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <variant>
+#include <vector>
 
 namespace zzrk::image {
 
@@ -87,6 +88,55 @@ struct FirmwareFlashSuccess {
 
 using FirmwareFlashResult =
     std::variant<FirmwareFlashSuccess, FirmwareFlashError>;
+
+struct FirmwarePayloadOperationSuccess {
+    std::uint64_t bytesProcessed{};
+    std::uint64_t sectorsErased{};
+};
+
+using FirmwarePayloadOperationResult =
+    std::variant<FirmwarePayloadOperationSuccess, FirmwareFlashError>;
+using RkIdBlockResult =
+    std::variant<std::vector<std::byte>, FirmwareFlashError>;
+
+[[nodiscard]] FirmwarePayloadOperationResult writeFirmwarePayload(
+    session::RockusbSession& session, const FirmwarePayloadSource& source,
+    std::string_view target, std::uint64_t firstLba,
+    std::uint64_t sectorCount, bool eraseSparse,
+    const FirmwareFlashProgressCallback& progress = {},
+    const FirmwareFlashCancellationCallback& cancellation = {});
+
+[[nodiscard]] FirmwarePayloadOperationResult verifyFirmwarePayload(
+    session::RockusbSession& session, const FirmwarePayloadSource& source,
+    std::string_view target, std::uint64_t firstLba,
+    std::uint64_t sectorCount,
+    const FirmwareFlashProgressCallback& progress = {},
+    const FirmwareFlashCancellationCallback& cancellation = {});
+
+[[nodiscard]] RkIdBlockResult
+buildRkNewIdBlock(const RkLoaderImage& loader);
+
+[[nodiscard]] FirmwarePayloadOperationResult writeRkLoaderIdBlock(
+    session::RockusbSession& session, const RkLoaderImage& loader,
+    const FirmwareFlashProgressCallback& progress = {},
+    const FirmwareFlashCancellationCallback& cancellation = {});
+
+[[nodiscard]] FirmwarePayloadOperationResult verifyRkLoaderIdBlock(
+    session::RockusbSession& session, const RkLoaderImage& loader,
+    const FirmwareFlashProgressCallback& progress = {},
+    const FirmwareFlashCancellationCallback& cancellation = {});
+
+[[nodiscard]] FirmwarePayloadOperationResult writeRkPartitionTable(
+    session::RockusbSession& session,
+    const RockchipParameterLayout& layout, std::uint64_t deviceSectors,
+    const FirmwareFlashProgressCallback& progress = {},
+    const FirmwareFlashCancellationCallback& cancellation = {});
+
+[[nodiscard]] FirmwarePayloadOperationResult verifyRkPartitionTable(
+    session::RockusbSession& session,
+    const RockchipParameterLayout& layout, std::uint64_t deviceSectors,
+    const FirmwareFlashProgressCallback& progress = {},
+    const FirmwareFlashCancellationCallback& cancellation = {});
 
 [[nodiscard]] FirmwareFlashResult flashRkFirmwareImage(
     session::RockusbSession& session, const RkFirmwareImage& image,

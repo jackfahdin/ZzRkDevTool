@@ -150,11 +150,12 @@ alignUp(const std::uint64_t value, const std::uint64_t alignment) noexcept {
 [[nodiscard]] std::variant<FirmwareLoaderInfo, FirmwareImageError>
 parseLoader(std::ifstream &stream, const FirmwareEntry &entry,
             const std::size_t entryIndex) noexcept {
-  if (entry.contentSize < kRkLoaderHeaderSize + 4U) {
+  if (entry.contentSize < kRkLoaderHeaderSize + 4U ||
+      entry.contentSize > std::numeric_limits<std::size_t>::max()) {
     return makeError(FirmwareImageErrorCode::invalidLoader, entry.fileOffset,
                      entryIndex);
   }
-  std::vector<std::byte> bytes(entry.contentSize);
+  std::vector<std::byte> bytes(static_cast<std::size_t>(entry.contentSize));
   if (!readAt(stream, entry.fileOffset, bytes)) {
     return makeError(FirmwareImageErrorCode::shortRead, entry.fileOffset,
                      entryIndex);
@@ -299,46 +300,28 @@ detectPayloadFormat(const std::array<std::byte, 4> &prefix) noexcept {
 }
 
 [[nodiscard]] std::variant<std::vector<FirmwarePartition>, FirmwareImageError>
-parseParameter(std::ifstream &stream, const FirmwareEntry &entry,
-               const std::size_t entryIndex) noexcept {
-  if (entry.contentSize < 12U || entry.contentSize > kMaximumParameterSize) {
-    return makeError(FirmwareImageErrorCode::invalidParameter, entry.fileOffset,
-                     entryIndex);
-  }
-  std::vector<std::byte> bytes(entry.contentSize);
-  if (!readAt(stream, entry.fileOffset, bytes)) {
-    return makeError(FirmwareImageErrorCode::shortRead, entry.fileOffset,
-                     entryIndex);
-  }
-  const std::span<const std::byte> parameter{bytes};
-  if (!hasSignature(parameter, "PARM")) {
-    return makeError(FirmwareImageErrorCode::invalidParameter, entry.fileOffset,
-                     entryIndex);
-  }
-  const std::uint32_t textSize = readLe32(parameter, 4);
-  if (textSize > entry.contentSize - 12U ||
-      static_cast<std::uint64_t>(textSize) + 12U != entry.contentSize) {
-    return makeError(FirmwareImageErrorCode::invalidParameter,
-                     entry.fileOffset + 4U, entryIndex);
-  }
-  const std::string text = readFixedString(parameter.subspan(8, textSize));
+parseParameterText(const std::string_view text, const std::uint64_t baseOffset,
+                   const std::size_t entryIndex) noexcept {
   constexpr std::string_view key{"CMDLINE:"};
   const std::size_t keyOffset = text.find(key);
   if (keyOffset == std::string::npos) {
     return makeError(FirmwareImageErrorCode::invalidParameter,
-                     entry.fileOffset + 8U, entryIndex);
+                     baseOffset, entryIndex);
   }
   const std::size_t lineEnd = text.find('\n', keyOffset);
-  const std::string_view commandLine{
+  std::string_view commandLine{
       text.data() + keyOffset + key.size(),
       (lineEnd == std::string::npos ? text.size() : lineEnd) - keyOffset -
           key.size()};
+  if (commandLine.ends_with('\r')) {
+    commandLine.remove_suffix(1U);
+  }
   const std::size_t layoutOffset = commandLine.find(':');
   if (!commandLine.starts_with("mtdparts=") ||
       layoutOffset == std::string_view::npos ||
       layoutOffset + 1U >= commandLine.size()) {
     return makeError(FirmwareImageErrorCode::invalidPartitionLayout,
-                     entry.fileOffset + 8U + keyOffset, entryIndex);
+                     baseOffset + keyOffset, entryIndex);
   }
 
   std::vector<FirmwarePartition> partitions;
@@ -352,7 +335,7 @@ parseParameter(std::ifstream &stream, const FirmwareEntry &entry,
     if (at == std::string_view::npos || open == std::string_view::npos ||
         close != token.size() - 1U || at == 0U || open <= at + 1U) {
       return makeError(FirmwareImageErrorCode::invalidPartitionLayout,
-                       entry.fileOffset + 8U + keyOffset, entryIndex);
+                       baseOffset + keyOffset, entryIndex);
     }
 
     const std::string_view sizeText = token.substr(0, at);
@@ -369,9 +352,10 @@ parseParameter(std::ifstream &stream, const FirmwareEntry &entry,
     std::uint64_t sectorCount = 0;
     if (nameText.empty() || !parseHex64(offsetText, firstLba) ||
         (sizeText != "-" && !parseHex64(sizeText, sectorCount)) ||
-        (sizeText != "-" && sectorCount == 0U)) {
+        (sizeText != "-" && sectorCount == 0U) ||
+        (!optionText.empty() && optionText != "grow")) {
       return makeError(FirmwareImageErrorCode::invalidPartitionLayout,
-                       entry.fileOffset + 8U + keyOffset, entryIndex);
+                       baseOffset + keyOffset, entryIndex);
     }
     const bool grow = sizeText == "-" || optionText == "grow";
     FirmwarePartition partition{
@@ -389,8 +373,14 @@ parseParameter(std::ifstream &stream, const FirmwareEntry &entry,
                    partition.firstLba) ||
           previous.firstLba + *previous.sectorCount > partition.firstLba) {
         return makeError(FirmwareImageErrorCode::invalidPartitionLayout,
-                         entry.fileOffset + 8U + keyOffset, entryIndex);
+                         baseOffset + keyOffset, entryIndex);
       }
+    }
+    if (std::ranges::any_of(partitions, [&](const FirmwarePartition &existing) {
+          return existing.name == partition.name;
+        })) {
+      return makeError(FirmwareImageErrorCode::invalidPartitionLayout,
+                       baseOffset + keyOffset, entryIndex);
     }
     partitions.push_back(std::move(partition));
     if (comma == std::string_view::npos) {
@@ -398,7 +388,40 @@ parseParameter(std::ifstream &stream, const FirmwareEntry &entry,
     }
     layout.remove_prefix(comma + 1U);
   }
+  if (partitions.empty() ||
+      std::ranges::any_of(partitions.begin(), partitions.end() - 1,
+                          &FirmwarePartition::grow)) {
+    return makeError(FirmwareImageErrorCode::invalidPartitionLayout,
+                     baseOffset + keyOffset, entryIndex);
+  }
   return partitions;
+}
+
+[[nodiscard]] std::variant<std::vector<FirmwarePartition>, FirmwareImageError>
+parseParameter(std::ifstream &stream, const FirmwareEntry &entry,
+               const std::size_t entryIndex) noexcept {
+  if (entry.contentSize < 12U || entry.contentSize > kMaximumParameterSize) {
+    return makeError(FirmwareImageErrorCode::invalidParameter, entry.fileOffset,
+                     entryIndex);
+  }
+  std::vector<std::byte> bytes(static_cast<std::size_t>(entry.contentSize));
+  if (!readAt(stream, entry.fileOffset, bytes)) {
+    return makeError(FirmwareImageErrorCode::shortRead, entry.fileOffset,
+                     entryIndex);
+  }
+  const std::span<const std::byte> parameter{bytes};
+  if (!hasSignature(parameter, "PARM")) {
+    return makeError(FirmwareImageErrorCode::invalidParameter, entry.fileOffset,
+                     entryIndex);
+  }
+  const std::uint32_t textSize = readLe32(parameter, 4);
+  if (textSize > entry.contentSize - 12U ||
+      static_cast<std::uint64_t>(textSize) + 12U != entry.contentSize) {
+    return makeError(FirmwareImageErrorCode::invalidParameter,
+                     entry.fileOffset + 4U, entryIndex);
+  }
+  const std::string text = readFixedString(parameter.subspan(8, textSize));
+  return parseParameterText(text, entry.fileOffset + 8U, entryIndex);
 }
 
 [[nodiscard]] std::optional<FirmwareImageError>
@@ -488,6 +511,162 @@ validateSparse(std::ifstream &stream, FirmwareEntry &entry,
 }
 
 } // namespace
+
+FirmwarePayloadSourceResult
+inspectFirmwarePayload(const std::filesystem::path &path) noexcept {
+  std::error_code filesystemError;
+  const std::uint64_t fileSize =
+      std::filesystem::file_size(path, filesystemError);
+  if (filesystemError) {
+    return makeError(FirmwareImageErrorCode::fileStatFailed);
+  }
+  if (fileSize == 0U) {
+    return makeError(FirmwareImageErrorCode::fileTooSmall);
+  }
+  std::ifstream stream{path, std::ios::binary};
+  if (!stream) {
+    return makeError(FirmwareImageErrorCode::fileOpenFailed);
+  }
+
+  PayloadFormat format = PayloadFormat::raw;
+  if (fileSize >= 4U) {
+    std::array<std::byte, 4> prefix{};
+    if (!readAt(stream, 0U, prefix)) {
+      return makeError(FirmwareImageErrorCode::shortRead);
+    }
+    format = detectPayloadFormat(prefix);
+  }
+
+  FirmwareEntry entry{
+      .name = {},
+      .path = {},
+      .containerOffset = 0U,
+      .fileOffset = 0U,
+      .storedSize = fileSize,
+      .contentSize = fileSize,
+      .logicalSize = fileSize,
+      .format = format,
+      .selfEntry = false,
+  };
+  if (format == PayloadFormat::androidSparse) {
+    if (const auto error = validateSparse(stream, entry, 0U)) {
+      return *error;
+    }
+  }
+  return FirmwarePayloadSource{
+      .sourcePath = path,
+      .fileOffset = 0U,
+      .contentSize = fileSize,
+      .logicalSize = entry.logicalSize,
+      .format = format,
+  };
+}
+
+RkLoaderImageResult
+parseRkLoaderImage(const std::filesystem::path &path) noexcept {
+  std::error_code filesystemError;
+  const std::uint64_t fileSize =
+      std::filesystem::file_size(path, filesystemError);
+  if (filesystemError) {
+    return makeError(FirmwareImageErrorCode::fileStatFailed);
+  }
+  if (fileSize < kRkLoaderHeaderSize + 4U ||
+      fileSize > std::numeric_limits<std::size_t>::max()) {
+    return makeError(FirmwareImageErrorCode::invalidLoader);
+  }
+  std::ifstream stream{path, std::ios::binary};
+  if (!stream) {
+    return makeError(FirmwareImageErrorCode::fileOpenFailed);
+  }
+  const FirmwareEntry entry{
+      .name = "bootloader",
+      .path = {},
+      .containerOffset = 0U,
+      .fileOffset = 0U,
+      .storedSize = fileSize,
+      .contentSize = fileSize,
+      .logicalSize = fileSize,
+      .format = PayloadFormat::raw,
+      .selfEntry = false,
+  };
+  auto parsed = parseLoader(stream, entry, 0U);
+  if (const auto *error = std::get_if<FirmwareImageError>(&parsed)) {
+    return *error;
+  }
+  return RkLoaderImage{
+      .source = FirmwarePayloadSource{
+          .sourcePath = path,
+          .fileOffset = 0U,
+          .contentSize = fileSize,
+          .logicalSize = fileSize,
+          .format = PayloadFormat::raw,
+      },
+      .info = std::get<FirmwareLoaderInfo>(std::move(parsed)),
+  };
+}
+
+RockchipParameterLayoutResult
+parseRockchipParameterFile(const std::filesystem::path &path) noexcept {
+  std::error_code filesystemError;
+  const std::uint64_t fileSize =
+      std::filesystem::file_size(path, filesystemError);
+  if (filesystemError) {
+    return makeError(FirmwareImageErrorCode::fileStatFailed);
+  }
+  if (fileSize == 0U || fileSize > kMaximumParameterSize) {
+    return makeError(FirmwareImageErrorCode::invalidParameter);
+  }
+  std::ifstream stream{path, std::ios::binary};
+  if (!stream) {
+    return makeError(FirmwareImageErrorCode::fileOpenFailed);
+  }
+  std::string text(static_cast<std::size_t>(fileSize), '\0');
+  stream.read(text.data(), static_cast<std::streamsize>(text.size()));
+  if (stream.gcount() != static_cast<std::streamsize>(text.size())) {
+    return makeError(FirmwareImageErrorCode::shortRead);
+  }
+  if (text.find("TYPE: GPT") == std::string::npos &&
+      text.find("TYPE:GPT") == std::string::npos) {
+    return makeError(FirmwareImageErrorCode::invalidParameter);
+  }
+  auto parsed = parseParameterText(text, 0U, 0U);
+  if (const auto *error = std::get_if<FirmwareImageError>(&parsed)) {
+    return *error;
+  }
+
+  std::string model;
+  for (const std::string_view key : {std::string_view{"MACHINE_MODEL:"},
+                                     std::string_view{"MACHINE:"}}) {
+    const std::size_t offset = text.find(key);
+    if (offset == std::string::npos) {
+      continue;
+    }
+    const std::size_t valueOffset = offset + key.size();
+    const std::size_t lineEnd = text.find('\n', valueOffset);
+    std::string_view value{
+        text.data() + valueOffset,
+        (lineEnd == std::string::npos ? text.size() : lineEnd) - valueOffset};
+    while (!value.empty() &&
+           (value.front() == ' ' || value.front() == '\t')) {
+      value.remove_prefix(1U);
+    }
+    while (!value.empty() &&
+           (value.back() == ' ' || value.back() == '\t' ||
+            value.back() == '\r')) {
+      value.remove_suffix(1U);
+    }
+    if (!value.empty()) {
+      model = std::string{value};
+      break;
+    }
+  }
+  return RockchipParameterLayout{
+      .sourcePath = path,
+      .model = std::move(model),
+      .partitions =
+          std::get<std::vector<FirmwarePartition>>(std::move(parsed)),
+  };
+}
 
 RkFirmwareImageResult
 parseRkFirmwareImage(const std::filesystem::path &path) noexcept {

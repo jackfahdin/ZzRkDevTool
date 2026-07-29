@@ -47,4 +47,9 @@ using MaskromLoaderCancellationCallback = std::function<bool()>;
     const MaskromLoaderProgressCallback &progress = {},
     const MaskromLoaderCancellationCallback &cancellation = {});
 
+[[nodiscard]] MaskromLoaderResult downloadRkMaskromLoader(
+    session::IUsbTransport &transport, const RkLoaderImage &loader,
+    const MaskromLoaderProgressCallback &progress = {},
+    const MaskromLoaderCancellationCallback &cancellation = {});
+
 } // namespace zzrk::image
