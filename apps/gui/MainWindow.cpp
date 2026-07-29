@@ -2,13 +2,12 @@
 
 #include "MainWindow.hpp"
 
-#include <zzrk/qt/FirmwareMd5Verifier.hpp>
-
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDateTime>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFrame>
 #include <QGridLayout>
 #include <QHeaderView>
@@ -39,6 +38,7 @@
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -219,11 +219,24 @@ std::filesystem::path filesystemPath(const QString &path)
 } // namespace
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent)
+    : MainWindow(zzrk::gui::createGuiOperationBackend(), true, parent)
 {
+}
+
+MainWindow::MainWindow(
+    std::shared_ptr<zzrk::gui::IGuiOperationBackend> backend,
+    const bool showModalDialogs,
+    QWidget *parent)
+    : QMainWindow(parent)
+    , m_backend(std::move(backend))
+    , m_showModalDialogs(showModalDialogs)
+{
+    if (!m_backend) {
+        throw std::invalid_argument("MainWindow requires a GUI backend");
+    }
     setWindowTitle(QStringLiteral("ZzRkDevTool"));
-    resize(980, 720);
-    setMinimumSize(800, 620);
+    resize(980, 820);
+    setMinimumSize(800, 700);
 
     auto *centralWidget = new QWidget(this);
     auto *mainLayout = new QVBoxLayout(centralWidget);
@@ -367,17 +380,55 @@ MainWindow::MainWindow(QWidget *parent)
     upgradeLayout->addWidget(optionLabel, 2, 0);
     upgradeLayout->addLayout(optionRow, 2, 1, 1, 2);
 
-    m_upgradeProgress = new QProgressBar(centralWidget);
-    m_upgradeProgress->setObjectName(QStringLiteral("upgradeProgress"));
-    m_upgradeProgress->setRange(0, 100);
-    m_upgradeProgress->setValue(0);
-    m_upgradeProgress->setTextVisible(true);
+    auto *overallLabel = new QLabel(QStringLiteral("总体"), centralWidget);
+    m_overallProgress = new QProgressBar(centralWidget);
+    m_overallProgress->setObjectName(QStringLiteral("overallUpgradeProgress"));
+    m_overallProgress->setRange(0, 100);
+    m_overallProgress->setValue(0);
+    m_overallProgress->setFormat(QStringLiteral("总体 %p%"));
+    m_overallProgress->setTextVisible(true);
+    auto *operationLabel = new QLabel(QStringLiteral("当前"), centralWidget);
+    m_operationProgress = new QProgressBar(centralWidget);
+    m_operationProgress->setObjectName(QStringLiteral("operationUpgradeProgress"));
+    m_operationProgress->setRange(0, 100);
+    m_operationProgress->setValue(0);
+    m_operationProgress->setFormat(QStringLiteral("当前 %p%"));
+    m_operationProgress->setTextVisible(true);
     m_upgradeStatus = new QLabel(QStringLiteral("未选择固件"), centralWidget);
     m_upgradeStatus->setObjectName(QStringLiteral("upgradeStatus"));
     m_upgradeStatus->setWordWrap(true);
-    upgradeLayout->addWidget(m_upgradeProgress, 3, 0, 1, 3);
-    upgradeLayout->addWidget(m_upgradeStatus, 4, 0, 1, 3);
+    upgradeLayout->addWidget(overallLabel, 3, 0);
+    upgradeLayout->addWidget(m_overallProgress, 3, 1, 1, 2);
+    upgradeLayout->addWidget(operationLabel, 4, 0);
+    upgradeLayout->addWidget(m_operationProgress, 4, 1, 1, 2);
+    upgradeLayout->addWidget(m_upgradeStatus, 5, 0, 1, 3);
     mainLayout->addLayout(upgradeLayout);
+
+    auto *historyLabel = new QLabel(QStringLiteral("任务历史（本次会话）"),
+                                    centralWidget);
+    m_historyTable = new QTableWidget(0, 4, centralWidget);
+    m_historyTable->setObjectName(QStringLiteral("upgradeHistoryTable"));
+    m_historyTable->setHorizontalHeaderLabels({
+        QStringLiteral("开始时间"),
+        QStringLiteral("端口"),
+        QStringLiteral("固件"),
+        QStringLiteral("结果"),
+    });
+    m_historyTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_historyTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_historyTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_historyTable->setShowGrid(false);
+    m_historyTable->setAlternatingRowColors(true);
+    m_historyTable->verticalHeader()->setVisible(false);
+    m_historyTable->verticalHeader()->setDefaultSectionSize(28);
+    m_historyTable->setFixedHeight(126);
+    auto *historyHeader = m_historyTable->horizontalHeader();
+    historyHeader->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    historyHeader->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    historyHeader->setSectionResizeMode(2, QHeaderView::Stretch);
+    historyHeader->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    mainLayout->addWidget(historyLabel);
+    mainLayout->addWidget(m_historyTable);
 
     setCentralWidget(centralWidget);
 
@@ -448,9 +499,10 @@ void MainWindow::refreshDevices()
     statusBar()->showMessage(QStringLiteral("正在扫描 USB 设备..."));
     updateUpgradeControls();
 
-    auto future = QtConcurrent::run([scanner = &m_scanner] {
+    const auto backend = m_backend;
+    auto future = QtConcurrent::run([backend] {
         try {
-            return scanner->scanRockchipDevices();
+            return backend->scanDevices();
         } catch (const std::exception &error) {
             zzrk::transport::ScanResult result;
             result.error = zzrk::transport::ScanError{-1, error.what()};
@@ -621,19 +673,29 @@ void MainWindow::chooseFirmwareImage()
         return;
     }
 
+    loadFirmwareImage(path);
+}
+
+void MainWindow::loadFirmwareImage(const QString &path)
+{
+    if (path.isEmpty() || m_prepareWatcher.isRunning()
+        || m_upgradeWatcher.isRunning()) {
+        return;
+    }
+
     m_preparedUpgrade.reset();
+    m_progressTracker.reset();
     m_imagePathEdit->setText(path);
     m_planPreview->clear();
     m_upgradeStatus->setText(QStringLiteral("正在解析固件并校验 MD5..."));
-    m_upgradeProgress->setRange(0, 0);
+    m_overallProgress->setRange(0, 0);
+    m_operationProgress->setRange(0, 0);
     updateUpgradeControls();
 
     const std::filesystem::path imagePath = filesystemPath(path);
-    auto future = QtConcurrent::run([imagePath] {
-        auto backend = zzrk::workflow::createLibusbFirmwareUpgradeBackend();
-        zzrk::qt::FirmwareMd5Verifier verifier;
-        zzrk::workflow::FirmwareUpgradeWorkflow workflow{*backend, verifier};
-        return workflow.prepare(imagePath);
+    const auto backend = m_backend;
+    auto future = QtConcurrent::run([backend, imagePath] {
+        return backend->prepareFirmware(imagePath);
     });
     m_prepareWatcher.setFuture(future);
     updateUpgradeControls();
@@ -649,11 +711,14 @@ void MainWindow::handlePrepareFinished()
             std::get_if<zzrk::workflow::FirmwareUpgradeError>(&result)) {
         m_preparedUpgrade.reset();
         m_planPreview->clear();
-        m_upgradeProgress->setRange(0, 100);
-        m_upgradeProgress->setValue(0);
+        m_overallProgress->setRange(0, 100);
+        m_overallProgress->setValue(0);
+        m_operationProgress->setRange(0, 100);
+        m_operationProgress->setValue(0);
         m_upgradeStatus->setText(workflowErrorText(*error));
         statusBar()->showMessage(QStringLiteral("固件预检失败"));
         updateUpgradeControls();
+        emit firmwarePreparationCompleted(false);
         return;
     }
 
@@ -678,11 +743,14 @@ void MainWindow::handlePrepareFinished()
         }
     }
     m_planPreview->setPlainText(lines.join(QLatin1Char('\n')));
-    m_upgradeProgress->setRange(0, 100);
-    m_upgradeProgress->setValue(0);
+    m_overallProgress->setRange(0, 100);
+    m_overallProgress->setValue(0);
+    m_operationProgress->setRange(0, 100);
+    m_operationProgress->setValue(0);
     m_upgradeStatus->setText(QStringLiteral("固件预检通过"));
     statusBar()->showMessage(QStringLiteral("升级计划已生成"));
     updateUpgradeControls();
+    emit firmwarePreparationCompleted(true);
 }
 
 void MainWindow::startUpgrade()
@@ -695,38 +763,41 @@ void MainWindow::startUpgrade()
     if (portPath.isEmpty()) {
         return;
     }
-    const auto confirmation = QMessageBox::warning(
-        this, QStringLiteral("确认完整升级"),
-        QStringLiteral("将向端口 %1 的 eMMC 写入 Loader、GPT 和固件中的全部分区。")
-            .arg(portPath),
-        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-    if (confirmation != QMessageBox::Yes) {
-        return;
+    if (m_showModalDialogs) {
+        const auto confirmation = QMessageBox::warning(
+            this, QStringLiteral("确认完整升级"),
+            QStringLiteral("将向端口 %1 的 eMMC 写入 Loader、GPT 和固件中的全部分区。")
+                .arg(portPath),
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+        if (confirmation != QMessageBox::Yes) {
+            return;
+        }
     }
 
     m_autoRefreshTimer->stop();
     m_refreshButton->setEnabled(false);
     m_upgradeCancellation = std::make_shared<std::atomic_bool>(false);
-    m_upgradeProgress->setRange(0, 0);
+    m_overallProgress->setRange(0, 100);
+    m_overallProgress->setValue(0);
+    m_operationProgress->setRange(0, 0);
     m_upgradeStatus->setText(QStringLiteral("正在启动完整升级..."));
     statusBar()->showMessage(QStringLiteral("固件升级进行中"));
 
     const auto prepared = *m_preparedUpgrade;
     const auto cancellation = m_upgradeCancellation;
+    const auto verifyMode = verifyModeFromIndex(m_verifyModeCombo->currentIndex());
+    m_progressTracker.emplace(prepared.plan, verifyMode);
+    beginHistoryEntry(portPath);
     const zzrk::workflow::FirmwareUpgradeRequest request{
         .portPath = portPath.toStdString(),
         .imagePath = prepared.image.sourcePath,
-        .verifyMode = verifyModeFromIndex(m_verifyModeCombo->currentIndex()),
+        .verifyMode = verifyMode,
         .reboot = m_rebootCheckBox->isChecked(),
         .prepareOnly = false,
     };
+    const auto backend = m_backend;
     auto future = QtConcurrent::run(
-        [this, request, prepared, cancellation]() mutable {
-            auto backend =
-                zzrk::workflow::createLibusbFirmwareUpgradeBackend();
-            zzrk::qt::FirmwareMd5Verifier verifier;
-            zzrk::workflow::FirmwareUpgradeWorkflow workflow{*backend,
-                                                              verifier};
+        [this, backend, request, prepared, cancellation]() mutable {
             const auto progress =
                 [this](const zzrk::workflow::FirmwareUpgradeEvent &event) {
                     QMetaObject::invokeMethod(
@@ -737,8 +808,8 @@ void MainWindow::startUpgrade()
             const auto cancelled = [cancellation] {
                 return cancellation->load();
             };
-            return workflow.execute(request, std::move(prepared), progress,
-                                    cancelled);
+            return backend->executeUpgrade(request, std::move(prepared),
+                                           progress, cancelled);
         });
     m_upgradeWatcher.setFuture(future);
     updateUpgradeControls();
@@ -752,6 +823,10 @@ void MainWindow::cancelUpgrade()
     m_upgradeCancellation->store(true);
     m_cancelUpgradeButton->setEnabled(false);
     m_upgradeStatus->setText(QStringLiteral("正在等待当前 USB 分块完成..."));
+    if (m_activeHistoryRow >= 0) {
+        m_historyTable->item(m_activeHistoryRow, 3)
+            ->setText(QStringLiteral("正在取消"));
+    }
 }
 
 void MainWindow::handleUpgradeProgress(
@@ -760,13 +835,17 @@ void MainWindow::handleUpgradeProgress(
     if (m_shuttingDown || !m_upgradeWatcher.isRunning()) {
         return;
     }
-    if (event.totalBytes == 0U) {
-        m_upgradeProgress->setRange(0, 0);
+    if (!m_progressTracker.has_value()) {
+        return;
+    }
+    const auto snapshot = m_progressTracker->update(event);
+    m_overallProgress->setRange(0, 100);
+    m_overallProgress->setValue(snapshot.overallPercent);
+    if (!snapshot.operationDeterminate) {
+        m_operationProgress->setRange(0, 0);
     } else {
-        const auto percent = std::min<std::uint64_t>(
-            100U, event.completedBytes * 100U / event.totalBytes);
-        m_upgradeProgress->setRange(0, 100);
-        m_upgradeProgress->setValue(static_cast<int>(percent));
+        m_operationProgress->setRange(0, 100);
+        m_operationProgress->setValue(snapshot.operationPercent);
     }
     const QString stage = QString::fromLatin1(
         zzrk::workflow::toString(event.stage).data(),
@@ -776,6 +855,8 @@ void MainWindow::handleUpgradeProgress(
             ? stage
             : QStringLiteral("%1：%2")
                   .arg(stage, QString::fromStdString(event.target)));
+    emit upgradeProgressChanged(snapshot.overallPercent,
+                                snapshot.operationPercent);
 }
 
 void MainWindow::handleUpgradeFinished()
@@ -785,7 +866,8 @@ void MainWindow::handleUpgradeFinished()
     }
     const auto result = m_upgradeWatcher.result();
     m_upgradeCancellation.reset();
-    m_upgradeProgress->setRange(0, 100);
+    m_overallProgress->setRange(0, 100);
+    m_operationProgress->setRange(0, 100);
     m_refreshButton->setEnabled(true);
 
     if (const auto *error =
@@ -793,25 +875,69 @@ void MainWindow::handleUpgradeFinished()
         const QString message = workflowErrorText(*error);
         m_upgradeStatus->setText(message);
         statusBar()->showMessage(QStringLiteral("固件升级未完成"));
+        finishHistoryEntry(
+            error->code == zzrk::workflow::FirmwareUpgradeErrorCode::cancelled
+                ? QStringLiteral("已取消")
+                : QStringLiteral("失败"),
+            message);
         if (error->code !=
-            zzrk::workflow::FirmwareUpgradeErrorCode::cancelled) {
+                zzrk::workflow::FirmwareUpgradeErrorCode::cancelled
+            && m_showModalDialogs) {
             QMessageBox::critical(this, QStringLiteral("升级失败"), message);
         }
     } else {
         const auto &success =
             std::get<zzrk::workflow::FirmwareUpgradeSuccess>(result);
-        m_upgradeProgress->setValue(100);
+        const auto snapshot = m_progressTracker.has_value()
+            ? m_progressTracker->complete()
+            : zzrk::gui::UpgradeProgressSnapshot{100, 100, true};
+        m_overallProgress->setValue(snapshot.overallPercent);
+        m_operationProgress->setValue(snapshot.operationPercent);
         const QString message =
             QStringLiteral("升级完成：%1 字节，已校验 %2 个分区")
                 .arg(static_cast<qulonglong>(success.partitionBytesWritten))
                 .arg(success.partitionsVerified);
         m_upgradeStatus->setText(message);
         statusBar()->showMessage(QStringLiteral("固件升级完成"));
-        QMessageBox::information(this, QStringLiteral("升级完成"), message);
+        finishHistoryEntry(QStringLiteral("已完成"), message);
+        if (m_showModalDialogs) {
+            QMessageBox::information(this, QStringLiteral("升级完成"), message);
+        }
     }
 
+    m_progressTracker.reset();
     updateUpgradeControls();
     if (m_autoRefreshCheckBox->isChecked()) {
         m_autoRefreshTimer->start();
     }
+    emit upgradeCompleted();
+}
+
+void MainWindow::beginHistoryEntry(const QString &portPath)
+{
+    m_historyTable->insertRow(0);
+    m_activeHistoryRow = 0;
+    m_historyTable->setItem(
+        0, 0, makeItem(QDateTime::currentDateTime().toString(
+                  QStringLiteral("yyyy-MM-dd HH:mm:ss"))));
+    m_historyTable->setItem(0, 1, makeItem(portPath));
+    const QString imageName = QFileInfo{m_imagePathEdit->text()}.fileName();
+    m_historyTable->setItem(0, 2, makeItem(imageName));
+    m_historyTable->setItem(0, 3, makeItem(QStringLiteral("进行中")));
+    constexpr int maximumHistoryRows = 50;
+    while (m_historyTable->rowCount() > maximumHistoryRows) {
+        m_historyTable->removeRow(m_historyTable->rowCount() - 1);
+    }
+}
+
+void MainWindow::finishHistoryEntry(const QString &result,
+                                    const QString &detail)
+{
+    if (m_activeHistoryRow < 0) {
+        return;
+    }
+    auto *resultItem = m_historyTable->item(m_activeHistoryRow, 3);
+    resultItem->setText(result);
+    resultItem->setToolTip(detail);
+    m_activeHistoryRow = -1;
 }

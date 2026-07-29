@@ -719,7 +719,7 @@ verifyBuffer(session::RockusbSession& rockusb,
     return std::nullopt;
 }
 
-[[nodiscard]] bool shouldVerifyPartition(
+[[nodiscard]] bool isPartitionVerificationRequired(
     const FirmwareVerifyMode mode, const std::string_view name) noexcept
 {
     if (mode == FirmwareVerifyMode::all) {
@@ -920,6 +920,12 @@ verifySparseEntry(session::RockusbSession& rockusb, std::ifstream& stream,
 
 } // namespace
 
+bool shouldVerifyFirmwarePartition(const FirmwareVerifyMode mode,
+                                   const std::string_view name) noexcept
+{
+    return isPartitionVerificationRequired(mode, name);
+}
+
 FirmwareFlashResult flashRkFirmwareImage(
     session::RockusbSession& rockusb, const RkFirmwareImage& image,
     const RkFirmwareFlashPlan& plan, const std::uint64_t deviceSectors,
@@ -1110,7 +1116,7 @@ FirmwareFlashResult flashRkFirmwareImage(
                              verifiedPlanOffset);
         }
         const auto& entry = image.entries[*step.entryIndex];
-        if (shouldVerifyPartition(options.verifyMode, step.target)) {
+        if (shouldVerifyFirmwarePartition(options.verifyMode, step.target)) {
             std::optional<FirmwareFlashError> error;
             if (entry.format == PayloadFormat::raw) {
                 error = verifyRawEntry(rockusb, stream, entry, step, progress,

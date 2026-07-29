@@ -2,11 +2,11 @@
 
 #pragma once
 
+#include "GuiOperationBackend.hpp"
+#include "UpgradeProgressTracker.hpp"
+
 #include <QFutureWatcher>
 #include <QMainWindow>
-
-#include <zzrk/transport/UsbDeviceScanner.hpp>
-#include <zzrk/workflow/FirmwareUpgradeWorkflow.hpp>
 
 #include <atomic>
 #include <memory>
@@ -29,10 +29,18 @@ class MainWindow final : public QMainWindow
 
 public:
     explicit MainWindow(QWidget *parent = nullptr);
+    MainWindow(std::shared_ptr<zzrk::gui::IGuiOperationBackend> backend,
+               bool showModalDialogs,
+               QWidget *parent = nullptr);
     ~MainWindow() override;
+
+    void loadFirmwareImage(const QString &path);
 
 signals:
     void scanCompleted();
+    void firmwarePreparationCompleted(bool success);
+    void upgradeProgressChanged(int overallPercent, int operationPercent);
+    void upgradeCompleted();
 
 private:
     void refreshDevices();
@@ -47,9 +55,11 @@ private:
         const zzrk::workflow::FirmwareUpgradeEvent &event);
     void handleUpgradeFinished();
     void updateUpgradeControls();
+    void beginHistoryEntry(const QString &portPath);
+    void finishHistoryEntry(const QString &result, const QString &detail);
     [[nodiscard]] QString selectedPortPath() const;
 
-    zzrk::transport::UsbDeviceScanner m_scanner;
+    std::shared_ptr<zzrk::gui::IGuiOperationBackend> m_backend;
     QFutureWatcher<zzrk::transport::ScanResult> m_scanWatcher;
     QFutureWatcher<zzrk::workflow::PreparedFirmwareUpgradeResult>
         m_prepareWatcher;
@@ -68,10 +78,15 @@ private:
     QCheckBox *m_rebootCheckBox = nullptr;
     QPushButton *m_startUpgradeButton = nullptr;
     QPushButton *m_cancelUpgradeButton = nullptr;
-    QProgressBar *m_upgradeProgress = nullptr;
+    QProgressBar *m_overallProgress = nullptr;
+    QProgressBar *m_operationProgress = nullptr;
     QLabel *m_upgradeStatus = nullptr;
+    QTableWidget *m_historyTable = nullptr;
     std::optional<zzrk::workflow::PreparedFirmwareUpgrade> m_preparedUpgrade;
+    std::optional<zzrk::gui::UpgradeProgressTracker> m_progressTracker;
     std::shared_ptr<std::atomic_bool> m_upgradeCancellation;
+    int m_activeHistoryRow = -1;
+    bool m_showModalDialogs = true;
     bool m_hasCompletedScan = false;
     bool m_shuttingDown = false;
 };

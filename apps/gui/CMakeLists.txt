@@ -2,25 +2,45 @@
 
 find_package(Qt6 6.11 REQUIRED COMPONENTS Concurrent)
 
+qt_add_library(
+    zzrk_gui_support STATIC
+    GuiOperationBackend.cpp
+    GuiOperationBackend.hpp
+    MainWindow.cpp
+    MainWindow.hpp
+    UpgradeProgressTracker.cpp
+    UpgradeProgressTracker.hpp
+)
+
+target_link_libraries(
+    zzrk_gui_support
+    PRIVATE
+        Qt6::Concurrent
+        zzrk::logging
+        zzrk::qt_support
+        zzrk_project_warnings
+    PUBLIC
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Widgets
+        zzrk::transport
+        zzrk::workflow
+)
+target_include_directories(zzrk_gui_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+set_target_properties(zzrk_gui_support PROPERTIES AUTOMOC ON)
+add_library(zzrk::gui ALIAS zzrk_gui_support)
+
 qt_add_executable(
     ZzRkDevTool
     MANUAL_FINALIZATION
     main.cpp
-    MainWindow.cpp
-    MainWindow.hpp
 )
 
 target_link_libraries(
     ZzRkDevTool
     PRIVATE
-        Qt6::Core
-        Qt6::Concurrent
-        Qt6::Gui
-        Qt6::Widgets
+        zzrk::gui
         zzrk::logging
-        zzrk::qt_support
-        zzrk::transport
-        zzrk::workflow
         zzrk_project_warnings
 )
 

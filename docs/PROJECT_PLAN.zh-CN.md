@@ -701,7 +701,7 @@ RK3566/3568、RK3576、RK3399、旧 RK32xx、SPI NOR、SPI NAND、NAND 和 UFS �
 
 ## 17. 当前开发基线
 
-截至 2026-07-28，Linux-first CLI 完整升级基线已经落地：
+截至 2026-07-29，Linux-first CLI 完整升级基线已经落地：
 
 - Qt 6.11.1、C++20、CMake Presets 和仓库内 libusb 1.0.30 已完成 Debug、Release、ASan/UBSan 构建验证。
 - `libusb-1.0.pc` 使用相对 `pcfiledir`，仓库移动后仍能解析正确的 include 和 library 路径。
@@ -709,19 +709,20 @@ RK3566/3568、RK3576、RK3399、旧 RK32xx、SPI NOR、SPI NAND、NAND 和 UFS �
 - 已实现字节数、扇区数、LBA 强类型，以及 31-byte CBW、13-byte CSW 的显式编解码和 golden tests。
 - 已实现 RAII libusb context、RockUSB VID/PID 过滤、Maskrom/Loader 识别、完整 USB port path，以及按 bus、完整端口链和描述符重新选择设备的单设备 libusb backend。
 - CLI 已支持 `list`、统一 `info`、`probe`、typed 设备信息读取、`read-lba`、`inspect-image`、`plan-image`、`flash-image`、`partitions`、按 GPT 名称读写/擦除分区和 `reset`；所有设备命令都要求显式物理端口并只接受当前验证的 RK3588 Loader 身份与接口布局。关键命令提供 schema version 1 JSON，完整升级使用 JSON Lines 输出进度和唯一终态。
-- fake-libusb、CLI JSON golden output、GPT header/entry CRC 与范围校验、session 故障矩阵、typed ReadChipInfo/ReadFlashInfo/ReadFlashID、共享升级 workflow、spdlog 生命周期和 Qt 离屏 smoke tests 已建立；Debug 当前为 14/14，并继续作为变更门禁。
+- fake-libusb、CLI JSON golden output、GPT header/entry CRC 与范围校验、session 故障矩阵、typed ReadChipInfo/ReadFlashInfo/ReadFlashID、共享升级 workflow、spdlog 生命周期、Qt 离屏 smoke test 和 GUI 假后端完整升级测试已建立；Debug 当前为 16/16，并继续作为变更门禁。
 - target-private `RockusbSession` executor 内部生成 tag，严格执行 CBW、DATA、CSW，短传输或失步错误后进入 Faulted；写入、擦除和复位均通过 typed API 暴露，CLI 和 GUI 不接受 raw CDB。
 - 应用日志通过 `zzrk_logging` 封装 spdlog v2；协议与 session 保持无日志副作用，CLI 的结构化结果继续使用 stdout。
 
 RKFW/RKAF、parameter、Raw 和 Android Sparse 已实现有界流式解析。Qt 6 `QCryptographicHash::Md5` 在任何计划或写盘前校验固件尾部 MD5；完整升级在任何 eMMC 写入前解析并下载 `MiniLoaderAll.bin` 的 `0x471` DDR 与 `0x472` usbplug 段，按物理端口等待重枚举，通过 typed `TestUnitReady` 和 RK3588 ChipInfo 检查后，再把同一 Loader 转换为 New IDBlock 写入 LBA 64，随后写入主/备 GPT 和固件实际携带的全部分区 payload。
 
-Ubuntu 26.04 真机已跑通 `pudu_rk3588s` 的完整镜像解析、RAM Loader 下载与重枚举、MiniLoaderAll.bin IDBlock、主/备 GPT、全部镜像 payload 写入和默认 `--verify critical` 回读；10 个关键 payload 验证成功并接受 typed reset。Loader 0x0223 对盘尾备份 GPT 返回不透明数据，因此当前严格验证主 GPT，备份 GPT 写入只报告已提交，读取时允许明确报告 `unavailable`。设备现已启动到 ADB，冷 Maskrom 路径和 `--verify all` 的最终真机矩阵仍待下一次维护窗口完成。
+Ubuntu 26.04 真机已跑通 `pudu_rk3588s` 的完整镜像解析、冷 Loader 与冷 Maskrom `--prepare-only`、活动 RAM usbplug 重入、RAM Loader 下载与重枚举、MiniLoaderAll.bin IDBlock、主/备 GPT、全部镜像 payload 写入、`info`/`partitions` 只读检查以及 `--verify critical`、`--verify all` 回读；完整升级接受 typed reset 并正常启动 Android。Loader 0x0223 对盘尾备份 GPT 返回不透明数据，因此当前严格验证主 GPT，备份 GPT 写入只报告已提交，读取时允许明确报告 `unavailable`。
 
 CLI 默认 `--verify critical`，支持 `all` 和 `none`；完整成功后默认 typed reset，`--no-reboot` 可保留 Loader。SIGINT 在 RockUSB 分块边界停止新命令、禁止自动复位并返回 130。当前仍不触碰 eMMC boot0、boot1 或 RPMB。
 
+Qt GUI 已通过可注入的操作 backend 与生产 workflow 解耦，并增加不接触 USB/eMMC 的离屏完整升级自动化测试。界面同时保留当前操作百分比和完整烧录计划的累计百分比，并记录最近 50 条本次会话升级任务及其成功、失败或取消结果。
+
 下一批开发按以下顺序推进：
 
-1. 下一次硬件维护窗口从冷 Loader/Maskrom 分别执行 `--prepare-only`，再完成 `--verify all` 整包验收和新 `info`/`partitions` 只读验收。
-2. 用第二块 RK3588/eMMC 板卡和更多 Loader revision 建立兼容矩阵，在有协议证据后再放宽当前严格身份匹配。
-3. 为 Qt GUI 增加专用自动化测试 backend、任务历史与更细粒度的总体进度聚合。
-4. 推进 Windows/macOS transport、驱动、签名和发布验证。
+1. **TODO（等待设备空闲，不阻塞当前开发）**：用第二块 RK3588/eMMC 板卡和更多 Loader revision 建立兼容矩阵，在有协议证据后再放宽当前严格身份匹配。第二块板卡当前用于其他测试，不要求中断。
+2. 推进 Windows/macOS transport、驱动、签名和发布验证。
+3. 在获得更多真实失败样本后，为 GUI 增加持久化任务报告、可导出诊断信息和更细的失败恢复指引。

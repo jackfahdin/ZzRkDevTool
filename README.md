@@ -116,10 +116,15 @@ partition, zero-pad only the final partial sector, and are read back by default;
 `--no-verify` explicitly disables that read-back. These commands never select
 an eMMC hardware partition and never accept a caller-provided write LBA.
 
-The Qt Widgets application uses the same typed workflow directly. It supports
-firmware selection, asynchronous MD5 and plan preview, verification mode,
-post-flash reboot, progress, block-boundary cancellation and final results.
-Device polling is paused for the complete duration of an upgrade.
+The Qt Widgets application uses the same typed workflow through an injectable
+operation backend. It supports firmware selection, asynchronous MD5 and plan
+preview, verification mode, post-flash reboot, block-boundary cancellation and
+final results. During an upgrade it shows cumulative progress for the complete
+flash plan alongside progress for the current Loader, GPT, partition, or
+verification operation. Device polling is paused for the complete duration of
+an upgrade, and the current session retains a bounded 50-entry task history.
+An offscreen automated backend test covers discovery, image preparation,
+upgrade progress, completion, and history without opening USB hardware.
 
 `CMakeUserPresets.json` may add workstation-specific convenience presets and is
 intentionally ignored by Git. It is not required by the commands above.
