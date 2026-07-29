@@ -5,6 +5,7 @@ include(FindPackageHandleStandardArgs)
 set(_libusb_no_default_path)
 set(_libusb_include_hints)
 set(_libusb_library_hints)
+set(_libusb_runtime_hints)
 set(_libusb_version_metadata)
 
 if(ZZRK_LIBUSB_ROOT)
@@ -15,6 +16,11 @@ if(ZZRK_LIBUSB_ROOT)
         "${ZZRK_LIBUSB_ROOT}/include/libusb-1.0"
     )
     list(APPEND _libusb_library_hints "${ZZRK_LIBUSB_ROOT}/lib")
+    list(APPEND
+        _libusb_runtime_hints
+        "${ZZRK_LIBUSB_ROOT}/bin"
+        "${ZZRK_LIBUSB_ROOT}/debug/bin"
+    )
     list(APPEND
         _libusb_version_metadata
         "${ZZRK_LIBUSB_ROOT}/lib/pkgconfig/libusb-1.0.pc"
@@ -65,20 +71,55 @@ find_library(
     ${_libusb_no_default_path}
 )
 
+if(WIN32)
+    find_file(
+        LIBUSB1_RUNTIME_LIBRARY
+        NAMES libusb-1.0.dll usb-1.0.dll
+        HINTS ${_libusb_runtime_hints}
+        ${_libusb_no_default_path}
+    )
+elseif(APPLE AND LIBUSB1_LIBRARY)
+    file(REAL_PATH "${LIBUSB1_LIBRARY}" LIBUSB1_RUNTIME_LIBRARY)
+endif()
+
+set(_libusb_required_vars LIBUSB1_LIBRARY LIBUSB1_INCLUDE_DIR)
+if(WIN32)
+    list(APPEND _libusb_required_vars LIBUSB1_RUNTIME_LIBRARY)
+endif()
+
 find_package_handle_standard_args(
     LibUSB1
-    REQUIRED_VARS LIBUSB1_LIBRARY LIBUSB1_INCLUDE_DIR
+    REQUIRED_VARS ${_libusb_required_vars}
     VERSION_VAR LibUSB1_VERSION
 )
 
 if(LibUSB1_FOUND AND NOT TARGET LibUSB1::LibUSB1)
-    add_library(LibUSB1::LibUSB1 UNKNOWN IMPORTED)
-    set_target_properties(
-        LibUSB1::LibUSB1
-        PROPERTIES
-            IMPORTED_LOCATION "${LIBUSB1_LIBRARY}"
-            INTERFACE_INCLUDE_DIRECTORIES "${LIBUSB1_INCLUDE_DIR}"
-    )
+    if(WIN32)
+        add_library(LibUSB1::LibUSB1 SHARED IMPORTED)
+        set_target_properties(
+            LibUSB1::LibUSB1
+            PROPERTIES
+                IMPORTED_IMPLIB "${LIBUSB1_LIBRARY}"
+                IMPORTED_LOCATION "${LIBUSB1_RUNTIME_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${LIBUSB1_INCLUDE_DIR}"
+        )
+    elseif(APPLE)
+        add_library(LibUSB1::LibUSB1 SHARED IMPORTED)
+        set_target_properties(
+            LibUSB1::LibUSB1
+            PROPERTIES
+                IMPORTED_LOCATION "${LIBUSB1_RUNTIME_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${LIBUSB1_INCLUDE_DIR}"
+        )
+    else()
+        add_library(LibUSB1::LibUSB1 UNKNOWN IMPORTED)
+        set_target_properties(
+            LibUSB1::LibUSB1
+            PROPERTIES
+                IMPORTED_LOCATION "${LIBUSB1_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${LIBUSB1_INCLUDE_DIR}"
+        )
+    endif()
 
     if(UNIX AND NOT APPLE AND LIBUSB1_LIBRARY MATCHES "\\.a$")
         find_library(LIBUDEV_LIBRARY NAMES udev REQUIRED)
@@ -89,4 +130,8 @@ if(LibUSB1_FOUND AND NOT TARGET LibUSB1::LibUSB1)
     endif()
 endif()
 
-mark_as_advanced(LIBUSB1_INCLUDE_DIR LIBUSB1_LIBRARY)
+mark_as_advanced(
+    LIBUSB1_INCLUDE_DIR
+    LIBUSB1_LIBRARY
+    LIBUSB1_RUNTIME_LIBRARY
+)

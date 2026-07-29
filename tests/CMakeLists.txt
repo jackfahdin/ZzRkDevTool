@@ -113,6 +113,15 @@ if(TARGET zzrk_transport)
         )
         add_test(NAME firmware_upgrade_workflow
                  COMMAND firmware_upgrade_workflow_test)
+
+        add_executable(device_management_workflow_test
+                       device_management_workflow_test.cpp)
+        target_link_libraries(
+            device_management_workflow_test
+            PRIVATE zzrk::workflow zzrk_project_warnings
+        )
+        add_test(NAME device_management_workflow
+                 COMMAND device_management_workflow_test)
     endif()
 endif()
 
@@ -132,6 +141,17 @@ if(TARGET zzrk_cli_support)
         PRIVATE zzrk_cli_support zzrk_project_warnings
     )
     add_test(NAME cli_output COMMAND cli_output_test)
+endif()
+
+if(TARGET zzrk_qt_support)
+    add_executable(firmware_upgrade_report_test
+                   firmware_upgrade_report_test.cpp)
+    target_link_libraries(
+        firmware_upgrade_report_test
+        PRIVATE zzrk::qt_support zzrk_project_warnings
+    )
+    add_test(NAME firmware_upgrade_report
+             COMMAND firmware_upgrade_report_test)
 endif()
 
 if(TARGET ZzRkDevTool)
@@ -161,5 +181,25 @@ if(TARGET zzrk_gui_support)
     set_tests_properties(
         gui_upgrade
         PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND TARGET ZzRkDevTool
+   AND TARGET zzrkdevtool-cli)
+    add_test(
+        NAME linux_install_smoke
+        COMMAND
+            "${CMAKE_COMMAND}"
+            "-DBUILD_DIR=${CMAKE_BINARY_DIR}"
+            "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}"
+            "-DINSTALL_CONFIG=$<CONFIG>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/linux_install_smoke.cmake"
+    )
+    set_tests_properties(
+        linux_install_smoke
+        PROPERTIES
+            LABELS packaging
+            RUN_SERIAL TRUE
+            TIMEOUT 60
     )
 endif()

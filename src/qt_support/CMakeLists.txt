@@ -3,6 +3,7 @@
 add_library(
     zzrk_qt_support STATIC
     src/FirmwareMd5Verifier.cpp
+    src/FirmwareUpgradeReportWriter.cpp
 )
 add_library(zzrk::qt_support ALIAS zzrk_qt_support)
 

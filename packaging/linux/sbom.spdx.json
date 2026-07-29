@@ -1,0 +1,105 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "ZzRkDevTool-0.1.0-linux-runtime",
+  "documentNamespace": "https://zzrkdevtool.local/spdx/0.1.0/linux-runtime",
+  "creationInfo": {
+    "created": "2026-07-29T00:00:00Z",
+    "creators": [
+      "Tool: ZzRkDevTool packaging"
+    ]
+  },
+  "documentDescribes": [
+    "SPDXRef-Package-ZzRkDevTool"
+  ],
+  "packages": [
+    {
+      "name": "ZzRkDevTool",
+      "SPDXID": "SPDXRef-Package-ZzRkDevTool",
+      "versionInfo": "0.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "Copyright (c) 2026 ZzRkDevTool contributors"
+    },
+    {
+      "name": "Qt Base",
+      "SPDXID": "SPDXRef-Package-QtBase",
+      "versionInfo": "6.11.1",
+      "downloadLocation": "https://code.qt.io/cgit/qt/qtbase.git/tag/?h=v6.11.1",
+      "filesAnalyzed": false,
+      "licenseConcluded": "LGPL-3.0-only",
+      "licenseDeclared": "LGPL-3.0-only",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "libusb",
+      "SPDXID": "SPDXRef-Package-libusb",
+      "versionInfo": "1.0.30",
+      "downloadLocation": "https://github.com/libusb/libusb/releases/tag/v1.0.30",
+      "filesAnalyzed": false,
+      "licenseConcluded": "LGPL-2.1-or-later",
+      "licenseDeclared": "LGPL-2.1-or-later",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "ICU",
+      "SPDXID": "SPDXRef-Package-ICU",
+      "versionInfo": "73.2",
+      "downloadLocation": "https://github.com/unicode-org/icu/releases/tag/release-73-2",
+      "filesAnalyzed": false,
+      "licenseConcluded": "Unicode-DFS-2016",
+      "licenseDeclared": "Unicode-DFS-2016",
+      "copyrightText": "Copyright 1991-2023 Unicode, Inc."
+    },
+    {
+      "name": "spdlog",
+      "SPDXID": "SPDXRef-Package-spdlog",
+      "versionInfo": "git-d24088deaa441a79267df8ae3dbc567fbe2a5e03",
+      "downloadLocation": "https://github.com/gabime/spdlog",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION"
+    },
+    {
+      "name": "fmt",
+      "SPDXID": "SPDXRef-Package-fmt",
+      "versionInfo": "12.1.0",
+      "downloadLocation": "https://github.com/fmtlib/fmt/releases/tag/12.1.0",
+      "filesAnalyzed": false,
+      "licenseConcluded": "MIT",
+      "licenseDeclared": "MIT",
+      "copyrightText": "Copyright (c) 2012-present Victor Zverovich and fmt contributors"
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-Package-ZzRkDevTool",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-QtBase"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-ZzRkDevTool",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-libusb"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-QtBase",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-ICU"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-ZzRkDevTool",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-spdlog"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-spdlog",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Package-fmt"
+    }
+  ]
+}

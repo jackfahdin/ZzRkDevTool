@@ -2,6 +2,8 @@
 
 add_library(
     zzrk_workflow STATIC
+    src/DeviceManagementWorkflow.cpp
+    src/FirmwareUpgradeReport.cpp
     src/FirmwareUpgradeWorkflow.cpp
     src/LibusbFirmwareUpgradeBackend.cpp
 )
@@ -16,6 +18,7 @@ target_link_libraries(
     PUBLIC
         zzrk::image
         zzrk::session
+        zzrk::storage
         zzrk::transport
     PRIVATE zzrk_project_warnings
 )

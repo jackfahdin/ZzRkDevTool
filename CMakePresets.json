@@ -102,5 +102,15 @@
         "outputOnFailure": true
       }
     }
+  ],
+  "packagePresets": [
+    {
+      "name": "linux-deb",
+      "displayName": "Linux Debian Package",
+      "configurePreset": "linux-release",
+      "generators": [
+        "DEB"
+      ]
+    }
   ]
 }

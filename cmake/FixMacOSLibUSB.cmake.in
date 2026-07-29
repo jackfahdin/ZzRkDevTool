@@ -1,0 +1,88 @@
+# SPDX-License-Identifier: MIT
+
+set(_zzrk_bundle_root "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/ZzRkDevTool.app")
+set(_zzrk_libusb_name "@_zzrk_macos_libusb_name@")
+set(
+    _zzrk_libusb_path
+    "${_zzrk_bundle_root}/Contents/Frameworks/${_zzrk_libusb_name}"
+)
+set(_zzrk_libusb_install_name "@rpath/${_zzrk_libusb_name}")
+
+if(NOT EXISTS "${_zzrk_libusb_path}")
+    message(FATAL_ERROR "Bundled libusb is missing: ${_zzrk_libusb_path}")
+endif()
+
+execute_process(
+    COMMAND "@CMAKE_INSTALL_NAME_TOOL@" -id
+            "${_zzrk_libusb_install_name}" "${_zzrk_libusb_path}"
+    RESULT_VARIABLE _zzrk_install_name_result
+    ERROR_VARIABLE _zzrk_install_name_error
+)
+if(_zzrk_install_name_result)
+    message(
+        FATAL_ERROR
+        "Unable to set the bundled libusb install name: "
+        "${_zzrk_install_name_error}"
+    )
+endif()
+
+function(_zzrk_rewrite_libusb_reference _zzrk_executable)
+    if(NOT EXISTS "${_zzrk_executable}")
+        message(FATAL_ERROR "Bundled executable is missing: ${_zzrk_executable}")
+    endif()
+
+    execute_process(
+        COMMAND "@CMAKE_OTOOL@" -L "${_zzrk_executable}"
+        RESULT_VARIABLE _zzrk_otool_result
+        OUTPUT_VARIABLE _zzrk_dependencies
+        ERROR_VARIABLE _zzrk_otool_error
+    )
+    if(_zzrk_otool_result)
+        message(
+            FATAL_ERROR
+            "Unable to inspect ${_zzrk_executable}: ${_zzrk_otool_error}"
+        )
+    endif()
+
+    string(
+        REGEX MATCH
+        "[\r\n][ \t]+([^ \t\r\n]*libusb[^ \t\r\n]*\\.dylib)[ \t]+\\("
+        _zzrk_libusb_match
+        "${_zzrk_dependencies}"
+    )
+    if(NOT _zzrk_libusb_match)
+        message(
+            FATAL_ERROR
+            "No libusb dependency was found in ${_zzrk_executable}"
+        )
+    endif()
+    set(_zzrk_old_install_name "${CMAKE_MATCH_1}")
+
+    if(NOT "${_zzrk_old_install_name}" STREQUAL
+       "${_zzrk_libusb_install_name}")
+        execute_process(
+            COMMAND "@CMAKE_INSTALL_NAME_TOOL@" -change
+                    "${_zzrk_old_install_name}"
+                    "${_zzrk_libusb_install_name}"
+                    "${_zzrk_executable}"
+            RESULT_VARIABLE _zzrk_change_result
+            ERROR_VARIABLE _zzrk_change_error
+        )
+        if(_zzrk_change_result)
+            message(
+                FATAL_ERROR
+                "Unable to make libusb relocatable in ${_zzrk_executable}: "
+                "${_zzrk_change_error}"
+            )
+        endif()
+    endif()
+endfunction()
+
+_zzrk_rewrite_libusb_reference(
+    "${_zzrk_bundle_root}/Contents/MacOS/ZzRkDevTool"
+)
+if(EXISTS "${_zzrk_bundle_root}/Contents/MacOS/zzrkdevtool-cli")
+    _zzrk_rewrite_libusb_reference(
+        "${_zzrk_bundle_root}/Contents/MacOS/zzrkdevtool-cli"
+    )
+endif()

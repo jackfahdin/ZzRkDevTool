@@ -109,6 +109,7 @@ struct FirmwareUpgradeEvent {
     std::uint64_t completedBytes{};
     std::uint64_t totalBytes{};
     std::optional<image::FirmwareFlashPhase> flashPhase;
+    std::optional<transport::UsbDeviceInfo> device;
 };
 
 using FirmwareUpgradeProgressCallback =

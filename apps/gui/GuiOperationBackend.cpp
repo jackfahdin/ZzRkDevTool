@@ -47,6 +47,55 @@ public:
     return workflow.execute(request, std::move(prepared), progress,
                             cancellation);
   }
+
+  [[nodiscard]] workflow::DeviceInspectionResult
+  inspectDevice(const std::string &portPath) override {
+    auto backend = workflow::createLibusbFirmwareUpgradeBackend();
+    workflow::DeviceManagementWorkflow workflow{*backend};
+    return workflow.inspect(portPath);
+  }
+
+  [[nodiscard]] workflow::DevicePartitionTableResult
+  readPartitions(const std::string &portPath) override {
+    auto backend = workflow::createLibusbFirmwareUpgradeBackend();
+    workflow::DeviceManagementWorkflow workflow{*backend};
+    return workflow.readPartitions(portPath);
+  }
+
+  [[nodiscard]] workflow::PartitionOperationResult readPartition(
+      const std::string &portPath, const std::string &partition,
+      const std::filesystem::path &outputPath,
+      const workflow::PartitionOperationProgressCallback &progress,
+      const workflow::DeviceManagementCancellationCallback &cancellation)
+      override {
+    auto backend = workflow::createLibusbFirmwareUpgradeBackend();
+    workflow::DeviceManagementWorkflow workflow{*backend};
+    return workflow.readPartition(portPath, partition, outputPath, progress,
+                                  cancellation);
+  }
+
+  [[nodiscard]] workflow::PartitionOperationResult writePartition(
+      const std::string &portPath, const std::string &partition,
+      const std::filesystem::path &inputPath, const bool verify,
+      const workflow::PartitionOperationProgressCallback &progress,
+      const workflow::DeviceManagementCancellationCallback &cancellation)
+      override {
+    auto backend = workflow::createLibusbFirmwareUpgradeBackend();
+    workflow::DeviceManagementWorkflow workflow{*backend};
+    return workflow.writePartition(portPath, partition, inputPath, verify,
+                                   progress, cancellation);
+  }
+
+  [[nodiscard]] workflow::PartitionOperationResult erasePartition(
+      const std::string &portPath, const std::string &partition,
+      const workflow::PartitionOperationProgressCallback &progress,
+      const workflow::DeviceManagementCancellationCallback &cancellation)
+      override {
+    auto backend = workflow::createLibusbFirmwareUpgradeBackend();
+    workflow::DeviceManagementWorkflow workflow{*backend};
+    return workflow.erasePartition(portPath, partition, progress,
+                                   cancellation);
+  }
 };
 
 } // namespace

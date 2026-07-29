@@ -371,7 +371,12 @@ void printFirmwareUpgradeEventJson(
     output << "null";
   }
   output << ",\"completedBytes\":" << event.completedBytes
-         << ",\"totalBytes\":" << event.totalBytes << "}\n";
+         << ",\"totalBytes\":" << event.totalBytes;
+  if (event.device.has_value()) {
+    output << ",\"device\":";
+    writeDevice(*event.device, output);
+  }
+  output << "}\n";
 }
 
 void printFirmwareUpgradeSuccessJson(

@@ -60,6 +60,8 @@ Run the CLI from the selected preset's build directory:
     flash-image 1-5 update.img --yes --prepare-only
 ./build/linux-debug/apps/cli/zzrkdevtool-cli \
     flash-image 1-5 update.img --yes --verify critical --json
+./build/linux-debug/apps/cli/zzrkdevtool-cli \
+    flash-image 1-5 update.img --yes --report upgrade-report.json
 ./build/linux-debug/apps/cli/zzrkdevtool-cli reset 1-5
 ./build/linux-debug/apps/gui/ZzRkDevTool
 ```
@@ -86,6 +88,13 @@ operations and `flash-image` provide a versioned JSON contract. A structured
 `flash-image` run writes JSON Lines to stdout: zero or more `progress` records
 followed by one `result` record. Human logs remain on stderr, so stdout can be
 consumed without filtering log text. The current schema version is `1`.
+
+`flash-image --report <file>` atomically writes a schema-versioned diagnostic
+report containing the selected USB identity, firmware MD5, immutable flash
+plan, verification policy, per-operation timing and terminal result or typed
+error. Reports contain only the firmware file name by default. The explicit
+`--report-include-firmware-path` option adds the full source path when it is
+needed for local diagnostics.
 
 `inspect-image`, `plan-image`, and `flash-image` calculate the RKFW trailing
 MD5 with Qt 6 before accepting the image. Before any eMMC write, `flash-image`
@@ -116,22 +125,58 @@ partition, zero-pad only the final partial sector, and are read back by default;
 `--no-verify` explicitly disables that read-back. These commands never select
 an eMMC hardware partition and never accept a caller-provided write LBA.
 
-The Qt Widgets application uses the same typed workflow through an injectable
-operation backend. It supports firmware selection, asynchronous MD5 and plan
-preview, verification mode, post-flash reboot, block-boundary cancellation and
-final results. During an upgrade it shows cumulative progress for the complete
-flash plan alongside progress for the current Loader, GPT, partition, or
-verification operation. Device polling is paused for the complete duration of
-an upgrade, and the current session retains a bounded 50-entry task history.
-An offscreen automated backend test covers discovery, image preparation,
-upgrade progress, completion, and history without opening USB hardware.
+The Qt Widgets application uses the same typed workflows through an injectable
+operation backend. Its device page reads ChipInfo, Capability, FlashInfo,
+FlashID, eMMC capacity, and the claimed USB interface. The complete-upgrade
+page supports asynchronous MD5 and plan preview, verification mode,
+post-flash reboot, block-boundary cancellation, cumulative plan progress, and
+current-operation progress. The partition page validates GPT before listing
+names and LBA ranges, then supports backup, bounded image write with optional
+per-block read-back, erase, progress, and cancellation. Partition writes and
+erases use separate confirmations that identify the port, partition, LBA range,
+and capacity. Device polling is paused while any USB operation owns the device.
+The current session retains a bounded 50-entry upgrade history whose completed
+rows can export the same redacted JSON report model used by the CLI. Offscreen
+automated backend tests cover discovery, device details, partition listing,
+upgrade progress, completion, report availability, and history without opening
+USB hardware.
 
 `CMakeUserPresets.json` may add workstation-specific convenience presets and is
 intentionally ignored by Git. It is not required by the commands above.
 
-This technical preview is a development-tree build. Installation and release
-packaging stay disabled until Qt, its platform plugins, and libusb can be
-deployed together on each supported host platform.
+## Linux installation package
+
+Build the Ubuntu 26.04 x86_64 Debian package after the release build and tests:
+
+```bash
+cpack --preset linux-deb
+sudo apt install ./build/linux-release/zzrkdevtool_0.1.0_amd64.deb
+```
+
+The package installs the GUI, CLI, a desktop entry, the scoped Rockchip udev
+rule, private ABI-compatible Qt/libusb/ICU shared libraries, license texts and
+an SPDX component inventory. It creates a dedicated `zzrkdevtool` group; the
+udev rule combines that group's `0660` access with desktop `uaccess` and never
+uses global `0666`. See `packaging/linux/README.md` for headless membership,
+manual rule installation and removal details.
+
+The automated `linux_install_smoke` test installs to a temporary prefix,
+starts both installed applications, checks their relative RPATH and packaged
+runtime files, then removes the installation tree. Set
+`-DZZRK_BUNDLE_RUNTIME=OFF` for an installation whose compatible Qt and libusb
+libraries are managed externally.
+
+## Windows and macOS validation packages
+
+The cross-platform application workflow builds and tests a self-contained
+Windows x86_64 ZIP and a macOS DMG. The ZIP includes the Qt/MSVC runtimes and
+libusb DLL but intentionally does not install or replace a USB driver. Production
+RockUSB access requires a project-owned, signed WinUSB INF/CAT package. The
+macOS bundle contains both applications, Qt frameworks, and a relocatable
+libusb dylib; CI applies only an ad-hoc signature. Developer ID signing,
+notarization, and both platforms' RK3588 hardware tests remain release gates.
+See `packaging/windows/README.md` and `packaging/macos/README.md` for the build,
+driver, signing, and secret-handling policies.
 
 ## Safety and current limits
 
@@ -152,5 +197,7 @@ Loader/Maskrom identities and eMMC user area. It does not write eMMC boot0,
 boot1, or RPMB. The RK3588 Loader 0x0223 used for validation returns opaque data
 when reading the disk-tail backup GPT, so the tool verifies the primary GPT
 strictly and reports the backup GPT as write-submitted. Additional Loader
-revisions, Windows/macOS hardware validation, and release packaging remain
-future work.
+revisions, second-board validation, and Windows/macOS hardware validation remain
+future work. Windows/macOS packaging is covered by CI validation artifacts, not
+formally signed or notarized releases. The current Debian package is an Ubuntu
+26.04 x86_64 baseline rather than a cross-distribution artifact.
