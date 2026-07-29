@@ -6,6 +6,11 @@ Rockchip USB devices, reads typed Loader information, inspects and plans RKFW /
 RKAF update images, and performs complete eMMC system upgrades from
 `update.img`.
 
+中文编译、测试和打包说明见
+[`docs/BUILD_AND_PACKAGE.zh-CN.md`](docs/BUILD_AND_PACKAGE.zh-CN.md)，后续真机、
+跨平台、签名和发布待办见
+[`docs/PROJECT_PLAN.zh-CN.md`](docs/PROJECT_PLAN.zh-CN.md#18-待验证与发布清单)。
+
 ## Development build
 
 Initialize the pinned spdlog v2 submodule after cloning:

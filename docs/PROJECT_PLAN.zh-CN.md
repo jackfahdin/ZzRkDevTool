@@ -729,3 +729,44 @@ Qt GUI 已通过可注入的操作 backend 与生产 workflow 解耦，并增加
 3. **已完成**：完善 GUI 设备详情和分区管理，复用 typed 设备信息、GPT、分区读写/擦除能力，并保持 USB 互斥、高危操作预检和确认。
 4. **进行中**：已建立 Windows x86_64 ZIP 与 macOS DMG 的构建、18 项跨平台无硬件测试、部署后启动检查和 CI 产物上传；Linux 另有第 19 项安装 smoke test。Windows 明确保留签名 WinUSB INF/CAT 门禁，macOS CI 使用 ad-hoc 签名验证最终 bundle。正式 Authenticode/Developer ID 签名、公证和两平台 RK3588 真机验证仍属于发布门禁。
 5. **TODO（等待设备空闲，不阻塞当前开发）**：用第二块 RK3588/eMMC 板卡和更多 Loader revision 建立兼容矩阵，在有协议证据后再放宽当前严格身份匹配。第二块板卡当前用于其他测试，不要求中断。
+
+## 18. 待验证与发布清单
+
+以下事项已记录，等待设备、平台或发布环境可用时按顺序执行。完成前不扩大已验证的 Loader 身份、存储介质和分区操作范围。
+
+### 18.1 Linux 安装包和当前板卡
+
+- [ ] 在干净的 Ubuntu 26.04 x86_64 主机安装 `zzrkdevtool_0.1.0_amd64.deb`，确认依赖、桌面入口、卸载和重新安装正常。
+- [ ] 使用普通用户验证 udev `uaccess`；无桌面会话时验证 `zzrkdevtool` 组权限，禁止以 root 运行应用规避权限问题。
+- [ ] 验证 GUI 设备页的 ChipInfo、Capability、FlashInfo、FlashID、eMMC 容量以及 USB 接口信息。
+- [ ] 验证 GUI 分区页的主 GPT 列表、分区范围和只读备份；确认已有备份文件不会被覆盖，取消时只留下明确的 `.partial` 文件。
+- [ ] 使用可恢复的专用测试分区验证 GUI 写入、逐块回读、擦除和取消。不得使用 `uboot_a/b`、`boot_a/b`、`vbmeta_a/b` 等启动链分区做首次破坏性测试。
+- [ ] 分别导出 CLI 与 GUI 的成功、失败、取消报告，检查 schema、固件 MD5、步骤耗时、typed 终态和默认路径脱敏。
+- [ ] 再执行一次 GUI 完整升级，确认当前操作百分比和完整计划累计百分比同时正确，升级后设备能够正常复位并启动 Android。
+
+### 18.2 Windows
+
+- [ ] 在 Windows 10 22H2 x64 和 Windows 11 x64 上完成 MSVC Release 构建、18 项无硬件测试、ZIP 解压启动以及 Qt/libusb DLL 检查。
+- [ ] 为测试设备记录现有 USB 驱动，再绑定兼容 WinUSB 驱动，验证 `list`、`info`、`--prepare-only` 和完整升级；同时验证恢复原驱动的流程。
+- [ ] 发布前制作项目自有 INF/CAT，完成可信签名；应用 EXE/DLL 完成 Authenticode SHA-256 签名和时间戳验证。
+- [ ] 在没有 Qt、Visual Studio 和 vcpkg 的干净机器验证 ZIP，确认 GUI、CLI 和 MSVC runtime 均为自包含。
+
+### 18.3 macOS
+
+- [ ] 在真实 macOS 主机完成 18 项无硬件测试、DMG 挂载、CLI 启动、bundle 签名以及 `@rpath` libusb 依赖检查。
+- [ ] 分别在 Apple Silicon 和仍计划支持的 Intel 主机执行 USB 枚举、`info`、`--prepare-only` 和完整升级验证。
+- [ ] 发布前使用 Developer ID Application 签名并启用 hardened runtime，提交 Apple 公证、staple DMG，再用 Gatekeeper 做离线验收。
+
+### 18.4 兼容性和后续功能
+
+- [ ] 第二块 RK3588/eMMC 板卡空闲后，记录 VID/PID、BCD、接口、端点、Loader revision、FlashInfo/FlashID 和完整升级结果，建立兼容矩阵。
+- [ ] 只有获得协议 trace 和成功/失败样本后，才评估放宽 Loader 身份匹配或增加新的存储介质。
+- [ ] 根据真实失败报告决定是否增加跨进程持久化任务历史、分阶段重试和更细的故障恢复指引。
+
+### 18.5 代码托管和 CI
+
+- [ ] 确认用于运行 GitHub Actions 的目标 GitHub 仓库地址。当前 `origin` 指向 GitCode，且远端 `main` 与本地历史没有共同祖先，不得直接 force-push 覆盖。
+- [ ] 保留远端现有历史后，将当前代码推送到经过确认的新分支或正确仓库，再观察 Windows/macOS workflow 的首次结果。
+- [ ] 将首次跨平台 CI 的编译、测试、部署和打包问题回填到本节，不把 CI 通过等同于真机或正式签名发布验证。
+
+各平台的具体环境、命令和产物检查见[《ZzRkDevTool 各平台编译与打包指南》](BUILD_AND_PACKAGE.zh-CN.md)。
