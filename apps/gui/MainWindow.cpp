@@ -8,6 +8,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFrame>
@@ -41,6 +42,7 @@
 #include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <span>
@@ -71,6 +73,23 @@ constexpr int ReportIdRole = Qt::UserRole + 4;
 constexpr int ManageableRole = Qt::UserRole + 5;
 constexpr int FirstLbaRole = Qt::UserRole + 6;
 constexpr int LastLbaRole = Qt::UserRole + 7;
+constexpr int DownloadTargetRole = Qt::UserRole + 8;
+constexpr int DownloadKindRole = Qt::UserRole + 9;
+constexpr int DownloadCapacityRole = Qt::UserRole + 10;
+
+enum DownloadColumn
+{
+    DownloadSelectedColumn,
+    DownloadTargetColumn,
+    DownloadLbaColumn,
+    DownloadCapacityColumn,
+    DownloadFileColumn,
+    DownloadFormatColumn,
+    DownloadExpandedSizeColumn,
+    DownloadVerifyColumn,
+    DownloadStatusColumn,
+    DownloadColumnCount
+};
 
 enum PartitionColumn
 {
@@ -255,6 +274,156 @@ QString workflowErrorText(const zzrk::workflow::FirmwareUpgradeError &error)
     return reason;
 }
 
+QString imageDownloadErrorText(
+    const zzrk::workflow::ImageDownloadError &error)
+{
+    using zzrk::workflow::ImageDownloadErrorCode;
+    QString reason;
+    switch (error.code) {
+    case ImageDownloadErrorCode::cancelled:
+        reason = QStringLiteral("操作已取消");
+        break;
+    case ImageDownloadErrorCode::invalidRequest:
+        reason = QStringLiteral("下载计划不完整");
+        break;
+    case ImageDownloadErrorCode::imageInvalid:
+        reason = QStringLiteral("镜像格式无效或与 RK3588 不匹配");
+        break;
+    case ImageDownloadErrorCode::digestFailed:
+        reason = QStringLiteral("无法计算镜像 MD5");
+        break;
+    case ImageDownloadErrorCode::digestChanged:
+        reason = QStringLiteral("镜像在执行前发生变化");
+        break;
+    case ImageDownloadErrorCode::layoutInvalid:
+        reason = QStringLiteral("分区布局无效");
+        break;
+    case ImageDownloadErrorCode::scanFailed:
+    case ImageDownloadErrorCode::deviceNotFound:
+    case ImageDownloadErrorCode::deviceAmbiguous:
+    case ImageDownloadErrorCode::deviceUnsupported:
+        reason = QStringLiteral("目标 USB 设备不可用");
+        break;
+    case ImageDownloadErrorCode::loaderRequired:
+        reason = QStringLiteral("Maskrom 模式必须选择 MiniLoaderAll.bin");
+        break;
+    case ImageDownloadErrorCode::openFailed:
+        reason = QStringLiteral("无法打开 RockUSB 接口");
+        break;
+    case ImageDownloadErrorCode::loaderResetFailed:
+    case ImageDownloadErrorCode::reenumerationTimedOut:
+    case ImageDownloadErrorCode::loaderDownloadFailed:
+    case ImageDownloadErrorCode::loaderNotReady:
+        reason = QStringLiteral("RAM Loader 准备失败");
+        break;
+    case ImageDownloadErrorCode::wrongChip:
+        reason = QStringLiteral("目标芯片不是 RK3588");
+        break;
+    case ImageDownloadErrorCode::storageCheckFailed:
+    case ImageDownloadErrorCode::storageNotEmmc:
+    case ImageDownloadErrorCode::deviceTooSmall:
+        reason = QStringLiteral("eMMC 检查失败或空间不足");
+        break;
+    case ImageDownloadErrorCode::deviceLayoutChanged:
+        reason = QStringLiteral("设备 GPT 在准备后发生变化");
+        break;
+    case ImageDownloadErrorCode::flashFailed:
+        reason = QStringLiteral("镜像写入或回读校验失败");
+        break;
+    case ImageDownloadErrorCode::resetFailed:
+        reason = QStringLiteral("镜像已写入，但设备复位失败");
+        break;
+    case ImageDownloadErrorCode::closeFailed:
+        reason = QStringLiteral("无法释放 RockUSB 接口");
+        break;
+    }
+    if (!error.target.empty()) {
+        reason += QStringLiteral("（%1）")
+                      .arg(QString::fromStdString(error.target));
+    }
+    return reason;
+}
+
+QString imageDownloadStageText(const zzrk::workflow::ImageDownloadStage stage)
+{
+    using zzrk::workflow::ImageDownloadStage;
+    switch (stage) {
+    case ImageDownloadStage::inspectFiles:
+        return QStringLiteral("检查镜像");
+    case ImageDownloadStage::verifyFiles:
+        return QStringLiteral("校验 MD5");
+    case ImageDownloadStage::selectDevice:
+        return QStringLiteral("选择设备");
+    case ImageDownloadStage::enterMaskrom:
+        return QStringLiteral("进入 Maskrom");
+    case ImageDownloadStage::waitForMaskrom:
+        return QStringLiteral("等待 Maskrom");
+    case ImageDownloadStage::downloadLoader:
+        return QStringLiteral("下载 RAM Loader");
+    case ImageDownloadStage::waitForRamLoader:
+        return QStringLiteral("等待 RAM Loader");
+    case ImageDownloadStage::checkRamLoader:
+        return QStringLiteral("检查 RAM Loader");
+    case ImageDownloadStage::checkStorage:
+        return QStringLiteral("检查 eMMC");
+    case ImageDownloadStage::validateLayout:
+        return QStringLiteral("核对 GPT");
+    case ImageDownloadStage::erase:
+        return QStringLiteral("擦除");
+    case ImageDownloadStage::write:
+        return QStringLiteral("写入");
+    case ImageDownloadStage::verify:
+        return QStringLiteral("回读校验");
+    case ImageDownloadStage::reset:
+        return QStringLiteral("复位设备");
+    }
+    return QStringLiteral("处理");
+}
+
+QString payloadFormatText(const zzrk::image::PayloadFormat format)
+{
+    switch (format) {
+    case zzrk::image::PayloadFormat::androidSparse:
+        return QStringLiteral("Android Sparse");
+    case zzrk::image::PayloadFormat::rockchipParameter:
+        return QStringLiteral("parameter.txt");
+    case zzrk::image::PayloadFormat::raw:
+        return QStringLiteral("Raw");
+    case zzrk::image::PayloadFormat::unknown:
+        break;
+    }
+    return QStringLiteral("-");
+}
+
+std::string slotBaseTarget(const std::string &target)
+{
+    if (target.size() > 2U
+        && (target.ends_with("_a") || target.ends_with("_b"))) {
+        return target.substr(0U, target.size() - 2U);
+    }
+    return target;
+}
+
+zzrk::workflow::ImageDownloadError unexpectedImageDownloadError(
+    const std::string &target)
+{
+    return zzrk::workflow::ImageDownloadError{
+        .code = zzrk::workflow::ImageDownloadErrorCode::invalidRequest,
+        .stage = zzrk::workflow::ImageDownloadStage::inspectFiles,
+        .target = target,
+        .completedPlanBytes = 0U,
+        .itemIndex = {},
+        .imageError = {},
+        .digestError = {},
+        .scanError = {},
+        .openError = {},
+        .loaderError = {},
+        .sessionError = {},
+        .gptError = {},
+        .flashError = {},
+    };
+}
+
 QString deviceManagementErrorText(
     const zzrk::workflow::DeviceManagementError &error)
 {
@@ -391,6 +560,17 @@ std::filesystem::path filesystemPath(const QString &path)
 #endif
 }
 
+QString filesystemPathText(const std::filesystem::path &path)
+{
+#ifdef _WIN32
+    return QString::fromStdWString(path.wstring());
+#else
+    const std::string text = path.string();
+    return QString::fromUtf8(text.data(),
+                             static_cast<qsizetype>(text.size()));
+#endif
+}
+
 } // namespace
 
 MainWindow::MainWindow(QWidget *parent)
@@ -454,18 +634,192 @@ MainWindow::MainWindow(
 
     m_tabs = new QTabWidget(centralWidget);
     m_tabs->setObjectName(QStringLiteral("mainTabs"));
+    auto *downloadTab = new QWidget(m_tabs);
     auto *deviceTab = new QWidget(m_tabs);
     auto *upgradeTab = new QWidget(m_tabs);
     auto *partitionTab = new QWidget(m_tabs);
+    auto *downloadLayout = new QVBoxLayout(downloadTab);
     auto *deviceLayout = new QVBoxLayout(deviceTab);
     auto *upgradePageLayout = new QVBoxLayout(upgradeTab);
     auto *partitionLayout = new QVBoxLayout(partitionTab);
+    downloadLayout->setContentsMargins(10, 10, 10, 10);
     deviceLayout->setContentsMargins(10, 10, 10, 10);
     upgradePageLayout->setContentsMargins(10, 10, 10, 10);
     partitionLayout->setContentsMargins(10, 10, 10, 10);
+    m_tabs->addTab(downloadTab, QStringLiteral("下载镜像"));
     m_tabs->addTab(deviceTab, QStringLiteral("设备"));
     m_tabs->addTab(upgradeTab, QStringLiteral("完整升级"));
     m_tabs->addTab(partitionTab, QStringLiteral("分区"));
+
+    auto *downloadSourceLayout = new QGridLayout;
+    downloadSourceLayout->setHorizontalSpacing(8);
+    downloadSourceLayout->setVerticalSpacing(8);
+    downloadSourceLayout->setColumnStretch(1, 1);
+    downloadSourceLayout->setColumnStretch(4, 1);
+
+    m_downloadDeviceCombo = new QComboBox(downloadTab);
+    m_downloadDeviceCombo->setObjectName(
+        QStringLiteral("downloadDeviceCombo"));
+    m_downloadDeviceCombo->setMinimumContentsLength(18);
+    downloadSourceLayout->addWidget(
+        new QLabel(QStringLiteral("目标设备"), downloadTab), 0, 0);
+    downloadSourceLayout->addWidget(m_downloadDeviceCombo, 0, 1, 1, 2);
+
+    m_downloadLayoutCombo = new QComboBox(downloadTab);
+    m_downloadLayoutCombo->setObjectName(
+        QStringLiteral("downloadLayoutCombo"));
+    m_downloadLayoutCombo->addItem(QStringLiteral("设备 GPT"));
+    m_downloadLayoutCombo->addItem(QStringLiteral("parameter.txt"));
+    downloadSourceLayout->addWidget(
+        new QLabel(QStringLiteral("分区布局"), downloadTab), 0, 3);
+    downloadSourceLayout->addWidget(m_downloadLayoutCombo, 0, 4);
+
+    m_readDownloadGptButton = new QToolButton(downloadTab);
+    m_readDownloadGptButton->setObjectName(
+        QStringLiteral("readDownloadGptButton"));
+    m_readDownloadGptButton->setIcon(
+        style()->standardIcon(QStyle::SP_BrowserReload));
+    m_readDownloadGptButton->setToolTip(QStringLiteral("读取设备 GPT"));
+    m_readDownloadGptButton->setAccessibleName(QStringLiteral("读取设备 GPT"));
+    m_readDownloadGptButton->setFixedSize(30, 30);
+    downloadSourceLayout->addWidget(m_readDownloadGptButton, 0, 5);
+
+    m_downloadLayoutPathEdit = new QLineEdit(downloadTab);
+    m_downloadLayoutPathEdit->setObjectName(
+        QStringLiteral("downloadParameterPath"));
+    m_downloadLayoutPathEdit->setReadOnly(true);
+    m_downloadLayoutPathEdit->setPlaceholderText(
+        QStringLiteral("设备 GPT 将在读取后显示，或选择 parameter.txt"));
+    m_chooseDownloadParameterButton = new QToolButton(downloadTab);
+    m_chooseDownloadParameterButton->setObjectName(
+        QStringLiteral("chooseDownloadParameterButton"));
+    m_chooseDownloadParameterButton->setIcon(
+        style()->standardIcon(QStyle::SP_DirOpenIcon));
+    m_chooseDownloadParameterButton->setToolTip(
+        QStringLiteral("选择 parameter.txt"));
+    m_chooseDownloadParameterButton->setAccessibleName(
+        QStringLiteral("选择 parameter.txt"));
+    m_chooseDownloadParameterButton->setFixedSize(30, 30);
+    downloadSourceLayout->addWidget(
+        new QLabel(QStringLiteral("布局文件"), downloadTab), 1, 0);
+    downloadSourceLayout->addWidget(m_downloadLayoutPathEdit, 1, 1, 1, 4);
+    downloadSourceLayout->addWidget(m_chooseDownloadParameterButton, 1, 5);
+
+    m_downloadDirectoryEdit = new QLineEdit(downloadTab);
+    m_downloadDirectoryEdit->setObjectName(
+        QStringLiteral("downloadImageDirectory"));
+    m_downloadDirectoryEdit->setReadOnly(true);
+    m_downloadDirectoryEdit->setPlaceholderText(
+        QStringLiteral("选择镜像目录以自动匹配分区"));
+    m_chooseDownloadDirectoryButton = new QToolButton(downloadTab);
+    m_chooseDownloadDirectoryButton->setObjectName(
+        QStringLiteral("chooseDownloadDirectoryButton"));
+    m_chooseDownloadDirectoryButton->setIcon(
+        style()->standardIcon(QStyle::SP_DirOpenIcon));
+    m_chooseDownloadDirectoryButton->setToolTip(QStringLiteral("选择镜像目录"));
+    m_chooseDownloadDirectoryButton->setAccessibleName(
+        QStringLiteral("选择镜像目录"));
+    m_chooseDownloadDirectoryButton->setFixedSize(30, 30);
+    downloadSourceLayout->addWidget(
+        new QLabel(QStringLiteral("镜像目录"), downloadTab), 2, 0);
+    downloadSourceLayout->addWidget(m_downloadDirectoryEdit, 2, 1, 1, 4);
+    downloadSourceLayout->addWidget(m_chooseDownloadDirectoryButton, 2, 5);
+    downloadLayout->addLayout(downloadSourceLayout);
+
+    m_downloadTable =
+        new QTableWidget(0, DownloadColumnCount, downloadTab);
+    m_downloadTable->setObjectName(QStringLiteral("downloadImageTable"));
+    m_downloadTable->setHorizontalHeaderLabels({
+        QStringLiteral("选择"), QStringLiteral("目标"),
+        QStringLiteral("起始 LBA"), QStringLiteral("容量"),
+        QStringLiteral("镜像文件"), QStringLiteral("格式"),
+        QStringLiteral("展开大小"), QStringLiteral("校验"),
+        QStringLiteral("状态"),
+    });
+    m_downloadTable->setAlternatingRowColors(true);
+    m_downloadTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_downloadTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_downloadTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_downloadTable->setShowGrid(false);
+    m_downloadTable->verticalHeader()->setVisible(false);
+    m_downloadTable->verticalHeader()->setDefaultSectionSize(30);
+    auto *downloadHeader = m_downloadTable->horizontalHeader();
+    downloadHeader->setSectionResizeMode(DownloadSelectedColumn,
+                                          QHeaderView::ResizeToContents);
+    downloadHeader->setSectionResizeMode(DownloadTargetColumn,
+                                          QHeaderView::ResizeToContents);
+    downloadHeader->setSectionResizeMode(DownloadLbaColumn,
+                                          QHeaderView::ResizeToContents);
+    downloadHeader->setSectionResizeMode(DownloadCapacityColumn,
+                                          QHeaderView::ResizeToContents);
+    downloadHeader->setSectionResizeMode(DownloadFileColumn,
+                                          QHeaderView::Stretch);
+    downloadHeader->setSectionResizeMode(DownloadFormatColumn,
+                                          QHeaderView::ResizeToContents);
+    downloadHeader->setSectionResizeMode(DownloadExpandedSizeColumn,
+                                          QHeaderView::ResizeToContents);
+    downloadHeader->setSectionResizeMode(DownloadVerifyColumn,
+                                          QHeaderView::ResizeToContents);
+    downloadHeader->setSectionResizeMode(DownloadStatusColumn,
+                                          QHeaderView::ResizeToContents);
+    downloadLayout->addWidget(m_downloadTable, 1);
+
+    auto *downloadActions = new QHBoxLayout;
+    m_chooseDownloadImageButton =
+        new QPushButton(QStringLiteral("选择镜像"), downloadTab);
+    m_chooseDownloadImageButton->setObjectName(
+        QStringLiteral("chooseDownloadImageButton"));
+    m_chooseDownloadImageButton->setIcon(
+        style()->standardIcon(QStyle::SP_DirOpenIcon));
+    m_clearDownloadImageButton =
+        new QPushButton(QStringLiteral("清除"), downloadTab);
+    m_clearDownloadImageButton->setObjectName(
+        QStringLiteral("clearDownloadImageButton"));
+    m_clearDownloadImageButton->setIcon(
+        style()->standardIcon(QStyle::SP_DialogResetButton));
+    m_downloadRebootCheckBox =
+        new QCheckBox(QStringLiteral("完成后重启"), downloadTab);
+    m_downloadRebootCheckBox->setObjectName(
+        QStringLiteral("downloadRebootCheckBox"));
+    m_downloadRebootCheckBox->setChecked(true);
+    m_startDownloadButton =
+        new QPushButton(QStringLiteral("开始下载"), downloadTab);
+    m_startDownloadButton->setObjectName(
+        QStringLiteral("startImageDownloadButton"));
+    m_startDownloadButton->setIcon(
+        style()->standardIcon(QStyle::SP_MediaPlay));
+    m_cancelDownloadButton = new QPushButton(QStringLiteral("取消"), downloadTab);
+    m_cancelDownloadButton->setObjectName(
+        QStringLiteral("cancelImageDownloadButton"));
+    m_cancelDownloadButton->setIcon(
+        style()->standardIcon(QStyle::SP_DialogCancelButton));
+    downloadActions->addWidget(m_chooseDownloadImageButton);
+    downloadActions->addWidget(m_clearDownloadImageButton);
+    downloadActions->addWidget(m_downloadRebootCheckBox);
+    downloadActions->addStretch();
+    downloadActions->addWidget(m_startDownloadButton);
+    downloadActions->addWidget(m_cancelDownloadButton);
+    downloadLayout->addLayout(downloadActions);
+
+    m_downloadOverallProgress = new QProgressBar(downloadTab);
+    m_downloadOverallProgress->setObjectName(
+        QStringLiteral("overallImageDownloadProgress"));
+    m_downloadOverallProgress->setRange(0, 100);
+    m_downloadOverallProgress->setValue(0);
+    m_downloadOverallProgress->setFormat(QStringLiteral("完整计划 %p%"));
+    m_downloadOperationProgress = new QProgressBar(downloadTab);
+    m_downloadOperationProgress->setObjectName(
+        QStringLiteral("operationImageDownloadProgress"));
+    m_downloadOperationProgress->setRange(0, 100);
+    m_downloadOperationProgress->setValue(0);
+    m_downloadOperationProgress->setFormat(QStringLiteral("当前分区 %p%"));
+    m_downloadStatus = new QLabel(QStringLiteral("请选择目标设备和分区布局"),
+                                  downloadTab);
+    m_downloadStatus->setObjectName(QStringLiteral("imageDownloadStatus"));
+    m_downloadStatus->setWordWrap(true);
+    downloadLayout->addWidget(m_downloadOverallProgress);
+    downloadLayout->addWidget(m_downloadOperationProgress);
+    downloadLayout->addWidget(m_downloadStatus);
 
     m_deviceTable = new QTableWidget(0, ColumnCount, deviceTab);
     m_deviceTable->setObjectName(QStringLiteral("deviceTable"));
@@ -769,6 +1123,56 @@ MainWindow::MainWindow(
             &MainWindow::handleScanFinished);
     connect(m_deviceTable, &QTableWidget::itemSelectionChanged,
             this, &MainWindow::handleDeviceSelectionChanged);
+    connect(m_downloadDeviceCombo, &QComboBox::currentIndexChanged,
+            this, &MainWindow::handleDownloadDeviceChanged);
+    connect(m_downloadLayoutCombo, &QComboBox::currentIndexChanged,
+            this, &MainWindow::handleDownloadLayoutChanged);
+    connect(m_chooseDownloadParameterButton, &QToolButton::clicked,
+            this, &MainWindow::chooseDownloadParameter);
+    connect(m_readDownloadGptButton, &QToolButton::clicked,
+            this, [this] {
+                m_downloadStatus->setText(
+                    QStringLiteral("正在读取并校验设备 GPT..."));
+                readSelectedDevicePartitions();
+            });
+    connect(m_chooseDownloadDirectoryButton, &QToolButton::clicked,
+            this, &MainWindow::chooseDownloadDirectory);
+    connect(m_chooseDownloadImageButton, &QPushButton::clicked,
+            this, &MainWindow::chooseSelectedDownloadImage);
+    connect(m_clearDownloadImageButton, &QPushButton::clicked,
+            this, &MainWindow::clearSelectedDownloadImage);
+    connect(m_downloadTable, &QTableWidget::itemSelectionChanged,
+            this, &MainWindow::updateDownloadControls);
+    connect(m_downloadTable, &QTableWidget::itemChanged,
+            this, [this](QTableWidgetItem *item) {
+                if (item != nullptr
+                    && (item->column() == DownloadSelectedColumn
+                        || item->column() == DownloadVerifyColumn)) {
+                    const auto *target = m_downloadTable->item(
+                        item->row(), DownloadTargetColumn);
+                    if (target != nullptr) {
+                        auto &states = item->column() == DownloadSelectedColumn
+                            ? m_downloadSelections
+                            : m_downloadVerifications;
+                        states.insert_or_assign(
+                            target->data(DownloadTargetRole)
+                                .toString()
+                                .toStdString(),
+                            item->checkState() == Qt::Checked);
+                    }
+                }
+                updateDownloadControls();
+            });
+    connect(m_startDownloadButton, &QPushButton::clicked,
+            this, &MainWindow::startImageDownload);
+    connect(m_cancelDownloadButton, &QPushButton::clicked,
+            this, &MainWindow::cancelImageDownload);
+    connect(&m_downloadPrepareWatcher,
+            &QFutureWatcher<zzrk::workflow::PreparedImageDownloadResult>::finished,
+            this, &MainWindow::handleDownloadPrepareFinished);
+    connect(&m_imageDownloadWatcher,
+            &QFutureWatcher<zzrk::workflow::ImageDownloadResult>::finished,
+            this, &MainWindow::handleImageDownloadFinished);
     connect(m_inspectDeviceButton, &QPushButton::clicked,
             this, &MainWindow::inspectSelectedDevice);
     connect(&m_inspectionWatcher,
@@ -824,6 +1228,7 @@ MainWindow::MainWindow(
         handleDeviceMonitoringError(*monitoringError);
     }
 
+    rebuildDownloadTable();
     updateUpgradeControls();
 
     QTimer::singleShot(0, this, &MainWindow::refreshDevices);
@@ -837,18 +1242,25 @@ MainWindow::~MainWindow()
     if (m_upgradeCancellation) {
         m_upgradeCancellation->store(true);
     }
+    if (m_downloadCancellation) {
+        m_downloadCancellation->store(true);
+    }
     if (m_partitionCancellation) {
         m_partitionCancellation->store(true);
     }
     disconnect(&m_scanWatcher, nullptr, this, nullptr);
     disconnect(&m_prepareWatcher, nullptr, this, nullptr);
     disconnect(&m_upgradeWatcher, nullptr, this, nullptr);
+    disconnect(&m_downloadPrepareWatcher, nullptr, this, nullptr);
+    disconnect(&m_imageDownloadWatcher, nullptr, this, nullptr);
     disconnect(&m_inspectionWatcher, nullptr, this, nullptr);
     disconnect(&m_partitionTableWatcher, nullptr, this, nullptr);
     disconnect(&m_partitionOperationWatcher, nullptr, this, nullptr);
     m_scanWatcher.waitForFinished();
     m_prepareWatcher.waitForFinished();
     m_upgradeWatcher.waitForFinished();
+    m_downloadPrepareWatcher.waitForFinished();
+    m_imageDownloadWatcher.waitForFinished();
     m_inspectionWatcher.waitForFinished();
     m_partitionTableWatcher.waitForFinished();
     m_partitionOperationWatcher.waitForFinished();
@@ -937,6 +1349,9 @@ void MainWindow::handleScanFinished()
 void MainWindow::applyScanResult(const zzrk::transport::ScanResult &result)
 {
     const QSignalBlocker selectionBlocker{m_deviceTable};
+    QSignalBlocker downloadDeviceBlocker{m_downloadDeviceCombo};
+    const QString selectedDownloadPort =
+        m_downloadDeviceCombo->currentData().toString();
     QString selectedDeviceKey;
     if (const int selectedRow = m_deviceTable->currentRow(); selectedRow >= 0) {
         if (const QTableWidgetItem *item = m_deviceTable->item(selectedRow, StatusColumn)) {
@@ -952,6 +1367,7 @@ void MainWindow::applyScanResult(const zzrk::transport::ScanResult &result)
     m_deviceTable->setSortingEnabled(false);
     m_deviceTable->clearContents();
     m_deviceTable->setRowCount(static_cast<int>(result.devices.size()));
+    m_downloadDeviceCombo->clear();
 
     const QIcon connectedIcon = style()->standardIcon(QStyle::SP_DialogApplyButton);
     int row = 0;
@@ -973,8 +1389,27 @@ void MainWindow::applyScanResult(const zzrk::transport::ScanResult &result)
         m_deviceTable->setItem(row, BusColumn, busItem);
         m_deviceTable->setItem(row, PortColumn, makeItem(portPathText(device)));
         m_deviceTable->setItem(row, UsbVersionColumn, makeItem(usbVersionText(device.bcdUsb)));
+        if (isSupportedFlashDevice(device)) {
+            const QString port = portPathText(device);
+            m_downloadDeviceCombo->addItem(
+                QStringLiteral("%1 (%2)").arg(port, modeText(device.mode)),
+                port);
+            const int comboIndex = m_downloadDeviceCombo->count() - 1;
+            m_downloadDeviceCombo->setItemData(
+                comboIndex, isSupportedManagementDevice(device),
+                Qt::UserRole + 1);
+            m_downloadDeviceCombo->setItemData(
+                comboIndex, static_cast<int>(device.mode), Qt::UserRole + 2);
+        }
         ++row;
     }
+
+    const int restoredDownloadIndex =
+        m_downloadDeviceCombo->findData(selectedDownloadPort);
+    if (restoredDownloadIndex >= 0) {
+        m_downloadDeviceCombo->setCurrentIndex(restoredDownloadIndex);
+    }
+    downloadDeviceBlocker.unblock();
 
     m_deviceTable->setSortingEnabled(true);
     if (sortColumn >= 0) {
@@ -1026,6 +1461,7 @@ void MainWindow::applyScanResult(const zzrk::transport::ScanResult &result)
             QStringLiteral("设备热插拔检测不可用：%1；请使用手动刷新")
                 .arg(m_deviceMonitoringError));
     }
+    handleDownloadDeviceChanged();
     updateUpgradeControls();
     handleDeviceSelectionChanged();
 }
@@ -1052,6 +1488,7 @@ QString MainWindow::selectedPartitionName() const
 bool MainWindow::usbOperationRunning() const
 {
     return m_scanWatcher.isRunning() || m_upgradeWatcher.isRunning()
+        || m_imageDownloadWatcher.isRunning()
         || m_inspectionWatcher.isRunning()
         || m_partitionTableWatcher.isRunning()
         || m_partitionOperationWatcher.isRunning();
@@ -1064,6 +1501,9 @@ void MainWindow::handleDeviceSelectionChanged()
         m_selectedPortCache = portPath;
         clearDeviceInspection();
         clearPartitionTable();
+    }
+    if (!portPath.isEmpty()) {
+        syncDownloadDeviceFromTable();
     }
     if (portPath.isEmpty()) {
         m_deviceDetailStatus->setText(QStringLiteral("请选择 Loader 设备"));
@@ -1100,6 +1540,12 @@ void MainWindow::clearPartitionTable()
     m_partitionProgress->setRange(0, 100);
     m_partitionProgress->setValue(0);
     m_partitionStatus->setText(QStringLiteral("尚未读取分区表"));
+    if (m_downloadLayoutCombo->currentIndex() == 0) {
+        m_downloadLayout.reset();
+        m_downloadLayoutPort.clear();
+        m_downloadLayoutPathEdit->clear();
+        rebuildDownloadTable();
+    }
 }
 
 void MainWindow::inspectSelectedDevice()
@@ -1221,6 +1667,9 @@ void MainWindow::handlePartitionTableFinished()
         clearPartitionTable();
         const QString message = deviceManagementErrorText(*error);
         m_partitionStatus->setText(message);
+        if (m_downloadLayoutCombo->currentIndex() == 0) {
+            m_downloadStatus->setText(message);
+        }
         statusBar()->showMessage(QStringLiteral("GPT 分区表读取失败"));
         if (m_showModalDialogs) {
             QMessageBox::critical(this, QStringLiteral("读取失败"), message);
@@ -1233,6 +1682,30 @@ void MainWindow::handlePartitionTableFinished()
     m_partitions =
         std::get<zzrk::workflow::DevicePartitionTable>(std::move(result));
     m_partitionPort = QString::fromStdString(m_partitions->device.portPath);
+    if (m_downloadLayoutCombo->currentIndex() == 0
+        && m_partitionPort == downloadPortPath()) {
+        zzrk::image::RockchipParameterLayout layout{};
+        layout.model = "device-gpt";
+        layout.partitions.reserve(m_partitions->table.partitions.size());
+        for (const auto &partition : m_partitions->table.partitions) {
+            layout.partitions.push_back(zzrk::image::FirmwarePartition{
+                .name = partition.name,
+                .firstLba = partition.firstLba,
+                .sectorCount = partition.sectorCount(),
+                .grow = false,
+            });
+        }
+        m_downloadLayout = std::move(layout);
+        m_downloadLayoutPort = m_partitionPort;
+        m_downloadLayoutPathEdit->setText(
+            QStringLiteral("%1 / 设备 GPT").arg(m_partitionPort));
+        rebuildDownloadTable();
+        matchDownloadDirectory();
+        m_downloadStatus->setText(
+            QStringLiteral("已读取设备 GPT，共 %1 个分区")
+                .arg(static_cast<qulonglong>(
+                    m_downloadLayout->partitions.size())));
+    }
     m_partitionTable->setSortingEnabled(false);
     m_partitionTable->setRowCount(
         static_cast<int>(m_partitions->table.partitions.size()));
@@ -1540,11 +2013,834 @@ void MainWindow::handlePartitionOperationFinished()
     emit partitionOperationCompleted(true);
 }
 
+QString MainWindow::downloadPortPath() const
+{
+    return m_downloadDeviceCombo->currentData().toString();
+}
+
+void MainWindow::syncDownloadDeviceFromTable()
+{
+    const QString port = selectedPortPath();
+    const int index = m_downloadDeviceCombo->findData(port);
+    if (index < 0 || index == m_downloadDeviceCombo->currentIndex()) {
+        return;
+    }
+    const QSignalBlocker blocker{m_downloadDeviceCombo};
+    m_downloadDeviceCombo->setCurrentIndex(index);
+    handleDownloadDeviceChanged();
+}
+
+void MainWindow::syncDeviceTableFromDownload()
+{
+    const QString port = downloadPortPath();
+    if (port.isEmpty() || selectedPortPath() == port) {
+        return;
+    }
+    for (int row = 0; row < m_deviceTable->rowCount(); ++row) {
+        const auto *item = m_deviceTable->item(row, StatusColumn);
+        if (item != nullptr && item->data(PortPathRole).toString() == port) {
+            m_deviceTable->selectRow(row);
+            return;
+        }
+    }
+}
+
+void MainWindow::handleDownloadDeviceChanged()
+{
+    syncDeviceTableFromDownload();
+    if (m_downloadLayoutCombo->currentIndex() == 0
+        && m_downloadLayoutPort != downloadPortPath()) {
+        m_downloadLayout.reset();
+        m_downloadLayoutPort.clear();
+        m_downloadLayoutPathEdit->clear();
+        rebuildDownloadTable();
+    }
+    updateDownloadControls();
+}
+
+void MainWindow::handleDownloadLayoutChanged()
+{
+    if (m_downloadLayoutCombo->currentIndex() == 1) {
+        if (!m_downloadParameterPath.empty()) {
+            loadDownloadParameter(
+                filesystemPathText(m_downloadParameterPath));
+            return;
+        }
+        m_downloadLayout.reset();
+        m_downloadLayoutPort.clear();
+        m_downloadLayoutPathEdit->clear();
+    } else if (m_partitions.has_value()
+               && m_partitionPort == downloadPortPath()) {
+        zzrk::image::RockchipParameterLayout layout{};
+        layout.model = "device-gpt";
+        layout.partitions.reserve(m_partitions->table.partitions.size());
+        for (const auto &partition : m_partitions->table.partitions) {
+            layout.partitions.push_back(zzrk::image::FirmwarePartition{
+                .name = partition.name,
+                .firstLba = partition.firstLba,
+                .sectorCount = partition.sectorCount(),
+                .grow = false,
+            });
+        }
+        m_downloadLayout = std::move(layout);
+        m_downloadLayoutPort = m_partitionPort;
+        m_downloadLayoutPathEdit->setText(
+            QStringLiteral("%1 / 设备 GPT").arg(m_partitionPort));
+    } else {
+        m_downloadLayout.reset();
+        m_downloadLayoutPort.clear();
+        m_downloadLayoutPathEdit->clear();
+    }
+    rebuildDownloadTable();
+    matchDownloadDirectory();
+}
+
+void MainWindow::chooseDownloadParameter()
+{
+    const QString path = QFileDialog::getOpenFileName(
+        this, QStringLiteral("选择 parameter.txt"), {},
+        QStringLiteral("Rockchip parameter (parameter.txt *.txt);;所有文件 (*)"));
+    if (!path.isEmpty()) {
+        loadDownloadParameter(path);
+    }
+}
+
+void MainWindow::loadDownloadParameter(const QString &path)
+{
+    if (path.isEmpty() || m_downloadPrepareWatcher.isRunning()
+        || m_imageDownloadWatcher.isRunning()) {
+        return;
+    }
+    const auto parameterPath = filesystemPath(path);
+    auto parsed = zzrk::image::parseRockchipParameterFile(parameterPath);
+    if (const auto *error =
+            std::get_if<zzrk::image::FirmwareImageError>(&parsed)) {
+        m_downloadStatus->setText(
+            QStringLiteral("parameter.txt 解析失败（错误 %1）")
+                .arg(static_cast<int>(error->code)));
+        return;
+    }
+    {
+        const QSignalBlocker blocker{m_downloadLayoutCombo};
+        m_downloadLayoutCombo->setCurrentIndex(1);
+    }
+    m_downloadParameterPath = parameterPath;
+    m_downloadLayout = std::get<zzrk::image::RockchipParameterLayout>(
+        std::move(parsed));
+    m_downloadLayoutPort.clear();
+    m_downloadLayoutPathEdit->setText(path);
+    if (m_downloadDirectoryPath.empty()) {
+        m_downloadDirectoryPath = parameterPath.parent_path();
+        m_downloadDirectoryEdit->setText(
+            filesystemPathText(m_downloadDirectoryPath));
+    }
+    rebuildDownloadTable();
+    matchDownloadDirectory();
+    m_downloadStatus->setText(
+        QStringLiteral("已加载 parameter.txt，共 %1 个分区")
+            .arg(static_cast<qulonglong>(m_downloadLayout->partitions.size())));
+}
+
+void MainWindow::chooseDownloadDirectory()
+{
+    const QString path = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("选择镜像目录"), m_downloadDirectoryEdit->text());
+    if (!path.isEmpty()) {
+        loadDownloadDirectory(path);
+    }
+}
+
+void MainWindow::loadDownloadDirectory(const QString &path)
+{
+    if (path.isEmpty() || m_downloadPrepareWatcher.isRunning()
+        || m_imageDownloadWatcher.isRunning()) {
+        return;
+    }
+    const QDir directory{path};
+    if (!directory.exists()) {
+        m_downloadStatus->setText(QStringLiteral("镜像目录不存在"));
+        return;
+    }
+    m_downloadDirectoryPath = filesystemPath(directory.absolutePath());
+    m_downloadDirectoryEdit->setText(directory.absolutePath());
+    matchDownloadDirectory();
+}
+
+void MainWindow::matchDownloadDirectory()
+{
+    if (m_downloadDirectoryPath.empty()) {
+        updateDownloadControls();
+        return;
+    }
+    const QDir directory{
+        filesystemPathText(m_downloadDirectoryPath)};
+    if (!directory.exists()) {
+        return;
+    }
+
+    std::unordered_map<std::string, std::filesystem::path> files;
+    const auto entries = directory.entryInfoList(QDir::Files | QDir::Readable,
+                                                  QDir::Name);
+    for (const QFileInfo &entry : entries) {
+        files.insert_or_assign(entry.fileName().toLower().toStdString(),
+                               filesystemPath(entry.absoluteFilePath()));
+    }
+    m_downloadImages.clear();
+    m_downloadSelections.clear();
+    m_validDownloadImages.clear();
+
+    const auto findCandidate = [&](const std::string &stem) {
+        for (const std::string &name : {stem + ".img", stem + ".bin", stem}) {
+            if (const auto found = files.find(QString::fromStdString(name)
+                                                  .toLower()
+                                                  .toStdString());
+                found != files.end()) {
+                return found->second;
+            }
+        }
+        return std::filesystem::path{};
+    };
+    if (const auto loader = files.find("miniloaderall.bin");
+        loader != files.end()) {
+        assignDownloadImage("Loader", loader->second, false, false);
+    }
+    if (m_downloadLayout.has_value()) {
+        for (const auto &partition : m_downloadLayout->partitions) {
+            auto path = findCandidate(partition.name);
+            if (path.empty()) {
+                path = findCandidate(slotBaseTarget(partition.name));
+            }
+            if (!path.empty()) {
+                assignDownloadImage(partition.name, path, false, false);
+            }
+        }
+    }
+    rebuildDownloadTable();
+    const auto matched = static_cast<qulonglong>(m_validDownloadImages.size());
+    m_downloadStatus->setText(
+        QStringLiteral("已匹配 %1 个可下载目标").arg(matched));
+}
+
+void MainWindow::assignDownloadImage(const std::string &target,
+                                     const std::filesystem::path &path,
+                                     const bool applySlotPair,
+                                     const bool rebuild)
+{
+    std::vector<std::string> targets{target};
+    if (applySlotPair && target != "Loader"
+        && slotBaseTarget(target) != target
+        && QFileInfo{filesystemPathText(path)}.completeBaseName()
+                   .compare(QString::fromStdString(slotBaseTarget(target)),
+                            Qt::CaseInsensitive)
+               == 0
+        && m_downloadLayout.has_value()) {
+        targets.clear();
+        for (const auto &partition : m_downloadLayout->partitions) {
+            if (slotBaseTarget(partition.name) == slotBaseTarget(target)) {
+                targets.push_back(partition.name);
+            }
+        }
+    }
+
+    std::optional<zzrk::image::FirmwarePayloadSource> inspectedPayload;
+    bool loaderValid = false;
+    if (target == "Loader") {
+        auto parsed = zzrk::image::parseRkLoaderImage(path);
+        if (const auto *loader = std::get_if<zzrk::image::RkLoaderImage>(
+                &parsed)) {
+            loaderValid = loader->info.chipType == 0x33353838U;
+        }
+    } else {
+        auto inspected = zzrk::image::inspectFirmwarePayload(path);
+        if (const auto *payload =
+                std::get_if<zzrk::image::FirmwarePayloadSource>(&inspected)) {
+            if (payload->format == zzrk::image::PayloadFormat::raw
+                || payload->format
+                    == zzrk::image::PayloadFormat::androidSparse) {
+                inspectedPayload = *payload;
+            }
+        }
+    }
+    for (const auto &matchedTarget : targets) {
+        bool valid = loaderValid;
+        if (matchedTarget != "Loader" && inspectedPayload.has_value()
+            && m_downloadLayout.has_value()) {
+            const auto partition = std::ranges::find(
+                m_downloadLayout->partitions, matchedTarget,
+                &zzrk::image::FirmwarePartition::name);
+            valid = partition != m_downloadLayout->partitions.end();
+            if (valid && partition->sectorCount.has_value()) {
+                valid = *partition->sectorCount
+                        <= std::numeric_limits<std::uint64_t>::max() / 512U
+                    && inspectedPayload->logicalSize
+                        <= *partition->sectorCount * 512U;
+            }
+        }
+        m_downloadImages.insert_or_assign(matchedTarget, path);
+        m_downloadSelections.insert_or_assign(matchedTarget, true);
+        m_downloadVerifications.insert_or_assign(matchedTarget, true);
+        if (valid) {
+            m_validDownloadImages.insert(matchedTarget);
+        } else {
+            m_validDownloadImages.erase(matchedTarget);
+        }
+    }
+    if (rebuild) {
+        rebuildDownloadTable();
+    }
+}
+
+void MainWindow::rebuildDownloadTable()
+{
+    if (m_downloadTable == nullptr) {
+        return;
+    }
+    const QSignalBlocker blocker{m_downloadTable};
+    const int partitionRows = m_downloadLayout.has_value()
+        ? static_cast<int>(m_downloadLayout->partitions.size())
+        : 0;
+    const bool parameterLayout = m_downloadLayoutCombo->currentIndex() == 1
+        && m_downloadLayout.has_value();
+    m_downloadTable->clearContents();
+    m_downloadTable->setRowCount(1 + (parameterLayout ? 1 : 0)
+                                 + partitionRows);
+
+    const auto addRow = [&](const int row,
+                            const zzrk::workflow::ImageDownloadItemKind kind,
+                            const std::string &target,
+                            const QString &lba,
+                            const std::uint64_t capacity,
+                            const bool forced) {
+        auto *selected = makeItem({});
+        selected->setFlags(selected->flags() | Qt::ItemIsUserCheckable);
+        selected->setCheckState(forced
+                                    || (m_downloadSelections.contains(target)
+                                        && m_downloadSelections.at(target))
+                                    ? Qt::Checked
+                                    : Qt::Unchecked);
+        if (forced) {
+            selected->setFlags(selected->flags() & ~Qt::ItemIsEnabled);
+        }
+        m_downloadTable->setItem(row, DownloadSelectedColumn, selected);
+
+        auto *targetItem = makeItem(QString::fromStdString(target));
+        targetItem->setData(DownloadTargetRole,
+                            QString::fromStdString(target));
+        targetItem->setData(DownloadKindRole, static_cast<int>(kind));
+        targetItem->setData(DownloadCapacityRole,
+                            QVariant::fromValue<qulonglong>(capacity));
+        m_downloadTable->setItem(row, DownloadTargetColumn, targetItem);
+        m_downloadTable->setItem(row, DownloadLbaColumn, makeItem(lba));
+        m_downloadTable->setItem(
+            row, DownloadCapacityColumn,
+            makeItem(capacity == 0U ? QStringLiteral("-")
+                                    : dataSizeText(capacity)));
+
+        auto *verify = makeItem({});
+        verify->setFlags(verify->flags() | Qt::ItemIsUserCheckable);
+        verify->setCheckState(
+            m_downloadVerifications.contains(target)
+                    && !m_downloadVerifications.at(target)
+                ? Qt::Unchecked
+                : Qt::Checked);
+        m_downloadTable->setItem(row, DownloadVerifyColumn, verify);
+
+        QString fileText = QStringLiteral("-");
+        QString formatText = QStringLiteral("-");
+        QString expandedText = QStringLiteral("-");
+        QString statusText = QStringLiteral("未选择");
+        if (kind == zzrk::workflow::ImageDownloadItemKind::partitionTable) {
+            fileText = filesystemPathText(m_downloadParameterPath);
+            formatText = payloadFormatText(
+                zzrk::image::PayloadFormat::rockchipParameter);
+            expandedText = dataSizeText(67U * 512U);
+            statusText = QStringLiteral("就绪");
+        } else if (const auto found = m_downloadImages.find(target);
+                   found != m_downloadImages.end()) {
+            fileText = filesystemPathText(found->second);
+            if (kind == zzrk::workflow::ImageDownloadItemKind::loader) {
+                auto parsed = zzrk::image::parseRkLoaderImage(found->second);
+                if (const auto *loader =
+                        std::get_if<zzrk::image::RkLoaderImage>(&parsed)) {
+                    formatText = QStringLiteral("Loader");
+                    expandedText = dataSizeText(loader->info.idBlockSize);
+                }
+            } else {
+                auto inspected =
+                    zzrk::image::inspectFirmwarePayload(found->second);
+                if (const auto *payload =
+                        std::get_if<zzrk::image::FirmwarePayloadSource>(
+                            &inspected)) {
+                    formatText = payloadFormatText(payload->format);
+                    expandedText = dataSizeText(payload->logicalSize);
+                }
+            }
+            statusText = m_validDownloadImages.contains(target)
+                ? QStringLiteral("就绪")
+                : QStringLiteral("镜像无效或超过分区容量");
+        }
+        auto *fileItem = makeItem(fileText);
+        fileItem->setToolTip(fileText);
+        m_downloadTable->setItem(row, DownloadFileColumn, fileItem);
+        m_downloadTable->setItem(row, DownloadFormatColumn,
+                                 makeItem(formatText));
+        m_downloadTable->setItem(row, DownloadExpandedSizeColumn,
+                                 makeItem(expandedText));
+        m_downloadTable->setItem(row, DownloadStatusColumn,
+                                 makeItem(statusText));
+    };
+
+    addRow(0, zzrk::workflow::ImageDownloadItemKind::loader, "Loader",
+           QStringLiteral("64"), 0U, false);
+    int row = 1;
+    if (parameterLayout) {
+        addRow(row++,
+               zzrk::workflow::ImageDownloadItemKind::partitionTable,
+               "GPT", QStringLiteral("主 / 备"), 67U * 512U, true);
+    }
+    if (m_downloadLayout.has_value()) {
+        for (const auto &partition : m_downloadLayout->partitions) {
+            const std::uint64_t capacity =
+                partition.sectorCount.has_value()
+                    && *partition.sectorCount
+                        <= std::numeric_limits<std::uint64_t>::max() / 512U
+                ? *partition.sectorCount * 512U
+                : 0U;
+            addRow(row++, zzrk::workflow::ImageDownloadItemKind::partition,
+                   partition.name,
+                   QString::number(
+                       static_cast<qulonglong>(partition.firstLba)),
+                   capacity, false);
+        }
+    }
+    if (m_downloadTable->rowCount() > 0) {
+        m_downloadTable->selectRow(0);
+    }
+    updateDownloadControls();
+}
+
+void MainWindow::chooseSelectedDownloadImage()
+{
+    const int row = m_downloadTable->currentRow();
+    const auto *targetItem = row < 0
+        ? nullptr
+        : m_downloadTable->item(row, DownloadTargetColumn);
+    if (targetItem == nullptr
+        || targetItem->data(DownloadKindRole).toInt()
+            == static_cast<int>(
+                zzrk::workflow::ImageDownloadItemKind::partitionTable)) {
+        return;
+    }
+    const std::string target =
+        targetItem->data(DownloadTargetRole).toString().toStdString();
+    const QString title = target == "Loader"
+        ? QStringLiteral("选择 MiniLoaderAll.bin")
+        : QStringLiteral("选择分区镜像");
+    const QString filter = target == "Loader"
+        ? QStringLiteral("Rockchip Loader (MiniLoaderAll.bin *.bin);;所有文件 (*)")
+        : QStringLiteral("分区镜像 (*.img *.bin);;所有文件 (*)");
+    const QString path = QFileDialog::getOpenFileName(
+        this, title, m_downloadDirectoryEdit->text(), filter);
+    if (!path.isEmpty()) {
+        assignDownloadImage(target, filesystemPath(path));
+    }
+}
+
+void MainWindow::clearSelectedDownloadImage()
+{
+    const int row = m_downloadTable->currentRow();
+    const auto *targetItem = row < 0
+        ? nullptr
+        : m_downloadTable->item(row, DownloadTargetColumn);
+    if (targetItem == nullptr
+        || targetItem->data(DownloadKindRole).toInt()
+            == static_cast<int>(
+                zzrk::workflow::ImageDownloadItemKind::partitionTable)) {
+        return;
+    }
+    const std::string target =
+        targetItem->data(DownloadTargetRole).toString().toStdString();
+    m_downloadImages.erase(target);
+    m_downloadSelections.erase(target);
+    m_downloadVerifications.erase(target);
+    m_validDownloadImages.erase(target);
+    rebuildDownloadTable();
+}
+
+std::optional<zzrk::workflow::ImageDownloadPrepareRequest>
+MainWindow::imageDownloadPrepareRequest() const
+{
+    zzrk::workflow::ImageDownloadPrepareRequest request{};
+    request.layoutSource = m_downloadLayoutCombo->currentIndex() == 1
+        ? zzrk::workflow::ImageDownloadLayoutSource::parameterFile
+        : zzrk::workflow::ImageDownloadLayoutSource::deviceGpt;
+    if (request.layoutSource
+        == zzrk::workflow::ImageDownloadLayoutSource::parameterFile) {
+        if (!m_downloadLayout.has_value() || m_downloadParameterPath.empty()) {
+            return std::nullopt;
+        }
+        request.parameterPath = m_downloadParameterPath;
+    } else if (m_downloadLayout.has_value()) {
+        request.devicePartitions = m_downloadLayout->partitions;
+        if (m_partitions.has_value()
+            && m_downloadLayoutPort == downloadPortPath()) {
+            request.deviceSectors = m_partitions->deviceSectors;
+        }
+    }
+
+    for (int row = 0; row < m_downloadTable->rowCount(); ++row) {
+        const auto *selected =
+            m_downloadTable->item(row, DownloadSelectedColumn);
+        const auto *targetItem =
+            m_downloadTable->item(row, DownloadTargetColumn);
+        const auto *verify = m_downloadTable->item(row, DownloadVerifyColumn);
+        if (selected == nullptr || targetItem == nullptr
+            || selected->checkState() != Qt::Checked) {
+            continue;
+        }
+        const std::string target =
+            targetItem->data(DownloadTargetRole).toString().toStdString();
+        const auto kind = static_cast<zzrk::workflow::ImageDownloadItemKind>(
+            targetItem->data(DownloadKindRole).toInt());
+        const bool shouldVerify =
+            verify != nullptr && verify->checkState() == Qt::Checked;
+        if (kind == zzrk::workflow::ImageDownloadItemKind::partitionTable) {
+            request.verifyPartitionTable = shouldVerify;
+            continue;
+        }
+        const auto path = m_downloadImages.find(target);
+        if (path == m_downloadImages.end()
+            || !m_validDownloadImages.contains(target)) {
+            return std::nullopt;
+        }
+        if (kind == zzrk::workflow::ImageDownloadItemKind::loader) {
+            request.loaderPath = path->second;
+            request.verifyLoader = shouldVerify;
+        } else {
+            request.partitions.push_back(
+                zzrk::workflow::ImageDownloadPartitionSelection{
+                    .target = target,
+                    .imagePath = path->second,
+                    .verify = shouldVerify,
+                });
+        }
+    }
+    if (request.layoutSource
+            == zzrk::workflow::ImageDownloadLayoutSource::deviceGpt
+        && request.loaderPath.empty() && request.partitions.empty()) {
+        return std::nullopt;
+    }
+    return request;
+}
+
+void MainWindow::startImageDownload()
+{
+    if (m_downloadPrepareWatcher.isRunning()
+        || m_imageDownloadWatcher.isRunning() || usbOperationRunning()) {
+        return;
+    }
+    const QString port = downloadPortPath();
+    const auto request = imageDownloadPrepareRequest();
+    if (port.isEmpty() || !request.has_value()) {
+        return;
+    }
+    if (m_showModalDialogs) {
+        QStringList targets;
+        if (!request->loaderPath.empty()) {
+            targets << QStringLiteral("Loader");
+        }
+        if (request->layoutSource
+            == zzrk::workflow::ImageDownloadLayoutSource::parameterFile) {
+            targets << QStringLiteral("主/备 GPT");
+        }
+        for (const auto &partition : request->partitions) {
+            targets << QString::fromStdString(partition.target);
+        }
+        const QString layout = request->layoutSource
+                == zzrk::workflow::ImageDownloadLayoutSource::parameterFile
+            ? filesystemPathText(request->parameterPath)
+            : QStringLiteral("设备当前 GPT");
+        const auto confirmation = QMessageBox::warning(
+            this, QStringLiteral("确认下载镜像"),
+            QStringLiteral("端口：%1\n布局：%2\n目标：%3\n完成后重启：%4\n\n所选目标的现有数据会被覆盖。")
+                .arg(port, layout, targets.join(QStringLiteral("、")),
+                     m_downloadRebootCheckBox->isChecked()
+                         ? QStringLiteral("是")
+                         : QStringLiteral("否")),
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+        if (confirmation != QMessageBox::Yes) {
+            return;
+        }
+    }
+
+    m_pendingDownloadRequest = zzrk::workflow::ImageDownloadRequest{
+        .portPath = port.toStdString(),
+        .reboot = m_downloadRebootCheckBox->isChecked(),
+    };
+    m_preparedDownload.reset();
+    m_downloadOverallProgress->setRange(0, 0);
+    m_downloadOperationProgress->setRange(0, 0);
+    m_downloadStatus->setText(QStringLiteral("正在检查镜像并计算 MD5..."));
+    const auto backend = m_backend;
+    auto future = QtConcurrent::run([backend, request = *request] {
+        try {
+            return backend->prepareImageDownload(request);
+        } catch (...) {
+            return zzrk::workflow::PreparedImageDownloadResult{
+                unexpectedImageDownloadError("images")};
+        }
+    });
+    m_downloadPrepareWatcher.setFuture(future);
+    updateUpgradeControls();
+}
+
+void MainWindow::handleDownloadPrepareFinished()
+{
+    if (m_shuttingDown) {
+        return;
+    }
+    auto result = m_downloadPrepareWatcher.result();
+    if (const auto *error =
+            std::get_if<zzrk::workflow::ImageDownloadError>(&result)) {
+        m_downloadOverallProgress->setRange(0, 100);
+        m_downloadOverallProgress->setValue(0);
+        m_downloadOperationProgress->setRange(0, 100);
+        m_downloadOperationProgress->setValue(0);
+        m_downloadStatus->setText(imageDownloadErrorText(*error));
+        updateUpgradeControls();
+        emit imageDownloadCompleted(false);
+        return;
+    }
+    if (usbOperationRunning()) {
+        m_downloadStatus->setText(QStringLiteral("另一个 USB 操作正在运行"));
+        updateUpgradeControls();
+        emit imageDownloadCompleted(false);
+        return;
+    }
+
+    m_preparedDownload =
+        std::get<zzrk::workflow::PreparedImageDownloadPlan>(
+            std::move(result));
+    const auto prepared = *m_preparedDownload;
+    m_downloadCancellation = std::make_shared<std::atomic_bool>(false);
+    m_downloadOverallProgress->setRange(0, 100);
+    m_downloadOverallProgress->setValue(0);
+    m_downloadOperationProgress->setRange(0, 0);
+    m_downloadStatus->setText(QStringLiteral("正在启动镜像下载..."));
+    const auto backend = m_backend;
+    const auto request = m_pendingDownloadRequest;
+    const auto cancellation = m_downloadCancellation;
+    auto future = QtConcurrent::run(
+        [this, backend, request, prepared, cancellation]() mutable {
+            const auto progress =
+                [this](const zzrk::workflow::ImageDownloadEvent &event) {
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, event] { handleImageDownloadProgress(event); },
+                        Qt::QueuedConnection);
+                };
+            const auto cancelled = [cancellation] {
+                return cancellation->load();
+            };
+            try {
+                return backend->executeImageDownload(
+                    request, std::move(prepared), progress, cancelled);
+            } catch (...) {
+                return zzrk::workflow::ImageDownloadResult{
+                    unexpectedImageDownloadError(request.portPath)};
+            }
+        });
+    m_imageDownloadWatcher.setFuture(future);
+    updateUpgradeControls();
+}
+
+void MainWindow::cancelImageDownload()
+{
+    if (!m_downloadCancellation || !m_imageDownloadWatcher.isRunning()) {
+        return;
+    }
+    m_downloadCancellation->store(true);
+    m_cancelDownloadButton->setEnabled(false);
+    m_downloadStatus->setText(
+        QStringLiteral("正在等待当前 USB 分块完成..."));
+}
+
+void MainWindow::handleImageDownloadProgress(
+    const zzrk::workflow::ImageDownloadEvent &event)
+{
+    if (m_shuttingDown || !m_imageDownloadWatcher.isRunning()) {
+        return;
+    }
+    const auto percent = [](const std::uint64_t completed,
+                            const std::uint64_t total) {
+        return total == 0U
+            ? 0
+            : static_cast<int>(std::min<std::uint64_t>(
+                  100U, completed * 100U / total));
+    };
+    const int operationPercent = percent(event.completedBytes,
+                                         event.totalBytes);
+    const int overallPercent = percent(event.completedPlanBytes,
+                                       event.totalPlanBytes);
+    if (event.totalBytes == 0U) {
+        m_downloadOperationProgress->setRange(0, 0);
+    } else {
+        m_downloadOperationProgress->setRange(0, 100);
+        m_downloadOperationProgress->setValue(operationPercent);
+    }
+    if (event.totalPlanBytes != 0U) {
+        m_downloadOverallProgress->setRange(0, 100);
+        m_downloadOverallProgress->setValue(overallPercent);
+    }
+
+    const QString stage = imageDownloadStageText(event.stage);
+    m_downloadStatus->setText(
+        event.target.empty()
+            ? stage
+            : QStringLiteral("%1：%2")
+                  .arg(stage, QString::fromStdString(event.target)));
+    if (event.itemIndex.has_value() && m_preparedDownload.has_value()
+        && *event.itemIndex < m_preparedDownload->items.size()) {
+        const QString target = QString::fromStdString(
+            m_preparedDownload->items[*event.itemIndex].target);
+        for (int row = 0; row < m_downloadTable->rowCount(); ++row) {
+            const auto *item =
+                m_downloadTable->item(row, DownloadTargetColumn);
+            if (item != nullptr
+                && item->data(DownloadTargetRole).toString() == target) {
+                m_downloadTable->item(row, DownloadStatusColumn)
+                    ->setText(event.totalBytes == 0U
+                                  ? stage
+                                  : QStringLiteral("%1 %2%")
+                                        .arg(stage)
+                                        .arg(operationPercent));
+                break;
+            }
+        }
+    }
+    emit imageDownloadProgressChanged(overallPercent, operationPercent);
+}
+
+void MainWindow::handleImageDownloadFinished()
+{
+    if (m_shuttingDown) {
+        return;
+    }
+    const auto result = m_imageDownloadWatcher.result();
+    m_downloadCancellation.reset();
+    m_downloadOverallProgress->setRange(0, 100);
+    m_downloadOperationProgress->setRange(0, 100);
+    bool succeeded = false;
+    if (const auto *error =
+            std::get_if<zzrk::workflow::ImageDownloadError>(&result)) {
+        const QString message = imageDownloadErrorText(*error);
+        m_downloadStatus->setText(message);
+        if (error->itemIndex.has_value() && m_preparedDownload.has_value()
+            && *error->itemIndex < m_preparedDownload->items.size()) {
+            const QString target = QString::fromStdString(
+                m_preparedDownload->items[*error->itemIndex].target);
+            for (int row = 0; row < m_downloadTable->rowCount(); ++row) {
+                const auto *item =
+                    m_downloadTable->item(row, DownloadTargetColumn);
+                if (item != nullptr
+                    && item->data(DownloadTargetRole).toString() == target) {
+                    m_downloadTable->item(row, DownloadStatusColumn)
+                        ->setText(error->code
+                                         == zzrk::workflow::
+                                             ImageDownloadErrorCode::cancelled
+                                     ? QStringLiteral("已取消")
+                                     : QStringLiteral("失败"));
+                    break;
+                }
+            }
+        }
+        if (error->code
+                != zzrk::workflow::ImageDownloadErrorCode::cancelled
+            && m_showModalDialogs) {
+            QMessageBox::critical(this, QStringLiteral("下载失败"), message);
+        }
+    } else {
+        const auto &success =
+            std::get<zzrk::workflow::ImageDownloadSuccess>(result);
+        m_downloadOverallProgress->setValue(100);
+        m_downloadOperationProgress->setValue(100);
+        for (int row = 0; row < m_downloadTable->rowCount(); ++row) {
+            const auto *selected =
+                m_downloadTable->item(row, DownloadSelectedColumn);
+            if (selected != nullptr && selected->checkState() == Qt::Checked) {
+                m_downloadTable->item(row, DownloadStatusColumn)
+                    ->setText(QStringLiteral("完成"));
+            }
+        }
+        const QString message =
+            QStringLiteral("下载完成：写入 %1 项，校验 %2 项，共 %3")
+                .arg(success.itemsWritten)
+                .arg(success.itemsVerified)
+                .arg(dataSizeText(success.partitionBytesWritten));
+        m_downloadStatus->setText(message);
+        succeeded = true;
+        if (m_showModalDialogs) {
+            QMessageBox::information(this, QStringLiteral("下载完成"),
+                                     message);
+        }
+    }
+    m_preparedDownload.reset();
+    updateUpgradeControls();
+    emit imageDownloadCompleted(succeeded);
+}
+
+void MainWindow::updateDownloadControls()
+{
+    if (m_downloadTable == nullptr) {
+        return;
+    }
+    const bool preparing = m_downloadPrepareWatcher.isRunning();
+    const bool running = m_imageDownloadWatcher.isRunning();
+    const bool busy = usbOperationRunning() || preparing;
+    const int row = m_downloadTable->currentRow();
+    const auto *target = row < 0
+        ? nullptr
+        : m_downloadTable->item(row, DownloadTargetColumn);
+    const bool specialGpt = target != nullptr
+        && target->data(DownloadKindRole).toInt()
+            == static_cast<int>(
+                zzrk::workflow::ImageDownloadItemKind::partitionTable);
+    const bool manageable =
+        m_downloadDeviceCombo->currentData(Qt::UserRole + 1).toBool();
+    const auto request = imageDownloadPrepareRequest();
+    bool maskromHasLoader = true;
+    if (m_downloadDeviceCombo->currentData(Qt::UserRole + 2).toInt()
+        == static_cast<int>(zzrk::transport::DeviceMode::Maskrom)) {
+        maskromHasLoader = request.has_value()
+            && !request->loaderPath.empty();
+    }
+
+    m_downloadDeviceCombo->setEnabled(!busy);
+    m_downloadLayoutCombo->setEnabled(!busy);
+    m_chooseDownloadParameterButton->setEnabled(
+        !busy && m_downloadLayoutCombo->currentIndex() == 1);
+    m_readDownloadGptButton->setEnabled(
+        !busy && m_downloadLayoutCombo->currentIndex() == 0 && manageable);
+    m_chooseDownloadDirectoryButton->setEnabled(!busy);
+    m_downloadTable->setEnabled(!busy);
+    m_chooseDownloadImageButton->setEnabled(
+        !busy && target != nullptr && !specialGpt);
+    m_clearDownloadImageButton->setEnabled(
+        !busy && target != nullptr && !specialGpt);
+    m_downloadRebootCheckBox->setEnabled(!busy);
+    m_startDownloadButton->setEnabled(
+        !busy && !downloadPortPath().isEmpty() && request.has_value()
+        && maskromHasLoader);
+    m_cancelDownloadButton->setEnabled(running);
+}
+
 void MainWindow::updateUpgradeControls()
 {
     const bool preparing = m_prepareWatcher.isRunning();
     const bool upgrading = m_upgradeWatcher.isRunning();
+    const bool downloadPreparing = m_downloadPrepareWatcher.isRunning();
     const bool usbBusy = usbOperationRunning();
+    const bool uiBusy = usbBusy || downloadPreparing;
     const bool hasPlan = m_preparedUpgrade.has_value();
     const int selectedRow = m_deviceTable->currentRow();
     const QTableWidgetItem *selectedItem =
@@ -1560,23 +2856,25 @@ void MainWindow::updateUpgradeControls()
         && m_partitions.has_value()
         && m_partitionPort == selectedPortPath();
 
-    m_chooseImageButton->setEnabled(!preparing && !upgrading);
+    m_chooseImageButton->setEnabled(!preparing && !upgrading
+                                    && !downloadPreparing);
     m_startUpgradeButton->setEnabled(hasPlan && hasDevice && !preparing
-                                     && !usbBusy);
+                                     && !uiBusy);
     m_cancelUpgradeButton->setEnabled(upgrading);
     m_verifyModeCombo->setEnabled(!upgrading);
     m_rebootCheckBox->setEnabled(!upgrading);
-    m_deviceTable->setEnabled(!usbBusy);
-    m_refreshButton->setEnabled(!usbBusy);
-    m_inspectDeviceButton->setEnabled(manageable && !usbBusy);
-    m_readPartitionsButton->setEnabled(manageable && !usbBusy);
-    m_partitionTable->setEnabled(!usbBusy);
-    m_verifyPartitionWriteCheckBox->setEnabled(!usbBusy);
-    m_backupPartitionButton->setEnabled(hasPartition && !usbBusy);
-    m_writePartitionButton->setEnabled(hasPartition && !usbBusy);
-    m_erasePartitionButton->setEnabled(hasPartition && !usbBusy);
+    m_deviceTable->setEnabled(!uiBusy);
+    m_refreshButton->setEnabled(!uiBusy);
+    m_inspectDeviceButton->setEnabled(manageable && !uiBusy);
+    m_readPartitionsButton->setEnabled(manageable && !uiBusy);
+    m_partitionTable->setEnabled(!uiBusy);
+    m_verifyPartitionWriteCheckBox->setEnabled(!uiBusy);
+    m_backupPartitionButton->setEnabled(hasPartition && !uiBusy);
+    m_writePartitionButton->setEnabled(hasPartition && !uiBusy);
+    m_erasePartitionButton->setEnabled(hasPartition && !uiBusy);
     m_cancelPartitionButton->setEnabled(
         m_partitionOperationWatcher.isRunning());
+    updateDownloadControls();
     updateReportExportControls();
     if (m_hotplugRefreshPending && !usbBusy
         && !m_hotplugDebounceTimer->isActive()) {

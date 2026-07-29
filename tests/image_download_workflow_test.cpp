@@ -63,10 +63,12 @@ class FakeDigestProvider final
     : public zzrk::workflow::IFileDigestProvider {
   public:
     bool changed{};
+    std::size_t calls{};
 
     [[nodiscard]] zzrk::workflow::FirmwareDigestResult
     digest(const std::filesystem::path&) noexcept override
     {
+        ++calls;
         std::array<char, 33> value{};
         value[0] = changed ? 'b' : 'a';
         return value;
@@ -411,6 +413,33 @@ void testMaskromRequiresLoader()
            "Maskrom refuses a download plan without MiniLoaderAll.bin");
 }
 
+void testSharedSlotImageIsHashedOncePerPhase()
+{
+    constexpr std::string_view parameterText{
+        "TYPE: GPT\n"
+        "CMDLINE:mtdparts=rk29xxnand:0x100@0x8000(boot_a),"
+        "0x100@0x8100(boot_b),-@0x8200(userdata:grow)\n"};
+    TemporaryFile parameter{"zzrk-download-slots-parameter.txt",
+                            parameterText};
+    TemporaryFile boot{"zzrk-download-slots-boot.img", "abc"};
+    FakeDigestProvider digests;
+    FakeBackend backend;
+    zzrk::workflow::ImageDownloadWorkflow workflow{backend, digests};
+    auto request = makePrepareRequest(parameter, boot);
+    request.partitions.push_back(
+        zzrk::workflow::ImageDownloadPartitionSelection{
+            .target = "boot_b",
+            .imagePath = boot.path(),
+            .verify = true,
+        });
+    const auto prepared = workflow.prepare(request);
+    const auto* plan =
+        std::get_if<zzrk::workflow::PreparedImageDownloadPlan>(&prepared);
+    expect(plan != nullptr && plan->items.size() == 3U
+               && digests.calls == 2U,
+           "a shared A/B image is hashed once alongside parameter.txt");
+}
+
 } // namespace
 
 int main()
@@ -418,5 +447,6 @@ int main()
     testParameterDownloadWritesOnlySelectedItems();
     testDigestChangeStopsBeforeUsbAccess();
     testMaskromRequiresLoader();
+    testSharedSlotImageIsHashedOncePerPhase();
     return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

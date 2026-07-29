@@ -134,8 +134,18 @@ partition, zero-pad only the final partial sector, and are read back by default;
 an eMMC hardware partition and never accept a caller-provided write LBA.
 
 The Qt Widgets application uses the same typed workflows through an injectable
-operation backend. Its device page reads ChipInfo, Capability, FlashInfo,
-FlashID, eMMC capacity, and the claimed USB interface. The complete-upgrade
+operation backend. Its first **Download Image** page can use a validated device
+GPT or a text `parameter.txt` layout, then batch-select `MiniLoaderAll.bin`,
+Raw images, and Android Sparse images. Directory matching prefers an exact
+slot name such as `boot_b.img`; an unsuffixed `boot.img` is shared by both
+`boot_a` and `boot_b` when no exact image exists. Every matched row is enabled
+with read-back verification by default, while selection and verification can
+be changed independently. The page preserves both current-item and cumulative
+plan progress, supports block-boundary cancellation, and reboots by default.
+It does not parse binary `config.cfg` files and never exposes an arbitrary LBA.
+
+The device page reads ChipInfo, Capability, FlashInfo, FlashID, eMMC capacity,
+and the claimed USB interface. The complete-upgrade
 page supports asynchronous MD5 and plan preview, verification mode,
 post-flash reboot, block-boundary cancellation, cumulative plan progress, and
 current-operation progress. The partition page validates GPT before listing
@@ -149,9 +159,10 @@ The startup scan and explicit refresh button remain available, but no periodic
 polling is used.
 The current session retains a bounded 50-entry upgrade history whose completed
 rows can export the same redacted JSON report model used by the CLI. Offscreen
-automated backend tests cover discovery, device details, partition listing,
-upgrade progress, completion, report availability, and history without opening
-USB hardware.
+automated backend tests cover discovery, image-directory A/B matching, per-row
+verification, independent image-download progress, USB busy coordination,
+device details, partition listing, complete-upgrade progress, completion,
+report availability, and history without opening USB hardware.
 
 `CMakeUserPresets.json` may add workstation-specific convenience presets and is
 intentionally ignored by Git. It is not required by the commands above.
@@ -203,8 +214,9 @@ partial scan, descriptor change, unexpected interface layout, active kernel
 driver, claim failure or release failure. It never selects the first matching
 VID/PID implicitly.
 
-Current write support is deliberately limited to complete validated images or
-an exact primary-GPT partition name on the observed RK3588
+Current write support is deliberately limited to complete validated images,
+an exact partition name from a validated device GPT, or an exact partition
+name from a validated text `parameter.txt` plan on the observed RK3588
 Loader/Maskrom identities and eMMC user area. It does not write eMMC boot0,
 boot1, or RPMB. The RK3588 Loader 0x0223 used for validation returns opaque data
 when reading the disk-tail backup GPT, so the tool verifies the primary GPT

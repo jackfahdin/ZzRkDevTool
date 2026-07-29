@@ -217,6 +217,17 @@ if(TARGET zzrk_gui_support)
         gui_upgrade
         PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     )
+
+    add_executable(gui_image_download_test gui_image_download_test.cpp)
+    target_link_libraries(
+        gui_image_download_test
+        PRIVATE zzrk::gui zzrk_project_warnings
+    )
+    add_test(NAME gui_image_download COMMAND gui_image_download_test)
+    set_tests_properties(
+        gui_image_download
+        PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND TARGET ZzRkDevTool

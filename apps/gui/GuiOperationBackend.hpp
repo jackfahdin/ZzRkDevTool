@@ -6,6 +6,7 @@
 #include <zzrk/transport/UsbDeviceScanner.hpp>
 #include <zzrk/workflow/DeviceManagementWorkflow.hpp>
 #include <zzrk/workflow/FirmwareUpgradeWorkflow.hpp>
+#include <zzrk/workflow/ImageDownloadWorkflow.hpp>
 
 #include <filesystem>
 #include <memory>
@@ -33,6 +34,15 @@ public:
       workflow::PreparedFirmwareUpgrade prepared,
       const workflow::FirmwareUpgradeProgressCallback &progress,
       const workflow::FirmwareUpgradeCancellationCallback &cancellation) = 0;
+
+  [[nodiscard]] virtual workflow::PreparedImageDownloadResult
+  prepareImageDownload(const workflow::ImageDownloadPrepareRequest &request) = 0;
+
+  [[nodiscard]] virtual workflow::ImageDownloadResult executeImageDownload(
+      const workflow::ImageDownloadRequest &request,
+      workflow::PreparedImageDownloadPlan prepared,
+      const workflow::ImageDownloadProgressCallback &progress,
+      const workflow::ImageDownloadCancellationCallback &cancellation) = 0;
 
   [[nodiscard]] virtual workflow::DeviceInspectionResult
   inspectDevice(const std::string &portPath) = 0;

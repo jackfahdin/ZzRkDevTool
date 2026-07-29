@@ -15,6 +15,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 
 class QCheckBox;
 class QLabel;
@@ -40,6 +41,8 @@ public:
     ~MainWindow() override;
 
     void loadFirmwareImage(const QString &path);
+    void loadDownloadParameter(const QString &path);
+    void loadDownloadDirectory(const QString &path);
 
 signals:
     void scanCompleted();
@@ -49,6 +52,9 @@ signals:
     void deviceInspectionCompleted(bool success);
     void partitionTableCompleted(bool success);
     void partitionOperationCompleted(bool success);
+    void imageDownloadCompleted(bool success);
+    void imageDownloadProgressChanged(int overallPercent,
+                                      int operationPercent);
 
 private:
     void refreshDevices();
@@ -70,6 +76,21 @@ private:
     void handlePartitionOperationProgress(
         const zzrk::workflow::PartitionOperationProgress &progress);
     void handlePartitionOperationFinished();
+    void handleDownloadDeviceChanged();
+    void handleDownloadLayoutChanged();
+    void chooseDownloadParameter();
+    void chooseDownloadDirectory();
+    void chooseSelectedDownloadImage();
+    void clearSelectedDownloadImage();
+    void rebuildDownloadTable();
+    void matchDownloadDirectory();
+    void startImageDownload();
+    void cancelImageDownload();
+    void handleDownloadPrepareFinished();
+    void handleImageDownloadProgress(
+        const zzrk::workflow::ImageDownloadEvent &event);
+    void handleImageDownloadFinished();
+    void updateDownloadControls();
     void chooseFirmwareImage();
     void handlePrepareFinished();
     void startUpgrade();
@@ -91,6 +112,15 @@ private:
         zzrk::workflow::FirmwareUpgradeReport report);
     [[nodiscard]] QString selectedPortPath() const;
     [[nodiscard]] QString selectedPartitionName() const;
+    [[nodiscard]] QString downloadPortPath() const;
+    [[nodiscard]] std::optional<zzrk::workflow::ImageDownloadPrepareRequest>
+    imageDownloadPrepareRequest() const;
+    void assignDownloadImage(const std::string &target,
+                             const std::filesystem::path &path,
+                             bool applySlotPair = true,
+                             bool rebuild = true);
+    void syncDownloadDeviceFromTable();
+    void syncDeviceTableFromDownload();
     [[nodiscard]] bool usbOperationRunning() const;
 
     std::shared_ptr<zzrk::gui::IGuiOperationBackend> m_backend;
@@ -98,6 +128,9 @@ private:
     QFutureWatcher<zzrk::workflow::PreparedFirmwareUpgradeResult>
         m_prepareWatcher;
     QFutureWatcher<zzrk::workflow::FirmwareUpgradeResult> m_upgradeWatcher;
+    QFutureWatcher<zzrk::workflow::PreparedImageDownloadResult>
+        m_downloadPrepareWatcher;
+    QFutureWatcher<zzrk::workflow::ImageDownloadResult> m_imageDownloadWatcher;
     QFutureWatcher<zzrk::workflow::DeviceInspectionResult> m_inspectionWatcher;
     QFutureWatcher<zzrk::workflow::DevicePartitionTableResult>
         m_partitionTableWatcher;
@@ -110,6 +143,22 @@ private:
     QLabel *m_lastScanText = nullptr;
     QToolButton *m_refreshButton = nullptr;
     QTimer *m_hotplugDebounceTimer = nullptr;
+    QComboBox *m_downloadDeviceCombo = nullptr;
+    QComboBox *m_downloadLayoutCombo = nullptr;
+    QLineEdit *m_downloadLayoutPathEdit = nullptr;
+    QToolButton *m_chooseDownloadParameterButton = nullptr;
+    QToolButton *m_readDownloadGptButton = nullptr;
+    QLineEdit *m_downloadDirectoryEdit = nullptr;
+    QToolButton *m_chooseDownloadDirectoryButton = nullptr;
+    QTableWidget *m_downloadTable = nullptr;
+    QPushButton *m_chooseDownloadImageButton = nullptr;
+    QPushButton *m_clearDownloadImageButton = nullptr;
+    QCheckBox *m_downloadRebootCheckBox = nullptr;
+    QPushButton *m_startDownloadButton = nullptr;
+    QPushButton *m_cancelDownloadButton = nullptr;
+    QProgressBar *m_downloadOverallProgress = nullptr;
+    QProgressBar *m_downloadOperationProgress = nullptr;
+    QLabel *m_downloadStatus = nullptr;
     QPushButton *m_inspectDeviceButton = nullptr;
     QLabel *m_deviceDetailStatus = nullptr;
     QLabel *m_chipInfoValue = nullptr;
@@ -140,9 +189,13 @@ private:
     QProgressBar *m_partitionProgress = nullptr;
     QLabel *m_partitionStatus = nullptr;
     std::optional<zzrk::workflow::PreparedFirmwareUpgrade> m_preparedUpgrade;
+    std::optional<zzrk::workflow::PreparedImageDownloadPlan>
+        m_preparedDownload;
     std::optional<zzrk::workflow::DevicePartitionTable> m_partitions;
+    std::optional<zzrk::image::RockchipParameterLayout> m_downloadLayout;
     std::optional<zzrk::gui::UpgradeProgressTracker> m_progressTracker;
     std::shared_ptr<std::atomic_bool> m_upgradeCancellation;
+    std::shared_ptr<std::atomic_bool> m_downloadCancellation;
     std::shared_ptr<std::atomic_bool> m_partitionCancellation;
     std::shared_ptr<zzrk::workflow::FirmwareUpgradeReportBuilder>
         m_activeReportBuilder;
@@ -154,6 +207,14 @@ private:
     QString m_selectedPortCache;
     QString m_inspectedPort;
     QString m_partitionPort;
+    QString m_downloadLayoutPort;
+    std::filesystem::path m_downloadParameterPath;
+    std::filesystem::path m_downloadDirectoryPath;
+    std::unordered_map<std::string, std::filesystem::path> m_downloadImages;
+    std::unordered_map<std::string, bool> m_downloadSelections;
+    std::unordered_map<std::string, bool> m_downloadVerifications;
+    std::unordered_set<std::string> m_validDownloadImages;
+    zzrk::workflow::ImageDownloadRequest m_pendingDownloadRequest;
     QString m_deviceMonitoringError;
     zzrk::workflow::PartitionOperationPhase m_partitionOperationPhase{
         zzrk::workflow::PartitionOperationPhase::read};

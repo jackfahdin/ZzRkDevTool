@@ -60,6 +60,27 @@ public:
                             cancellation);
   }
 
+  [[nodiscard]] workflow::PreparedImageDownloadResult prepareImageDownload(
+      const workflow::ImageDownloadPrepareRequest &request) override {
+    auto backend = workflow::createLibusbFirmwareUpgradeBackend();
+    qt::FirmwareMd5Verifier verifier;
+    workflow::ImageDownloadWorkflow workflow{*backend, verifier};
+    return workflow.prepare(request);
+  }
+
+  [[nodiscard]] workflow::ImageDownloadResult executeImageDownload(
+      const workflow::ImageDownloadRequest &request,
+      workflow::PreparedImageDownloadPlan prepared,
+      const workflow::ImageDownloadProgressCallback &progress,
+      const workflow::ImageDownloadCancellationCallback &cancellation)
+      override {
+    auto backend = workflow::createLibusbFirmwareUpgradeBackend();
+    qt::FirmwareMd5Verifier verifier;
+    workflow::ImageDownloadWorkflow workflow{*backend, verifier};
+    return workflow.execute(request, std::move(prepared), progress,
+                            cancellation);
+  }
+
   [[nodiscard]] workflow::DeviceInspectionResult
   inspectDevice(const std::string &portPath) override {
     auto backend = workflow::createLibusbFirmwareUpgradeBackend();

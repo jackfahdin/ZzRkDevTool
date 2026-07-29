@@ -16,6 +16,7 @@
 #include <limits>
 #include <ranges>
 #include <span>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -259,6 +260,17 @@ PreparedImageDownloadResult ImageDownloadWorkflow::prepare(
     PreparedImageDownloadPlan plan{};
     plan.layoutSource = request.layoutSource;
     plan.expectedDeviceSectors = request.deviceSectors;
+    std::unordered_map<std::filesystem::path, std::array<char, 33>> digests;
+    const auto digestFile = [&](const std::filesystem::path& path) {
+        if (const auto found = digests.find(path); found != digests.end()) {
+            return FirmwareDigestResult{found->second};
+        }
+        auto result = digestProvider_.digest(path);
+        if (const auto* digest = std::get_if<std::array<char, 33>>(&result)) {
+            digests.emplace(path, *digest);
+        }
+        return result;
+    };
 
     if (request.layoutSource == ImageDownloadLayoutSource::parameterFile) {
         if (request.parameterPath.empty()) {
@@ -280,7 +292,7 @@ PreparedImageDownloadResult ImageDownloadWorkflow::prepare(
         }
         plan.layout = std::get<image::RockchipParameterLayout>(
             std::move(parsed));
-        auto digest = digestProvider_.digest(request.parameterPath);
+        auto digest = digestFile(request.parameterPath);
         if (const auto* error = std::get_if<FirmwareDigestError>(&digest)) {
             auto result = makeDownloadError(
                 ImageDownloadErrorCode::digestFailed,
@@ -341,7 +353,7 @@ PreparedImageDownloadResult ImageDownloadWorkflow::prepare(
                                      ImageDownloadStage::inspectFiles,
                                      "RK3588 Loader");
         }
-        auto digest = digestProvider_.digest(request.loaderPath);
+        auto digest = digestFile(request.loaderPath);
         if (const auto* error = std::get_if<FirmwareDigestError>(&digest)) {
             auto result = makeDownloadError(
                 ImageDownloadErrorCode::digestFailed,
@@ -414,7 +426,7 @@ PreparedImageDownloadResult ImageDownloadWorkflow::prepare(
                                      ImageDownloadStage::inspectFiles,
                                      selection.target, itemIndex);
         }
-        auto digest = digestProvider_.digest(selection.imagePath);
+        auto digest = digestFile(selection.imagePath);
         if (const auto* error = std::get_if<FirmwareDigestError>(&digest)) {
             auto result = makeDownloadError(
                 ImageDownloadErrorCode::digestFailed,
@@ -465,11 +477,22 @@ ImageDownloadResult ImageDownloadWorkflow::execute(
             ImageDownloadStage::selectDevice, request.portPath);
     }
 
+    std::unordered_map<std::filesystem::path, std::array<char, 33>> digests;
     for (std::size_t index = 0; index < prepared.items.size(); ++index) {
         const auto& item = prepared.items[index];
         reportDownload(progress, ImageDownloadStage::verifyFiles,
                        item.sourcePath.string(), 0U, 0U, 0U, 0U, index);
-        auto digest = digestProvider_.digest(item.sourcePath);
+        FirmwareDigestResult digest;
+        if (const auto found = digests.find(item.sourcePath);
+            found != digests.end()) {
+            digest = found->second;
+        } else {
+            digest = digestProvider_.digest(item.sourcePath);
+            if (const auto* value =
+                    std::get_if<std::array<char, 33>>(&digest)) {
+                digests.emplace(item.sourcePath, *value);
+            }
+        }
         if (const auto* error = std::get_if<FirmwareDigestError>(&digest)) {
             auto result = makeDownloadError(
                 ImageDownloadErrorCode::digestFailed,

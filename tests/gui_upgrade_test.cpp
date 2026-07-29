@@ -202,6 +202,48 @@ public:
     };
   }
 
+  [[nodiscard]] zzrk::workflow::PreparedImageDownloadResult
+  prepareImageDownload(
+      const zzrk::workflow::ImageDownloadPrepareRequest &) override {
+    return zzrk::workflow::ImageDownloadError{
+        .code = zzrk::workflow::ImageDownloadErrorCode::invalidRequest,
+        .stage = zzrk::workflow::ImageDownloadStage::inspectFiles,
+        .target = "unused",
+        .completedPlanBytes = 0U,
+        .itemIndex = {},
+        .imageError = {},
+        .digestError = {},
+        .scanError = {},
+        .openError = {},
+        .loaderError = {},
+        .sessionError = {},
+        .gptError = {},
+        .flashError = {},
+    };
+  }
+
+  [[nodiscard]] zzrk::workflow::ImageDownloadResult executeImageDownload(
+      const zzrk::workflow::ImageDownloadRequest &,
+      zzrk::workflow::PreparedImageDownloadPlan,
+      const zzrk::workflow::ImageDownloadProgressCallback &,
+      const zzrk::workflow::ImageDownloadCancellationCallback &) override {
+    return zzrk::workflow::ImageDownloadError{
+        .code = zzrk::workflow::ImageDownloadErrorCode::invalidRequest,
+        .stage = zzrk::workflow::ImageDownloadStage::write,
+        .target = "unused",
+        .completedPlanBytes = 0U,
+        .itemIndex = {},
+        .imageError = {},
+        .digestError = {},
+        .scanError = {},
+        .openError = {},
+        .loaderError = {},
+        .sessionError = {},
+        .gptError = {},
+        .flashError = {},
+    };
+  }
+
   [[nodiscard]] zzrk::workflow::DeviceInspectionResult
   inspectDevice(const std::string &portPath) override {
     ++inspections;
