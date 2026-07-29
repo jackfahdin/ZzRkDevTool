@@ -600,7 +600,7 @@ RK3566/3568、RK3576、RK3399、旧 RK32xx、SPI NOR、SPI NAND、NAND 和 UFS �
 - P0/MVP：Ubuntu 26.04 LTS x86_64，RK3588/eMMC 真机。
 - 从 M1 开始：Windows x64、macOS arm64 对 portable targets 做 compile-only 和无硬件测试。
 - v1 跨平台发布：Windows 10 22H2 x64、Windows 11 x64、选定 macOS arm64 版本完成 RK3588/eMMC 真机验证。
-- Ubuntu 24.04、Linux arm64 和 Intel macOS 是否发布，在最低 ABI 与真机 runner 明确后另行决定。
+- Ubuntu 26.04 x86_64 已建立 `.deb` 发布基线；Ubuntu 24.04、Linux arm64 和 Intel macOS 是否发布，在最低 ABI 与真机 runner 明确后另行决定。
 
 ## 12. CI/CD
 
@@ -709,7 +709,8 @@ RK3566/3568、RK3576、RK3399、旧 RK32xx、SPI NOR、SPI NAND、NAND 和 UFS �
 - 已实现字节数、扇区数、LBA 强类型，以及 31-byte CBW、13-byte CSW 的显式编解码和 golden tests。
 - 已实现 RAII libusb context、RockUSB VID/PID 过滤、Maskrom/Loader 识别、完整 USB port path，以及按 bus、完整端口链和描述符重新选择设备的单设备 libusb backend。
 - CLI 已支持 `list`、统一 `info`、`probe`、typed 设备信息读取、`read-lba`、`inspect-image`、`plan-image`、`flash-image`、`partitions`、按 GPT 名称读写/擦除分区和 `reset`；所有设备命令都要求显式物理端口并只接受当前验证的 RK3588 Loader 身份与接口布局。关键命令提供 schema version 1 JSON，完整升级使用 JSON Lines 输出进度和唯一终态。
-- fake-libusb、CLI JSON golden output、GPT header/entry CRC 与范围校验、session 故障矩阵、typed ReadChipInfo/ReadFlashInfo/ReadFlashID、共享升级 workflow、spdlog 生命周期、Qt 离屏 smoke test 和 GUI 假后端完整升级测试已建立；Debug 当前为 16/16，并继续作为变更门禁。
+- fake-libusb、CLI JSON golden output、GPT header/entry CRC 与范围校验、session 故障矩阵、typed ReadChipInfo/ReadFlashInfo/ReadFlashID、共享升级 workflow、设备管理 workflow、spdlog 生命周期、Qt 离屏 smoke test、GUI 假后端详情/分区/完整升级测试、诊断报告契约测试和 Linux 临时安装/启动/卸载测试已建立；完整 Linux 构建当前为 19 项测试，并继续作为变更门禁。
+- Ubuntu 26.04 x86_64 `.deb` 已包含 CLI、GUI、XCB/offscreen 平台插件、私有 Qt/libusb/ICU 共享库、桌面入口、限定 `2207:350b` 且不使用 `0666` 的 udev 规则、许可证正文和 SPDX 2.3 组件清单；安装脚本创建专用 `zzrkdevtool` 组并刷新规则。
 - target-private `RockusbSession` executor 内部生成 tag，严格执行 CBW、DATA、CSW，短传输或失步错误后进入 Faulted；写入、擦除和复位均通过 typed API 暴露，CLI 和 GUI 不接受 raw CDB。
 - 应用日志通过 `zzrk_logging` 封装 spdlog v2；协议与 session 保持无日志副作用，CLI 的结构化结果继续使用 stdout。
 
@@ -719,10 +720,12 @@ Ubuntu 26.04 真机已跑通 `pudu_rk3588s` 的完整镜像解析、冷 Loader �
 
 CLI 默认 `--verify critical`，支持 `all` 和 `none`；完整成功后默认 typed reset，`--no-reboot` 可保留 Loader。SIGINT 在 RockUSB 分块边界停止新命令、禁止自动复位并返回 130。当前仍不触碰 eMMC boot0、boot1 或 RPMB。
 
-Qt GUI 已通过可注入的操作 backend 与生产 workflow 解耦，并增加不接触 USB/eMMC 的离屏完整升级自动化测试。界面同时保留当前操作百分比和完整烧录计划的累计百分比，并记录最近 50 条本次会话升级任务及其成功、失败或取消结果。
+Qt GUI 已通过可注入的操作 backend 与生产 workflow 解耦，并增加不接触 USB/eMMC 的离屏自动化测试。设备、完整升级和分区三个标签页共用精确物理端口选择与 USB 操作锁；设备页展示 ChipInfo、Capability、FlashInfo、FlashID、容量和接口信息；分区页严格读取 GPT，并提供不覆盖输出的备份、容量受限写入、默认逐块回读、擦除、进度和安全取消。写入与擦除均使用显示端口、分区、LBA 和容量的独立确认。完整升级界面同时保留当前操作百分比和完整烧录计划的累计百分比，并记录最近 50 条本次会话升级任务及其成功、失败或取消结果。CLI 和 GUI 共用升级报告模型；报告包含设备身份、固件 MD5、不可变计划、校验策略、逐步骤耗时和 typed 终态，通过 `QSaveFile` 原子导出 JSON，默认不保存固件完整路径。
 
 下一批开发按以下顺序推进：
 
-1. **TODO（等待设备空闲，不阻塞当前开发）**：用第二块 RK3588/eMMC 板卡和更多 Loader revision 建立兼容矩阵，在有协议证据后再放宽当前严格身份匹配。第二块板卡当前用于其他测试，不要求中断。
-2. 推进 Windows/macOS transport、驱动、签名和发布验证。
-3. 在获得更多真实失败样本后，为 GUI 增加持久化任务报告、可导出诊断信息和更细的失败恢复指引。
+1. **已完成**：建立 Ubuntu 26.04 x86_64 自包含 `.deb`、udev 权限、许可证/SBOM 和临时安装 smoke test。
+2. **已完成**：建立 CLI/GUI 共用的结构化升级报告、默认路径脱敏、逐步骤计时和历史任务导出。
+3. **已完成**：完善 GUI 设备详情和分区管理，复用 typed 设备信息、GPT、分区读写/擦除能力，并保持 USB 互斥、高危操作预检和确认。
+4. **进行中**：已建立 Windows x86_64 ZIP 与 macOS DMG 的构建、18 项跨平台无硬件测试、部署后启动检查和 CI 产物上传；Linux 另有第 19 项安装 smoke test。Windows 明确保留签名 WinUSB INF/CAT 门禁，macOS CI 使用 ad-hoc 签名验证最终 bundle。正式 Authenticode/Developer ID 签名、公证和两平台 RK3588 真机验证仍属于发布门禁。
+5. **TODO（等待设备空闲，不阻塞当前开发）**：用第二块 RK3588/eMMC 板卡和更多 Loader revision 建立兼容矩阵，在有协议证据后再放宽当前严格身份匹配。第二块板卡当前用于其他测试，不要求中断。

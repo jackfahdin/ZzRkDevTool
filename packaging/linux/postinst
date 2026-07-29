@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+
+if ! getent group zzrkdevtool >/dev/null; then
+    addgroup --system zzrkdevtool >/dev/null
+fi
+
+if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload-rules || true
+    udevadm trigger --subsystem-match=usb \
+        --attr-match=idVendor=2207 --attr-match=idProduct=350b || true
+fi
+
+exit 0

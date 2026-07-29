@@ -3,6 +3,7 @@
 #pragma once
 
 #include <zzrk/transport/UsbDeviceScanner.hpp>
+#include <zzrk/workflow/DeviceManagementWorkflow.hpp>
 #include <zzrk/workflow/FirmwareUpgradeWorkflow.hpp>
 
 #include <filesystem>
@@ -24,6 +25,29 @@ public:
       workflow::PreparedFirmwareUpgrade prepared,
       const workflow::FirmwareUpgradeProgressCallback &progress,
       const workflow::FirmwareUpgradeCancellationCallback &cancellation) = 0;
+
+  [[nodiscard]] virtual workflow::DeviceInspectionResult
+  inspectDevice(const std::string &portPath) = 0;
+
+  [[nodiscard]] virtual workflow::DevicePartitionTableResult
+  readPartitions(const std::string &portPath) = 0;
+
+  [[nodiscard]] virtual workflow::PartitionOperationResult readPartition(
+      const std::string &portPath, const std::string &partition,
+      const std::filesystem::path &outputPath,
+      const workflow::PartitionOperationProgressCallback &progress,
+      const workflow::DeviceManagementCancellationCallback &cancellation) = 0;
+
+  [[nodiscard]] virtual workflow::PartitionOperationResult writePartition(
+      const std::string &portPath, const std::string &partition,
+      const std::filesystem::path &inputPath, bool verify,
+      const workflow::PartitionOperationProgressCallback &progress,
+      const workflow::DeviceManagementCancellationCallback &cancellation) = 0;
+
+  [[nodiscard]] virtual workflow::PartitionOperationResult erasePartition(
+      const std::string &portPath, const std::string &partition,
+      const workflow::PartitionOperationProgressCallback &progress,
+      const workflow::DeviceManagementCancellationCallback &cancellation) = 0;
 };
 
 [[nodiscard]] std::shared_ptr<IGuiOperationBackend> createGuiOperationBackend();

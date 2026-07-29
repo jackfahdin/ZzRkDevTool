@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ZzRkDevTool
+Comment=Rockchip firmware flashing tool
+Exec=ZzRkDevTool
+Icon=drive-removable-media
+Terminal=false
+Categories=System;
+Keywords=Rockchip;Firmware;Flash;
+StartupNotify=true

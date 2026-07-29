@@ -535,12 +535,24 @@ void testJsonFlashLinesGoldenOutput() {
       .completedBytes = 256,
       .totalBytes = 512,
       .flashPhase = zzrk::image::FirmwareFlashPhase::writePartition,
+      .device = std::nullopt,
   };
   std::ostringstream progressOutput;
   zzrk::cli::printFirmwareUpgradeEventJson(progress, progressOutput);
   expect(progressOutput.str() ==
              "{\"schemaVersion\":1,\"type\":\"progress\",\"command\":\"flash-image\",\"stage\":\"flash\",\"target\":\"boot_a\",\"phase\":\"write-partition\",\"completedBytes\":256,\"totalBytes\":512}\n",
          "flash JSON Lines progress uses the versioned golden contract");
+
+  auto selected = progress;
+  selected.stage = zzrk::workflow::FirmwareUpgradeStage::selectDevice;
+  selected.target = "1-5";
+  selected.flashPhase.reset();
+  selected.device = makeLoaderDevice();
+  std::ostringstream selectedOutput;
+  zzrk::cli::printFirmwareUpgradeEventJson(selected, selectedOutput);
+  expect(selectedOutput.str().find("\"device\":{\"portPath\":\"1-5\"") !=
+             std::string::npos,
+         "device selection progress carries the selected USB identity");
 
   zzrk::workflow::FirmwareUpgradeError error{};
   error.code = zzrk::workflow::FirmwareUpgradeErrorCode::flashFailed;

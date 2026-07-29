@@ -33,7 +33,8 @@ void report(const FirmwareUpgradeProgressCallback& progress,
             const FirmwareUpgradeStage stage, const std::string_view target,
             const std::uint64_t completed = 0,
             const std::uint64_t total = 0,
-            const std::optional<image::FirmwareFlashPhase> flashPhase = {})
+            const std::optional<image::FirmwareFlashPhase> flashPhase = {},
+            const std::optional<transport::UsbDeviceInfo> device = {})
 {
     if (progress) {
         progress(FirmwareUpgradeEvent{
@@ -42,6 +43,7 @@ void report(const FirmwareUpgradeProgressCallback& progress,
             .completedBytes = completed,
             .totalBytes = total,
             .flashPhase = flashPhase,
+            .device = device,
         });
     }
 }
@@ -457,10 +459,12 @@ FirmwareUpgradeResult FirmwareUpgradeWorkflow::execute(
     if (const auto* error = std::get_if<FirmwareUpgradeError>(&selected)) {
         return *error;
     }
+    const auto selectedDevice = std::get<transport::UsbDeviceInfo>(selected);
+    report(progress, FirmwareUpgradeStage::selectDevice, request.portPath, 0U,
+           0U, {}, selectedDevice);
 
     auto preparedTransport = prepareRamLoader(
-        backend_, request.portPath,
-        std::get<transport::UsbDeviceInfo>(selected), prepared.image, progress,
+        backend_, request.portPath, selectedDevice, prepared.image, progress,
         cancellation);
     if (const auto* error =
             std::get_if<FirmwareUpgradeError>(&preparedTransport)) {

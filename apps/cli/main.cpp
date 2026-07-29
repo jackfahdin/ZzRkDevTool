@@ -10,6 +10,7 @@
 #include <zzrk/logging/Logging.hpp>
 #include <zzrk/platform/PlatformServices.hpp>
 #include <zzrk/qt/FirmwareMd5Verifier.hpp>
+#include <zzrk/qt/FirmwareUpgradeReportWriter.hpp>
 #include <zzrk/session/ReadCapability.hpp>
 #include <zzrk/session/ReadChipInfo.hpp>
 #include <zzrk/session/ReadFlashId.hpp>
@@ -24,6 +25,7 @@
 #include <zzrk/transport/LibusbBulkTransport.hpp>
 #include <zzrk/transport/UsbDeviceScanner.hpp>
 #include <zzrk/workflow/FirmwareUpgradeWorkflow.hpp>
+#include <zzrk/workflow/FirmwareUpgradeReport.hpp>
 
 #include <algorithm>
 #include <charconv>
@@ -82,7 +84,7 @@ void printUsage(const std::string_view executable, std::ostream &output) {
          << "       " << executable
          << " flash-image <port-path> <update.img> --yes "
             "[--verify critical|all|none] [--no-reboot] [--prepare-only] "
-            "[--json]\n"
+            "[--report <file>] [--report-include-firmware-path] [--json]\n"
          << "       " << executable << " reset <port-path>\n"
          << "       " << executable << " probe <port-path>\n"
          << "       " << executable << " read-chip-info <port-path>\n"
@@ -1370,6 +1372,8 @@ struct FlashCommandOptions {
   bool reboot{true};
   bool prepareOnly{};
   bool json{};
+  bool reportIncludeFirmwarePath{};
+  std::optional<std::filesystem::path> reportPath;
   zzrk::image::FirmwareVerifyMode verifyMode{
       zzrk::image::FirmwareVerifyMode::critical};
 };
@@ -1442,7 +1446,7 @@ parseErasePartitionOptions(const int argc, char *argv[]) noexcept {
 }
 
 [[nodiscard]] std::optional<FlashCommandOptions>
-parseFlashCommandOptions(const int argc, char *argv[]) noexcept {
+parseFlashCommandOptions(const int argc, char *argv[]) {
   if (argc < 5) {
     return std::nullopt;
   }
@@ -1452,6 +1456,8 @@ parseFlashCommandOptions(const int argc, char *argv[]) noexcept {
   bool prepareOnlySpecified = false;
   bool jsonSpecified = false;
   bool verifySpecified = false;
+  bool reportSpecified = false;
+  bool reportPathSpecified = false;
   for (int index = 4; index < argc; ++index) {
     const std::string_view argument{argv[index]};
     if (argument == "--yes" && !confirmed) {
@@ -1473,6 +1479,20 @@ parseFlashCommandOptions(const int argc, char *argv[]) noexcept {
       options.json = true;
       continue;
     }
+    if (argument == "--report" && !reportPathSpecified &&
+        index + 1 < argc) {
+      reportPathSpecified = true;
+      options.reportPath = std::filesystem::path{argv[++index]};
+      if (options.reportPath->empty()) {
+        return std::nullopt;
+      }
+      continue;
+    }
+    if (argument == "--report-include-firmware-path" && !reportSpecified) {
+      reportSpecified = true;
+      options.reportIncludeFirmwarePath = true;
+      continue;
+    }
     if (argument == "--verify" && !verifySpecified && index + 1 < argc) {
       verifySpecified = true;
       const std::string_view value{argv[++index]};
@@ -1489,7 +1509,8 @@ parseFlashCommandOptions(const int argc, char *argv[]) noexcept {
     }
     return std::nullopt;
   }
-  if (!confirmed) {
+  if (!confirmed ||
+      (options.reportIncludeFirmwarePath && !options.reportPath.has_value())) {
     return std::nullopt;
   }
   return options;
@@ -1544,9 +1565,22 @@ parseFlashCommandOptions(const int argc, char *argv[]) noexcept {
 }
 
 int flashImage(const std::string_view portPath,
-               const std::filesystem::path &imagePath, const bool reboot,
-               const zzrk::image::FirmwareVerifyMode verifyMode,
-               const bool prepareOnly, const bool json) {
+               const std::filesystem::path &imagePath,
+               const FlashCommandOptions &options) {
+  if (options.reportPath.has_value()) {
+    std::error_code imageError;
+    std::error_code reportError;
+    const auto absoluteImage =
+        std::filesystem::absolute(imagePath, imageError).lexically_normal();
+    const auto absoluteReport =
+        std::filesystem::absolute(*options.reportPath, reportError)
+            .lexically_normal();
+    if (!imageError && !reportError && absoluteImage == absoluteReport) {
+      zzrk::logging::error(
+          "The firmware report path must not overwrite the input image");
+      return 64;
+    }
+  }
   const InterruptHandlerGuard interruptHandler;
   auto backend = zzrk::workflow::createLibusbFirmwareUpgradeBackend();
   zzrk::qt::FirmwareMd5Verifier verifier;
@@ -1555,7 +1589,7 @@ int flashImage(const std::string_view portPath,
   std::string lastProgressKey;
   std::uint64_t lastPercent = 101U;
   const auto progress = [&](const zzrk::workflow::FirmwareUpgradeEvent &event) {
-    if (json) {
+    if (options.json) {
       zzrk::cli::printFirmwareUpgradeEventJson(event, std::cout);
       std::cout.flush();
       return;
@@ -1568,8 +1602,10 @@ int flashImage(const std::string_view portPath,
             ? 100U
             : std::min<std::uint64_t>(
                   100U, event.completedBytes * 100U / event.totalBytes);
-    if (key == lastProgressKey && event.completedBytes != event.totalBytes &&
-        percent < lastPercent + 5U) {
+    if (key == lastProgressKey &&
+        (event.totalBytes == 0U ||
+         (event.completedBytes != event.totalBytes &&
+          percent < lastPercent + 5U))) {
       return;
     }
     lastProgressKey = std::move(key);
@@ -1594,12 +1630,33 @@ int flashImage(const std::string_view portPath,
   const zzrk::workflow::FirmwareUpgradeRequest request{
       .portPath = std::string{portPath},
       .imagePath = imagePath,
-      .verifyMode = verifyMode,
-      .reboot = reboot,
-      .prepareOnly = prepareOnly,
+      .verifyMode = options.verifyMode,
+      .reboot = options.reboot,
+      .prepareOnly = options.prepareOnly,
   };
 
-  const auto result = workflow.run(request, progress, cancellation);
+  auto execution = zzrk::workflow::runFirmwareUpgradeWithReport(
+      workflow, request, progress, cancellation);
+  const auto reportError = options.reportPath.has_value()
+                               ? zzrk::qt::writeFirmwareUpgradeReport(
+                                     execution.report, *options.reportPath,
+                                     zzrk::qt::FirmwareUpgradeReportWriteOptions{
+                                         .includeFirmwarePath =
+                                             options.reportIncludeFirmwarePath,
+                                         .applicationVersion = ZZRK_VERSION,
+                                     })
+                               : std::nullopt;
+  if (reportError.has_value()) {
+    std::ostringstream message;
+    message << "Could not write firmware upgrade report to "
+            << options.reportPath->string() << ": " << reportError->message;
+    zzrk::logging::error(message.str());
+  } else if (options.reportPath.has_value()) {
+    zzrk::logging::info("Firmware upgrade report written to " +
+                        options.reportPath->string());
+  }
+
+  const auto &result = execution.result;
   if (const auto *error =
           std::get_if<zzrk::workflow::FirmwareUpgradeError>(&result)) {
     std::ostringstream message;
@@ -1626,7 +1683,7 @@ int flashImage(const std::string_view portPath,
              << error->digestError->actualMd5.data() << ')';
       zzrk::logging::error(digest.str());
     }
-    if (json) {
+    if (options.json) {
       zzrk::cli::printFirmwareUpgradeErrorJson(*error, message.str(),
                                                std::cout);
     }
@@ -1638,9 +1695,9 @@ int flashImage(const std::string_view portPath,
 
   const auto &success =
       std::get<zzrk::workflow::FirmwareUpgradeSuccess>(result);
-  if (json) {
+  if (options.json) {
     zzrk::cli::printFirmwareUpgradeSuccessJson(success, std::cout);
-    return EXIT_SUCCESS;
+    return reportError.has_value() ? EXIT_FAILURE : EXIT_SUCCESS;
   }
   if (success.preparedOnly) {
     std::ostringstream message;
@@ -1648,7 +1705,7 @@ int flashImage(const std::string_view portPath,
             << ": RK3588, eMMC " << success.deviceSectors
             << " sectors; no eMMC write was performed";
     zzrk::logging::info(message.str());
-    return EXIT_SUCCESS;
+    return reportError.has_value() ? EXIT_FAILURE : EXIT_SUCCESS;
   }
 
   std::ostringstream message;
@@ -1668,7 +1725,7 @@ int flashImage(const std::string_view portPath,
     zzrk::logging::info(
         "Automatic reboot disabled; the device remains in the RAM Loader");
   }
-  return EXIT_SUCCESS;
+  return reportError.has_value() ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
 } // namespace
@@ -1702,14 +1759,12 @@ int main(const int argc, char *argv[]) {
   if (argc >= 2 && std::string_view{argv[1]} == "flash-image") {
     const auto options = parseFlashCommandOptions(argc, argv);
     if (options.has_value()) {
-      return flashImage(argv[2], argv[3], options->reboot,
-                        options->verifyMode, options->prepareOnly,
-                        options->json);
+      return flashImage(argv[2], argv[3], *options);
     }
     zzrk::logging::error(
         "flash-image requires: <port-path> <update.img> --yes "
         "[--verify critical|all|none] [--no-reboot] [--prepare-only] "
-        "[--json]");
+        "[--report <file>] [--report-include-firmware-path] [--json]");
     if (hasArgument(argc, argv, "--json")) {
       zzrk::cli::printJsonError("flash-image", "invalid-arguments",
                                 "flash-image arguments are invalid",

@@ -11,17 +11,29 @@ project(
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-# The technical preview is only runnable from its build tree.  A real install
-# must deploy Qt, its platform plugins, and libusb together, so do not generate
-# incomplete install rules yet.
-set(CMAKE_SKIP_INSTALL_RULES ON)
-
 option(ZZRK_BUILD_GUI "Build the Qt Widgets application" ON)
 option(ZZRK_BUILD_CLI "Build the command-line application" ON)
 option(ZZRK_BUILD_TRANSPORT "Build the libusb transport" ON)
 option(ZZRK_BUILD_TESTS "Build unit tests" ON)
 option(ZZRK_WARNINGS_AS_ERRORS "Treat project warnings as errors" OFF)
 option(ZZRK_ENABLE_SANITIZERS "Enable address and undefined sanitizers" OFF)
+set(_zzrk_bundle_runtime_default OFF)
+if((CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32 OR APPLE) AND
+   (ZZRK_BUILD_CLI OR ZZRK_BUILD_GUI))
+    set(_zzrk_bundle_runtime_default ON)
+endif()
+option(
+    ZZRK_BUNDLE_RUNTIME
+    "Bundle Qt, its plugins, and non-system runtime libraries when installing"
+    ${_zzrk_bundle_runtime_default}
+)
+set(
+    ZZRK_MACOS_CODESIGN_IDENTITY
+    ""
+    CACHE STRING
+    "Optional Developer ID Application identity used by macdeployqt"
+)
+unset(_zzrk_bundle_runtime_default)
 
 set(_zzrk_transport_consumers)
 if(ZZRK_BUILD_CLI)
@@ -165,3 +177,5 @@ if(ZZRK_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+include(cmake/InstallAndPackage.cmake)
