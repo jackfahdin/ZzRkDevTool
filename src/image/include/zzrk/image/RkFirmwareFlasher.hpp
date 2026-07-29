@@ -9,6 +9,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 
 namespace zzrk::image {
@@ -39,6 +40,9 @@ enum class FirmwareVerifyMode {
     critical,
     all,
 };
+
+[[nodiscard]] bool shouldVerifyFirmwarePartition(
+    FirmwareVerifyMode mode, std::string_view name) noexcept;
 
 struct FirmwareFlashOptions {
     bool writePartitionTable{true};

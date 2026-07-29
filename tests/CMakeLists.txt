@@ -141,3 +141,25 @@ if(TARGET ZzRkDevTool)
         PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     )
 endif()
+
+if(TARGET zzrk_gui_support)
+    add_executable(upgrade_progress_tracker_test
+                   upgrade_progress_tracker_test.cpp)
+    target_link_libraries(
+        upgrade_progress_tracker_test
+        PRIVATE zzrk::gui zzrk_project_warnings
+    )
+    add_test(NAME upgrade_progress_tracker
+             COMMAND upgrade_progress_tracker_test)
+
+    add_executable(gui_upgrade_test gui_upgrade_test.cpp)
+    target_link_libraries(
+        gui_upgrade_test
+        PRIVATE zzrk::gui zzrk_project_warnings
+    )
+    add_test(NAME gui_upgrade COMMAND gui_upgrade_test)
+    set_tests_properties(
+        gui_upgrade
+        PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+endif()

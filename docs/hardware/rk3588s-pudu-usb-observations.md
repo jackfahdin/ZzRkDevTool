@@ -232,6 +232,13 @@ primary GPT strictly and reports backup write submission separately. The new
 device GPT reader uses the same rule: primary header and entry-array CRCs are
 mandatory, while backup status may be `unavailable`.
 
+On 2026-07-29 the same board passed the follow-up matrix: cold Loader and cold
+Maskrom `--prepare-only`, a repeated preparation from the active RAM usbplug,
+unified `info`, CRC-validating `partitions`, and a complete `--verify all`
+upgrade. Every command completed normally, the final reset was accepted, and
+Android booted successfully. The non-zero successful CSW residue previously
+observed during RAM usbplug readiness no longer prevents preparation.
+
 ## Not Yet Observed
 
 - A root-level usbmon/pcap capture of the ReadChipInfo, ReadFlashInfo or
@@ -240,6 +247,5 @@ mandatory, while backup status may be `unavailable`.
 - eMMC CID, physical manufacturer or active hardware-partition information
 - Physical geometry or manufacturer semantics for the legacy FlashInfo fields
 - Stall, timeout, short transfer and CSW residue behavior on hardware
-- Cold Maskrom `--prepare-only` after the shared workflow extraction
-- A complete `--verify all` pass
-- Unified `info` and CRC-validating `partitions` output in Loader mode
+- A second RK3588/eMMC board and additional Loader revisions; this remains a
+  deferred compatibility-matrix TODO until the second board is available
