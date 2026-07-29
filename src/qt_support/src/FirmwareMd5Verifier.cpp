@@ -86,6 +86,40 @@ workflow::FirmwareDigestResult FirmwareMd5Verifier::verify(
     return actual;
 }
 
+workflow::FirmwareDigestResult FirmwareMd5Verifier::digest(
+    const std::filesystem::path& path) noexcept
+{
+    std::error_code sizeError;
+    const auto size = std::filesystem::file_size(path, sizeError);
+    if (sizeError || size > static_cast<std::uint64_t>(
+                               std::numeric_limits<qint64>::max())) {
+        return workflow::FirmwareDigestError{
+            .code = workflow::FirmwareDigestErrorCode::readFailed,
+        };
+    }
+    QFile file{toQString(path)};
+    if (!file.open(QIODevice::ReadOnly)) {
+        return workflow::FirmwareDigestError{
+            .code = workflow::FirmwareDigestErrorCode::openFailed,
+        };
+    }
+    QCryptographicHash hash{QCryptographicHash::Md5};
+    QByteArray buffer(kHashChunkBytes, Qt::Uninitialized);
+    qint64 remaining = static_cast<qint64>(size);
+    while (remaining > 0) {
+        const qint64 requested = std::min(remaining, kHashChunkBytes);
+        const qint64 bytesRead = file.read(buffer.data(), requested);
+        if (bytesRead != requested) {
+            return workflow::FirmwareDigestError{
+                .code = workflow::FirmwareDigestErrorCode::readFailed,
+            };
+        }
+        hash.addData(QByteArrayView{buffer.constData(), bytesRead});
+        remaining -= bytesRead;
+    }
+    return toDigestArray(hash.result().toHex());
+}
+
 std::string_view describeFirmwareDigestError(
     const workflow::FirmwareDigestErrorCode code) noexcept
 {

@@ -148,6 +148,15 @@ if(TARGET zzrk_transport)
         )
         add_test(NAME device_management_workflow
                  COMMAND device_management_workflow_test)
+
+        add_executable(image_download_workflow_test
+                       image_download_workflow_test.cpp)
+        target_link_libraries(
+            image_download_workflow_test
+            PRIVATE zzrk::workflow zzrk_project_warnings
+        )
+        add_test(NAME image_download_workflow
+                 COMMAND image_download_workflow_test)
     endif()
 endif()
 
