@@ -25,7 +25,6 @@ class QProgressBar;
 class QPushButton;
 class QTableWidget;
 class QTabWidget;
-class QTimer;
 class QToolButton;
 
 class MainWindow final : public QMainWindow
@@ -55,7 +54,6 @@ private:
     void handleScanFinished();
     void applyScanResult(const zzrk::transport::ScanResult &result);
     void handleDeviceSelectionChanged();
-    void setAutoRefreshEnabled(bool enabled);
     void inspectSelectedDevice();
     void handleInspectionFinished();
     void readSelectedDevicePartitions();
@@ -106,8 +104,6 @@ private:
     QLabel *m_connectionText = nullptr;
     QLabel *m_lastScanText = nullptr;
     QToolButton *m_refreshButton = nullptr;
-    QCheckBox *m_autoRefreshCheckBox = nullptr;
-    QTimer *m_autoRefreshTimer = nullptr;
     QPushButton *m_inspectDeviceButton = nullptr;
     QLabel *m_deviceDetailStatus = nullptr;
     QLabel *m_chipInfoValue = nullptr;
@@ -155,6 +151,5 @@ private:
     zzrk::workflow::PartitionOperationPhase m_partitionOperationPhase{
         zzrk::workflow::PartitionOperationPhase::read};
     bool m_showModalDialogs = true;
-    bool m_hasCompletedScan = false;
     bool m_shuttingDown = false;
 };

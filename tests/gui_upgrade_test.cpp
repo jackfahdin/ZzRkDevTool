@@ -312,11 +312,6 @@ int main(int argc, char *argv[]) {
   MainWindow window{backend, false};
   window.show();
 
-  if (auto *autoRefresh = window.findChild<QCheckBox *>(
-          QStringLiteral("autoRefreshCheckBox"))) {
-    autoRefresh->setChecked(false);
-  }
-
   bool started = false;
   bool inspectionCompleted = false;
   bool partitionsCompleted = false;

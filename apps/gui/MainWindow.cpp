@@ -433,10 +433,6 @@ MainWindow::MainWindow(
     connectionFont.setBold(true);
     m_connectionText->setFont(connectionFont);
 
-    m_autoRefreshCheckBox = new QCheckBox(QStringLiteral("每 2 秒自动刷新"), centralWidget);
-    m_autoRefreshCheckBox->setObjectName(QStringLiteral("autoRefreshCheckBox"));
-    m_autoRefreshCheckBox->setChecked(true);
-
     m_refreshButton = new QToolButton(centralWidget);
     m_refreshButton->setObjectName(QStringLiteral("refreshButton"));
     m_refreshButton->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
@@ -447,7 +443,6 @@ MainWindow::MainWindow(
     toolRow->addWidget(m_connectionIcon);
     toolRow->addWidget(m_connectionText);
     toolRow->addStretch();
-    toolRow->addWidget(m_autoRefreshCheckBox);
     toolRow->addWidget(m_refreshButton);
     mainLayout->addLayout(toolRow);
 
@@ -760,17 +755,7 @@ MainWindow::MainWindow(
     statusBar()->addPermanentWidget(m_lastScanText);
     statusBar()->showMessage(QStringLiteral("准备就绪"));
 
-    m_autoRefreshTimer = new QTimer(this);
-    m_autoRefreshTimer->setInterval(2000);
-    m_autoRefreshTimer->setSingleShot(true);
-    m_autoRefreshTimer->setTimerType(Qt::CoarseTimer);
-
     connect(m_refreshButton, &QToolButton::clicked, this, &MainWindow::refreshDevices);
-    connect(m_autoRefreshCheckBox,
-            &QCheckBox::toggled,
-            this,
-            &MainWindow::setAutoRefreshEnabled);
-    connect(m_autoRefreshTimer, &QTimer::timeout, this, &MainWindow::refreshDevices);
     connect(&m_scanWatcher,
             &QFutureWatcher<zzrk::transport::ScanResult>::finished,
             this,
@@ -831,7 +816,6 @@ MainWindow::~MainWindow()
     if (m_partitionCancellation) {
         m_partitionCancellation->store(true);
     }
-    m_autoRefreshTimer->stop();
     disconnect(&m_scanWatcher, nullptr, this, nullptr);
     disconnect(&m_prepareWatcher, nullptr, this, nullptr);
     disconnect(&m_upgradeWatcher, nullptr, this, nullptr);
@@ -852,7 +836,6 @@ void MainWindow::refreshDevices()
         return;
     }
 
-    m_autoRefreshTimer->stop();
     m_refreshButton->setEnabled(false);
     statusBar()->showMessage(QStringLiteral("正在扫描 USB 设备..."));
 
@@ -882,11 +865,6 @@ void MainWindow::handleScanFinished()
 
     applyScanResult(m_scanWatcher.result());
     m_refreshButton->setEnabled(true);
-    m_hasCompletedScan = true;
-
-    if (m_autoRefreshCheckBox->isChecked() && !usbOperationRunning()) {
-        m_autoRefreshTimer->start();
-    }
 
     emit scanCompleted();
 }
@@ -979,14 +957,6 @@ void MainWindow::applyScanResult(const zzrk::transport::ScanResult &result)
     handleDeviceSelectionChanged();
 }
 
-void MainWindow::setAutoRefreshEnabled(bool enabled)
-{
-    m_autoRefreshTimer->stop();
-    if (enabled && m_hasCompletedScan && !usbOperationRunning()) {
-        refreshDevices();
-    }
-}
-
 QString MainWindow::selectedPortPath() const
 {
     const int row = m_deviceTable->currentRow();
@@ -1068,7 +1038,6 @@ void MainWindow::inspectSelectedDevice()
     if (portPath.isEmpty()) {
         return;
     }
-    m_autoRefreshTimer->stop();
     m_deviceDetailStatus->setText(QStringLiteral("正在读取设备详情..."));
     statusBar()->showMessage(QStringLiteral("正在读取设备详情"));
     const auto backend = m_backend;
@@ -1100,9 +1069,6 @@ void MainWindow::handleInspectionFinished()
             QMessageBox::critical(this, QStringLiteral("读取失败"), message);
         }
         updateUpgradeControls();
-        if (m_autoRefreshCheckBox->isChecked()) {
-            m_autoRefreshTimer->start();
-        }
         emit deviceInspectionCompleted(false);
         return;
     }
@@ -1141,9 +1107,6 @@ void MainWindow::handleInspectionFinished()
         QStringLiteral("端口 %1，详情读取完成").arg(m_inspectedPort));
     statusBar()->showMessage(QStringLiteral("设备详情已更新"));
     updateUpgradeControls();
-    if (m_autoRefreshCheckBox->isChecked()) {
-        m_autoRefreshTimer->start();
-    }
     emit deviceInspectionCompleted(true);
 }
 
@@ -1156,7 +1119,6 @@ void MainWindow::readSelectedDevicePartitions()
     if (portPath.isEmpty()) {
         return;
     }
-    m_autoRefreshTimer->stop();
     m_partitionStatus->setText(QStringLiteral("正在读取并校验 GPT..."));
     m_partitionProgress->setRange(0, 0);
     statusBar()->showMessage(QStringLiteral("正在读取 GPT 分区表"));
@@ -1191,9 +1153,6 @@ void MainWindow::handlePartitionTableFinished()
             QMessageBox::critical(this, QStringLiteral("读取失败"), message);
         }
         updateUpgradeControls();
-        if (m_autoRefreshCheckBox->isChecked()) {
-            m_autoRefreshTimer->start();
-        }
         emit partitionTableCompleted(false);
         return;
     }
@@ -1243,9 +1202,6 @@ void MainWindow::handlePartitionTableFinished()
                                      static_cast<qsizetype>(backup.size()))));
     statusBar()->showMessage(QStringLiteral("GPT 分区表已更新"));
     updateUpgradeControls();
-    if (m_autoRefreshCheckBox->isChecked()) {
-        m_autoRefreshTimer->start();
-    }
     emit partitionTableCompleted(true);
 }
 
@@ -1378,7 +1334,6 @@ void MainWindow::startPartitionOperation(
         return;
     }
 
-    m_autoRefreshTimer->stop();
     m_partitionOperationPhase = phase;
     m_partitionCancellation = std::make_shared<std::atomic_bool>(false);
     m_partitionProgress->setRange(0, 100);
@@ -1489,9 +1444,6 @@ void MainWindow::handlePartitionOperationFinished()
             QMessageBox::critical(this, QStringLiteral("操作失败"), message);
         }
         updateUpgradeControls();
-        if (m_autoRefreshCheckBox->isChecked()) {
-            m_autoRefreshTimer->start();
-        }
         emit partitionOperationCompleted(false);
         return;
     }
@@ -1512,9 +1464,6 @@ void MainWindow::handlePartitionOperationFinished()
         QMessageBox::information(this, QStringLiteral("操作完成"), message);
     }
     updateUpgradeControls();
-    if (m_autoRefreshCheckBox->isChecked()) {
-        m_autoRefreshTimer->start();
-    }
     emit partitionOperationCompleted(true);
 }
 
@@ -1545,7 +1494,6 @@ void MainWindow::updateUpgradeControls()
     m_verifyModeCombo->setEnabled(!upgrading);
     m_rebootCheckBox->setEnabled(!upgrading);
     m_deviceTable->setEnabled(!usbBusy);
-    m_autoRefreshCheckBox->setEnabled(!usbBusy);
     m_refreshButton->setEnabled(!usbBusy);
     m_inspectDeviceButton->setEnabled(manageable && !usbBusy);
     m_readPartitionsButton->setEnabled(manageable && !usbBusy);
@@ -1672,7 +1620,6 @@ void MainWindow::startUpgrade()
         }
     }
 
-    m_autoRefreshTimer->stop();
     m_refreshButton->setEnabled(false);
     m_upgradeCancellation = std::make_shared<std::atomic_bool>(false);
     m_overallProgress->setRange(0, 100);
@@ -1817,9 +1764,6 @@ void MainWindow::handleUpgradeFinished()
 
     m_progressTracker.reset();
     updateUpgradeControls();
-    if (m_autoRefreshCheckBox->isChecked()) {
-        m_autoRefreshTimer->start();
-    }
     emit upgradeCompleted();
 }
 
