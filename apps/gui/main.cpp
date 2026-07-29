@@ -5,7 +5,6 @@
 #include <zzrk/logging/Logging.hpp>
 
 #include <QApplication>
-#include <QCheckBox>
 #include <QCoreApplication>
 #include <QLabel>
 #include <QStatusBar>
@@ -25,15 +24,11 @@ bool hasCompletedUiState(const MainWindow &window)
         window.findChild<QLabel *>(QStringLiteral("lastScanText"));
     const auto *refreshButton =
         window.findChild<QToolButton *>(QStringLiteral("refreshButton"));
-    const auto *autoRefreshCheckBox =
-        window.findChild<QCheckBox *>(QStringLiteral("autoRefreshCheckBox"));
-
     return connectionText != nullptr && !connectionText->text().isEmpty()
         && connectionText->text() != QStringLiteral("正在检测设备...")
         && lastScanText != nullptr
         && lastScanText->text().startsWith(QStringLiteral("更新于 "))
         && refreshButton != nullptr && refreshButton->isEnabled()
-        && autoRefreshCheckBox != nullptr && autoRefreshCheckBox->isChecked()
         && window.statusBar() != nullptr
         && !window.statusBar()->currentMessage().isEmpty();
 }
@@ -72,16 +67,14 @@ int main(int argc, char *argv[])
 
                 ++(*completedScans);
                 if (*completedScans < requiredCompletedScans) {
-                    return;
-                }
-
-                auto *refreshButton =
-                    window.findChild<QToolButton *>(QStringLiteral("refreshButton"));
-                refreshButton->click();
-                if (refreshButton->isEnabled()) {
-                    zzrk::logging::error(
-                        "GUI smoke test could not start a final scan");
-                    application.exit(EXIT_FAILURE);
+                    auto *refreshButton = window.findChild<QToolButton *>(
+                        QStringLiteral("refreshButton"));
+                    refreshButton->click();
+                    if (refreshButton->isEnabled()) {
+                        zzrk::logging::error(
+                            "GUI smoke test could not start a manual scan");
+                        application.exit(EXIT_FAILURE);
+                    }
                     return;
                 }
 
