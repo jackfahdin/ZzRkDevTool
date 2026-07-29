@@ -2,9 +2,11 @@
 
 本文说明如何从源码编译、测试和打包 ZzRkDevTool。当前发布基线为 Qt 6.11.1、C++20、CMake 3.25 或更高版本、Ninja 和 libusb 1.0.30 或更高版本。
 
+libusb 1.0.30 是硬性最低版本，不兼容旧版本。运行库还必须通过 `libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG)` 报告当前平台具备热插拔能力；能力缺失时 GUI 启动检查会失败并显示明确错误，不会退回定时轮询。Windows 的 libusb 必须在编译时启用 `LIBUSB_WINDOWS_HOTPLUG`。
+
 当前状态：
 
-- Ubuntu 26.04 x86_64 的自包含 `.deb` 已在本地完成构建、19 项测试和临时安装验证。
+- Ubuntu 26.04 x86_64 的自包含 `.deb` 已在本地完成构建、20 项测试和临时安装验证。
 - Windows x86_64 ZIP 与 macOS DMG 已建立 CMake/CPack 和 CI 配置，需在对应系统或 CI runner 上完成首次验证。
 - Windows ZIP 尚未正式签名，也不包含 USB 驱动安装程序。
 - macOS CI 产物只使用 ad-hoc 签名，尚未完成 Developer ID 签名和 Apple 公证。
@@ -147,8 +149,11 @@ sudo usermod -aG zzrkdevtool "$USER"
 在“x64 Native Tools Command Prompt for VS 2022”或已加载 MSVC 环境的 PowerShell 中执行：
 
 ```powershell
-& "$env:VCPKG_ROOT\vcpkg.exe" install libusb:x64-windows
+& "$env:VCPKG_ROOT\vcpkg.exe" install libusb:x64-windows `
+  "--overlay-ports=$PWD/packaging/windows/vcpkg-overlay-ports"
 ```
+
+必须使用仓库中的 overlay。vcpkg 的普通 Windows `Release` 配置不保证编译 libusb 1.0.30 新增的 Windows 热插拔后端；该 overlay 固定 1.0.30，并向上游 MSBuild 工程传入 `EnableWindowsHotplug=true`。
 
 vcpkg 安装根目录应至少包含：
 
@@ -294,7 +299,7 @@ spctl --assess --type open --context context:primary-signature -v \
 
 ## 5. CI 构建
 
-`.github/workflows/cross-platform-apps.yml` 定义了 Windows 2022 与 macOS 14 的构建、18 项无硬件测试、打包后启动检查和产物上传。该 workflow 由 `push`、`pull_request` 或手工 `workflow_dispatch` 触发。
+`.github/workflows/cross-platform-apps.yml` 定义了 Windows 2022 与 macOS 14 的构建、19 项无硬件测试、打包后启动检查和产物上传。Linux 另有第 20 项安装 smoke test。该 workflow 由 `push`、`pull_request` 或手工 `workflow_dispatch` 触发。
 
 当前仓库的 `origin` 指向 GitCode，且远端 `main` 与本地历史没有共同祖先。启用 GitHub Actions 前必须先确认正确的 GitHub 仓库或新分支，禁止未经备份和明确确认直接 force-push 覆盖远端。
 
@@ -309,6 +314,10 @@ CI 通过只说明对应 runner 上能够编译、测试、部署和启动，不
 ### CMake 找不到 libusb 1.0.30
 
 检查 `ZZRK_LIBUSB_ROOT` 下是否存在头文件、链接库和 `lib/pkgconfig/libusb-1.0.pc`。Windows 还必须存在动态 DLL；macOS 应使用动态 `.dylib`，不能只提供静态库。
+
+### GUI 报告热插拔检测不可用
+
+确认实际加载的运行库版本不低于 1.0.30，并且 `libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG)` 返回非零。Windows 必须用仓库内 vcpkg overlay 重新构建 libusb；仅替换头文件或使用未启用 `LIBUSB_WINDOWS_HOTPLUG` 的 DLL 无效。本项目不提供旧版兼容或轮询回退。
 
 ### 修改依赖路径后仍使用旧缓存
 

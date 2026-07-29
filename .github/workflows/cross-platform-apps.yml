@@ -32,7 +32,8 @@ jobs:
       - name: Build, test, and package
         shell: pwsh
         run: |
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libusb:x64-windows
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libusb:x64-windows `
+            "--overlay-ports=$PWD/packaging/windows/vcpkg-overlay-ports"
           $libusbRoot = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows"
           $env:PATH = "$libusbRoot\bin;$env:PATH"
           cmake -S . -B build/windows-release -G Ninja `

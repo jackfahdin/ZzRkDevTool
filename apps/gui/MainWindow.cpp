@@ -429,6 +429,7 @@ MainWindow::MainWindow(
 
     m_connectionText = new QLabel(QStringLiteral("正在检测设备..."), centralWidget);
     m_connectionText->setObjectName(QStringLiteral("connectionStatusText"));
+    m_connectionText->setProperty("hotplugAvailable", true);
     QFont connectionFont = m_connectionText->font();
     connectionFont.setBold(true);
     m_connectionText->setFont(connectionFont);
@@ -755,7 +756,13 @@ MainWindow::MainWindow(
     statusBar()->addPermanentWidget(m_lastScanText);
     statusBar()->showMessage(QStringLiteral("准备就绪"));
 
+    m_hotplugDebounceTimer = new QTimer(this);
+    m_hotplugDebounceTimer->setInterval(150);
+    m_hotplugDebounceTimer->setSingleShot(true);
+
     connect(m_refreshButton, &QToolButton::clicked, this, &MainWindow::refreshDevices);
+    connect(m_hotplugDebounceTimer, &QTimer::timeout,
+            this, &MainWindow::processPendingDeviceRefresh);
     connect(&m_scanWatcher,
             &QFutureWatcher<zzrk::transport::ScanResult>::finished,
             this,
@@ -802,6 +809,21 @@ MainWindow::MainWindow(
             &QFutureWatcher<zzrk::workflow::FirmwareUpgradeResult>::finished,
             this, &MainWindow::handleUpgradeFinished);
 
+    const auto monitoringError = m_backend->startDeviceMonitoring(
+        [this](zzrk::transport::UsbHotplugEvent) {
+            QMetaObject::invokeMethod(
+                this, [this] { handleDeviceChange(); }, Qt::QueuedConnection);
+        },
+        [this](const zzrk::transport::UsbHotplugError& error) {
+            QMetaObject::invokeMethod(
+                this,
+                [this, error] { handleDeviceMonitoringError(error); },
+                Qt::QueuedConnection);
+        });
+    if (monitoringError.has_value()) {
+        handleDeviceMonitoringError(*monitoringError);
+    }
+
     updateUpgradeControls();
 
     QTimer::singleShot(0, this, &MainWindow::refreshDevices);
@@ -810,6 +832,8 @@ MainWindow::MainWindow(
 MainWindow::~MainWindow()
 {
     m_shuttingDown = true;
+    m_hotplugDebounceTimer->stop();
+    m_backend->stopDeviceMonitoring();
     if (m_upgradeCancellation) {
         m_upgradeCancellation->store(true);
     }
@@ -836,6 +860,8 @@ void MainWindow::refreshDevices()
         return;
     }
 
+    m_hotplugRefreshPending = false;
+    m_hotplugDebounceTimer->stop();
     m_refreshButton->setEnabled(false);
     statusBar()->showMessage(QStringLiteral("正在扫描 USB 设备..."));
 
@@ -855,6 +881,45 @@ void MainWindow::refreshDevices()
     });
     m_scanWatcher.setFuture(future);
     updateUpgradeControls();
+}
+
+void MainWindow::handleDeviceChange()
+{
+    if (m_shuttingDown || !m_deviceMonitoringError.isEmpty()) {
+        return;
+    }
+
+    m_hotplugRefreshPending = true;
+    if (!usbOperationRunning()) {
+        m_hotplugDebounceTimer->start();
+    }
+}
+
+void MainWindow::handleDeviceMonitoringError(
+    const zzrk::transport::UsbHotplugError& error)
+{
+    if (m_shuttingDown) {
+        return;
+    }
+
+    m_deviceMonitoringError = QString::fromStdString(error.message);
+    m_hotplugRefreshPending = false;
+    m_hotplugDebounceTimer->stop();
+    m_connectionText->setProperty("hotplugAvailable", false);
+    m_connectionText->setText(QStringLiteral("设备热插拔检测不可用"));
+    m_connectionText->setToolTip(m_deviceMonitoringError);
+    statusBar()->showMessage(
+        QStringLiteral("设备热插拔检测不可用：%1；请使用手动刷新")
+            .arg(m_deviceMonitoringError));
+}
+
+void MainWindow::processPendingDeviceRefresh()
+{
+    if (m_shuttingDown || !m_hotplugRefreshPending
+        || usbOperationRunning()) {
+        return;
+    }
+    refreshDevices();
 }
 
 void MainWindow::handleScanFinished()
@@ -952,6 +1017,14 @@ void MainWindow::applyScanResult(const zzrk::transport::ScanResult &result)
             style()->standardIcon(QStyle::SP_DialogApplyButton).pixmap(16, 16));
         m_connectionText->setText(QStringLiteral("已连接 %1 台 Rockchip 设备").arg(deviceCount));
         statusBar()->showMessage(QStringLiteral("设备列表已更新"));
+    }
+    if (!m_deviceMonitoringError.isEmpty()) {
+        m_connectionText->setText(
+            m_connectionText->text() + QStringLiteral("；热插拔检测不可用"));
+        m_connectionText->setToolTip(m_deviceMonitoringError);
+        statusBar()->showMessage(
+            QStringLiteral("设备热插拔检测不可用：%1；请使用手动刷新")
+                .arg(m_deviceMonitoringError));
     }
     updateUpgradeControls();
     handleDeviceSelectionChanged();
@@ -1505,6 +1578,10 @@ void MainWindow::updateUpgradeControls()
     m_cancelPartitionButton->setEnabled(
         m_partitionOperationWatcher.isRunning());
     updateReportExportControls();
+    if (m_hotplugRefreshPending && !usbBusy
+        && !m_hotplugDebounceTimer->isActive()) {
+        m_hotplugDebounceTimer->start();
+    }
 }
 
 void MainWindow::chooseFirmwareImage()

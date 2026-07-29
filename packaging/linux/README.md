@@ -3,9 +3,11 @@
 ## Build the Debian package
 
 The Ubuntu 26.04 x86_64 release package contains both applications, the
-compatible Qt platform runtime, libusb, ICU, license texts and an SPDX 2.3
-component inventory. Remaining graphics and C/C++ runtime dependencies are
-recorded automatically in the Debian control file.
+compatible Qt platform runtime, libusb 1.0.30, ICU, license texts and an SPDX
+2.3 component inventory. The bundled libusb must report hotplug capability;
+older or capability-disabled runtimes are rejected without a polling fallback.
+Remaining graphics and C/C++ runtime dependencies are recorded automatically
+in the Debian control file.
 
 ```bash
 cmake --preset linux-release -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/gcc_64"

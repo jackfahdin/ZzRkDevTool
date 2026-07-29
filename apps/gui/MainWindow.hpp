@@ -25,6 +25,7 @@ class QProgressBar;
 class QPushButton;
 class QTableWidget;
 class QTabWidget;
+class QTimer;
 class QToolButton;
 
 class MainWindow final : public QMainWindow
@@ -51,6 +52,10 @@ signals:
 
 private:
     void refreshDevices();
+    void handleDeviceChange();
+    void handleDeviceMonitoringError(
+        const zzrk::transport::UsbHotplugError &error);
+    void processPendingDeviceRefresh();
     void handleScanFinished();
     void applyScanResult(const zzrk::transport::ScanResult &result);
     void handleDeviceSelectionChanged();
@@ -104,6 +109,7 @@ private:
     QLabel *m_connectionText = nullptr;
     QLabel *m_lastScanText = nullptr;
     QToolButton *m_refreshButton = nullptr;
+    QTimer *m_hotplugDebounceTimer = nullptr;
     QPushButton *m_inspectDeviceButton = nullptr;
     QLabel *m_deviceDetailStatus = nullptr;
     QLabel *m_chipInfoValue = nullptr;
@@ -148,8 +154,10 @@ private:
     QString m_selectedPortCache;
     QString m_inspectedPort;
     QString m_partitionPort;
+    QString m_deviceMonitoringError;
     zzrk::workflow::PartitionOperationPhase m_partitionOperationPhase{
         zzrk::workflow::PartitionOperationPhase::read};
     bool m_showModalDialogs = true;
+    bool m_hotplugRefreshPending = false;
     bool m_shuttingDown = false;
 };

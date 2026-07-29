@@ -84,6 +84,25 @@ if(TARGET zzrk_transport)
     add_test(NAME usb_device_scanner COMMAND usb_device_scanner_test)
 
     add_executable(
+        libusb_hotplug_monitor_test
+        libusb_hotplug_monitor_test.cpp
+        "${PROJECT_SOURCE_DIR}/src/transport/LibusbHotplugMonitor.cpp"
+    )
+    target_include_directories(
+        libusb_hotplug_monitor_test
+        PRIVATE "${PROJECT_SOURCE_DIR}/src/transport/include"
+    )
+    target_include_directories(
+        libusb_hotplug_monitor_test
+        SYSTEM PRIVATE "${LIBUSB1_INCLUDE_DIR}"
+    )
+    target_link_libraries(
+        libusb_hotplug_monitor_test
+        PRIVATE Threads::Threads zzrk_project_options zzrk_project_warnings
+    )
+    add_test(NAME libusb_hotplug_monitor COMMAND libusb_hotplug_monitor_test)
+
+    add_executable(
         libusb_bulk_transport_test
         libusb_bulk_transport_test.cpp
         "${PROJECT_SOURCE_DIR}/src/transport/LibusbBulkTransport.cpp"

@@ -27,6 +27,18 @@ public:
     }
   }
 
+  [[nodiscard]] std::optional<transport::UsbHotplugError>
+  startDeviceMonitoring(
+      transport::UsbHotplugEventCallback eventCallback,
+      transport::UsbHotplugErrorCallback errorCallback) override {
+    return hotplugMonitor_.start(std::move(eventCallback),
+                                 std::move(errorCallback));
+  }
+
+  void stopDeviceMonitoring() noexcept override {
+    hotplugMonitor_.stop();
+  }
+
   [[nodiscard]] workflow::PreparedFirmwareUpgradeResult
   prepareFirmware(const std::filesystem::path &imagePath) override {
     auto backend = workflow::createLibusbFirmwareUpgradeBackend();
@@ -96,6 +108,9 @@ public:
     return workflow.erasePartition(portPath, partition, progress,
                                    cancellation);
   }
+
+private:
+  transport::LibusbHotplugMonitor hotplugMonitor_;
 };
 
 } // namespace

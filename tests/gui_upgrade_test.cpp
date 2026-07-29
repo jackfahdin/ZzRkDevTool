@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <thread>
 #include <utility>
@@ -35,22 +36,45 @@ public:
   std::atomic_int inspections{};
   std::atomic_int partitionReads{};
   std::atomic_int partitionOperations{};
+  std::atomic_int monitoringStarts{};
+  std::atomic_int monitoringStops{};
 
   [[nodiscard]] zzrk::transport::ScanResult scanDevices() override {
     ++scans;
     zzrk::transport::ScanResult result;
-    result.devices.push_back(zzrk::transport::UsbDeviceInfo{
-        .vendorId = 0x2207U,
-        .productId = 0x350bU,
-        .bcdUsb = 0x0201U,
-        .bcdDevice = 0x0223U,
-        .busNumber = 1U,
-        .portNumbers = {5U},
-        .portPath = "1-5",
-        .mode = zzrk::transport::DeviceMode::Loader,
-        .deviceAddress = 7U,
-    });
+    result.devices.push_back(makeDevice());
     return result;
+  }
+
+  [[nodiscard]] std::optional<zzrk::transport::UsbHotplugError>
+  startDeviceMonitoring(
+      zzrk::transport::UsbHotplugEventCallback eventCallback,
+      zzrk::transport::UsbHotplugErrorCallback errorCallback) override {
+    std::lock_guard lock{monitoringMutex_};
+    ++monitoringStarts;
+    hotplugEventCallback_ = std::move(eventCallback);
+    hotplugErrorCallback_ = std::move(errorCallback);
+    return std::nullopt;
+  }
+
+  void stopDeviceMonitoring() noexcept override {
+    std::lock_guard lock{monitoringMutex_};
+    ++monitoringStops;
+    hotplugEventCallback_ = {};
+    hotplugErrorCallback_ = {};
+  }
+
+  void emitDeviceChange(
+      const zzrk::transport::UsbHotplugEvent event =
+          zzrk::transport::UsbHotplugEvent::Arrived) {
+    zzrk::transport::UsbHotplugEventCallback callback;
+    {
+      std::lock_guard lock{monitoringMutex_};
+      callback = hotplugEventCallback_;
+    }
+    if (callback) {
+      callback(event);
+    }
   }
 
   [[nodiscard]] zzrk::workflow::PreparedFirmwareUpgradeResult
@@ -114,6 +138,8 @@ public:
       const zzrk::workflow::FirmwareUpgradeCancellationCallback &cancellation)
       override {
     ++upgrades;
+    emitDeviceChange(zzrk::transport::UsbHotplugEvent::Left);
+    std::this_thread::sleep_for(20ms);
     const auto reportEvent = [&](zzrk::workflow::FirmwareUpgradeEvent event) {
       if (progress) {
         progress(event);
@@ -179,7 +205,7 @@ public:
   [[nodiscard]] zzrk::workflow::DeviceInspectionResult
   inspectDevice(const std::string &portPath) override {
     ++inspections;
-    auto device = scanDevices().devices.front();
+    auto device = makeDevice();
     device.portPath = portPath;
     zzrk::session::ChipInfo chipInfo{};
     chipInfo.bytes[0] = std::byte{'8'};
@@ -215,7 +241,7 @@ public:
   [[nodiscard]] zzrk::workflow::DevicePartitionTableResult
   readPartitions(const std::string &portPath) override {
     ++partitionReads;
-    auto device = scanDevices().devices.front();
+    auto device = makeDevice();
     device.portPath = portPath;
     zzrk::storage::GptPartitionTable table{};
     table.revision = 0x00010000U;
@@ -271,6 +297,24 @@ public:
   }
 
 private:
+  [[nodiscard]] static zzrk::transport::UsbDeviceInfo makeDevice() {
+    return zzrk::transport::UsbDeviceInfo{
+        .vendorId = 0x2207U,
+        .productId = 0x350bU,
+        .bcdUsb = 0x0201U,
+        .bcdDevice = 0x0223U,
+        .busNumber = 1U,
+        .portNumbers = {5U},
+        .portPath = "1-5",
+        .mode = zzrk::transport::DeviceMode::Loader,
+        .deviceAddress = 7U,
+    };
+  }
+
+  std::mutex monitoringMutex_;
+  zzrk::transport::UsbHotplugEventCallback hotplugEventCallback_;
+  zzrk::transport::UsbHotplugErrorCallback hotplugErrorCallback_;
+
   [[nodiscard]] zzrk::workflow::PartitionOperationResult partitionOperation(
       const zzrk::workflow::PartitionOperationPhase phase,
       const std::string &partition, const bool verified,
@@ -316,11 +360,35 @@ int main(int argc, char *argv[]) {
   bool inspectionCompleted = false;
   bool partitionsCompleted = false;
   bool partitionOperationFinished = false;
+  bool upgradeUiCompleted = false;
   bool failed = false;
+  int completedScans = 0;
   std::vector<std::pair<int, int>> progressValues;
 
   QObject::connect(&window, &MainWindow::scanCompleted, &application, [&] {
+    ++completedScans;
+    if (completedScans == 1) {
+      if (backend->monitoringStarts.load() != 1) {
+        failed = true;
+        application.exit(EXIT_FAILURE);
+        return;
+      }
+      backend->emitDeviceChange(zzrk::transport::UsbHotplugEvent::Arrived);
+      backend->emitDeviceChange(zzrk::transport::UsbHotplugEvent::Left);
+      backend->emitDeviceChange(zzrk::transport::UsbHotplugEvent::Arrived);
+      return;
+    }
+    if (upgradeUiCompleted) {
+      failed = failed || completedScans != 3 || backend->scans.load() != 3;
+      application.exit(failed ? EXIT_FAILURE : EXIT_SUCCESS);
+      return;
+    }
     if (started) {
+      return;
+    }
+    if (completedScans != 2 || backend->scans.load() != 2) {
+      failed = true;
+      application.exit(EXIT_FAILURE);
       return;
     }
     started = true;
@@ -463,8 +531,11 @@ int main(int argc, char *argv[]) {
         backend->upgrades.load() == 1 && backend->inspections.load() == 1 &&
         backend->partitionReads.load() == 1 &&
         backend->partitionOperations.load() == 1;
+    upgradeUiCompleted = complete;
     failed = failed || !complete;
-    application.exit(failed ? EXIT_FAILURE : EXIT_SUCCESS);
+    if (failed) {
+      application.exit(EXIT_FAILURE);
+    }
   });
 
   QTimer::singleShot(5000, &application, [&] {
