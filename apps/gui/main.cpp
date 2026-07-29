@@ -26,6 +26,7 @@ bool hasCompletedUiState(const MainWindow &window)
         window.findChild<QToolButton *>(QStringLiteral("refreshButton"));
     return connectionText != nullptr && !connectionText->text().isEmpty()
         && connectionText->text() != QStringLiteral("正在检测设备...")
+        && connectionText->property("hotplugAvailable").toBool()
         && lastScanText != nullptr
         && lastScanText->text().startsWith(QStringLiteral("更新于 "))
         && refreshButton != nullptr && refreshButton->isEnabled()

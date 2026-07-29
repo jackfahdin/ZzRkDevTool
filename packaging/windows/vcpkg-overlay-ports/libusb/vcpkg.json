@@ -1,0 +1,14 @@
+{
+  "name": "libusb",
+  "version": "1.0.30",
+  "description": "Cross-platform library for USB device access",
+  "homepage": "https://github.com/libusb/libusb",
+  "license": "LGPL-2.1-or-later",
+  "supports": "windows & !uwp",
+  "dependencies": [
+    {
+      "name": "vcpkg-msbuild",
+      "host": true
+    }
+  ]
+}

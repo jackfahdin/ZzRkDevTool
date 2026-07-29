@@ -2,12 +2,14 @@
 
 #pragma once
 
+#include <zzrk/transport/LibusbHotplugMonitor.hpp>
 #include <zzrk/transport/UsbDeviceScanner.hpp>
 #include <zzrk/workflow/DeviceManagementWorkflow.hpp>
 #include <zzrk/workflow/FirmwareUpgradeWorkflow.hpp>
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 
 namespace zzrk::gui {
 
@@ -16,6 +18,12 @@ public:
   virtual ~IGuiOperationBackend() = default;
 
   [[nodiscard]] virtual transport::ScanResult scanDevices() = 0;
+
+  [[nodiscard]] virtual std::optional<transport::UsbHotplugError>
+  startDeviceMonitoring(
+      transport::UsbHotplugEventCallback eventCallback,
+      transport::UsbHotplugErrorCallback errorCallback) = 0;
+  virtual void stopDeviceMonitoring() noexcept = 0;
 
   [[nodiscard]] virtual workflow::PreparedFirmwareUpgradeResult
   prepareFirmware(const std::filesystem::path &imagePath) = 0;

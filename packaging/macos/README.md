@@ -7,7 +7,9 @@ a separately installed kernel extension or USB driver.
 
 ## Build
 
-Configure with Qt 6.11.1 and a dynamic libusb 1.0.30 installation:
+Configure with Qt 6.11.1 and a dynamic libusb 1.0.30 or newer installation.
+The runtime must report `LIBUSB_CAP_HAS_HOTPLUG`; older or capability-disabled
+libraries are rejected and are not replaced by device polling:
 
 ```bash
 cmake -S . -B build/macos-release -G Ninja \

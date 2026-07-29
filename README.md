@@ -19,8 +19,11 @@ Initialize the pinned spdlog v2 submodule after cloning:
 git submodule update --init thirdParty/spdlog
 ```
 
-The tracked Linux presets use libusb 1.0.30 from `thirdParty/libusb`. Point
-CMake at a Qt 6.11 or newer installation when configuring a fresh clone:
+All application builds require libusb 1.0.30 or newer and a runtime that
+reports `LIBUSB_CAP_HAS_HOTPLUG`. Older runtimes and builds without platform
+hotplug support are rejected; there is no device-polling fallback. The tracked
+Linux presets use libusb 1.0.30 from `thirdParty/libusb`. Point CMake at a Qt
+6.11 or newer installation when configuring a fresh clone:
 
 ```bash
 cmake --preset linux-debug -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/gcc_64"
@@ -139,7 +142,11 @@ current-operation progress. The partition page validates GPT before listing
 names and LBA ranges, then supports backup, bounded image write with optional
 per-block read-back, erase, progress, and cancellation. Partition writes and
 erases use separate confirmations that identify the port, partition, LBA range,
-and capacity. Device polling is paused while any USB operation owns the device.
+and capacity. A dedicated libusb event context monitors Rockchip arrival and
+departure events. Bursts are debounced before scanning; events received while
+a USB operation owns the device are serviced after that operation completes.
+The startup scan and explicit refresh button remain available, but no periodic
+polling is used.
 The current session retains a bounded 50-entry upgrade history whose completed
 rows can export the same redacted JSON report model used by the CLI. Offscreen
 automated backend tests cover discovery, device details, partition listing,

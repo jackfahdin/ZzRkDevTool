@@ -7,8 +7,18 @@ project has an Authenticode certificate and a signed driver package.
 
 ## Build
 
-Use an MSVC x64 developer shell with Qt 6.11.1 and a dynamic libusb 1.0.30
-installation. `ZZRK_LIBUSB_ROOT` must contain:
+Use an MSVC x64 developer shell with Qt 6.11.1 and a dynamic libusb 1.0.30 or
+newer installation. Windows libusb must be built with
+`LIBUSB_WINDOWS_HOTPLUG`; a stock library that reports no hotplug capability is
+not supported. The repository's vcpkg overlay pins 1.0.30 and passes
+`EnableWindowsHotplug=true` to the upstream MSBuild project:
+
+```powershell
+& "$env:VCPKG_ROOT\vcpkg.exe" install libusb:x64-windows `
+  "--overlay-ports=$PWD/packaging/windows/vcpkg-overlay-ports"
+```
+
+`ZZRK_LIBUSB_ROOT` must contain:
 
 ```text
 include/libusb-1.0/libusb.h
