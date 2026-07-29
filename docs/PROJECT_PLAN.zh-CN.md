@@ -701,7 +701,7 @@ RK3566/3568、RK3576、RK3399、旧 RK32xx、SPI NOR、SPI NAND、NAND 和 UFS �
 
 ## 17. 当前开发基线
 
-截至 2026-07-29，Linux-first CLI 完整升级基线已经落地：
+截至 2026-07-29，Linux-first CLI 完整升级和 GUI 独立镜像下载基线已经落地：
 
 - Qt 6.11.1、C++20、CMake Presets 和仓库内 libusb 1.0.30 已完成 Debug、Release、ASan/UBSan 构建验证。
 - `libusb-1.0.pc` 使用相对 `pcfiledir`，仓库移动后仍能解析正确的 include 和 library 路径。
@@ -709,7 +709,7 @@ RK3566/3568、RK3576、RK3399、旧 RK32xx、SPI NOR、SPI NAND、NAND 和 UFS �
 - 已实现字节数、扇区数、LBA 强类型，以及 31-byte CBW、13-byte CSW 的显式编解码和 golden tests。
 - 已实现 RAII libusb context、RockUSB VID/PID 过滤、Maskrom/Loader 识别、完整 USB port path，以及按 bus、完整端口链和描述符重新选择设备的单设备 libusb backend。
 - CLI 已支持 `list`、统一 `info`、`probe`、typed 设备信息读取、`read-lba`、`inspect-image`、`plan-image`、`flash-image`、`partitions`、按 GPT 名称读写/擦除分区和 `reset`；所有设备命令都要求显式物理端口并只接受当前验证的 RK3588 Loader 身份与接口布局。关键命令提供 schema version 1 JSON，完整升级使用 JSON Lines 输出进度和唯一终态。
-- fake-libusb、libusb 热插拔事件、CLI JSON golden output、GPT header/entry CRC 与范围校验、session 故障矩阵、typed ReadChipInfo/ReadFlashInfo/ReadFlashID、共享升级 workflow、设备管理 workflow、spdlog 生命周期、Qt 离屏 smoke test、GUI 假后端详情/分区/完整升级测试、诊断报告契约测试和 Linux 临时安装/启动/卸载测试已建立；完整 Linux 构建当前为 20 项测试，并继续作为变更门禁。
+- fake-libusb、libusb 热插拔事件、CLI JSON golden output、GPT header/entry CRC 与范围校验、session 故障矩阵、typed ReadChipInfo/ReadFlashInfo/ReadFlashID、共享升级 workflow、独立镜像下载 workflow、设备管理 workflow、spdlog 生命周期、Qt 离屏 smoke test、GUI 假后端下载镜像/详情/分区/完整升级测试、诊断报告契约测试和 Linux 临时安装/启动/卸载测试已建立；完整 Linux 构建当前为 23 项测试，并继续作为变更门禁。
 - Ubuntu 26.04 x86_64 `.deb` 已包含 CLI、GUI、XCB/offscreen 平台插件、私有 Qt/libusb/ICU 共享库、桌面入口、限定 `2207:350b` 且不使用 `0666` 的 udev 规则、许可证正文和 SPDX 2.3 组件清单；安装脚本创建专用 `zzrkdevtool` 组并刷新规则。
 - target-private `RockusbSession` executor 内部生成 tag，严格执行 CBW、DATA、CSW，短传输或失步错误后进入 Faulted；写入、擦除和复位均通过 typed API 暴露，CLI 和 GUI 不接受 raw CDB。
 - 应用日志通过 `zzrk_logging` 封装 spdlog v2；协议与 session 保持无日志副作用，CLI 的结构化结果继续使用 stdout。
@@ -720,15 +720,18 @@ Ubuntu 26.04 真机已跑通 `pudu_rk3588s` 的完整镜像解析、冷 Loader �
 
 CLI 默认 `--verify critical`，支持 `all` 和 `none`；完整成功后默认 typed reset，`--no-reboot` 可保留 Loader。SIGINT 在 RockUSB 分块边界停止新命令、禁止自动复位并返回 130。当前仍不触碰 eMMC boot0、boot1 或 RPMB。
 
-Qt GUI 已通过可注入的操作 backend 与生产 workflow 解耦，并增加不接触 USB/eMMC 的离屏自动化测试。设备、完整升级和分区三个标签页共用精确物理端口选择与 USB 操作锁；设备页展示 ChipInfo、Capability、FlashInfo、FlashID、容量和接口信息；分区页严格读取 GPT，并提供不覆盖输出的备份、容量受限写入、默认逐块回读、擦除、进度和安全取消。写入与擦除均使用显示端口、分区、LBA 和容量的独立确认。完整升级界面同时保留当前操作百分比和完整烧录计划的累计百分比，并记录最近 50 条本次会话升级任务及其成功、失败或取消结果。GUI 设备发现使用 libusb 1.0.30 事件式热插拔，不保留周期轮询；突发事件先去抖，USB 忙碌期间只记录待刷新状态，操作释放设备后再扫描。CLI 和 GUI 共用升级报告模型；报告包含设备身份、固件 MD5、不可变计划、校验策略、逐步骤耗时和 typed 终态，通过 `QSaveFile` 原子导出 JSON，默认不保存固件完整路径。
+Qt GUI 已通过可注入的操作 backend 与生产 workflow 解耦，并增加不接触 USB/eMMC 的离屏自动化测试。下载镜像、设备、完整升级和分区四个标签页共用精确物理端口选择与 USB 操作锁。“下载镜像”位于首标签，既可读取设备现有 GPT，也可从文本 `parameter.txt` 重建主/备 GPT；表格只允许按布局中的 Loader、GPT 和分区名选择目标，不接受任意 LBA。镜像目录优先匹配 `boot_a.img`、`boot_b.img` 等精确名称，没有精确文件时用 `boot.img` 同时匹配 A/B；支持独立 `MiniLoaderAll.bin`、Raw 和 Android Sparse，匹配项及逐行回读校验默认开启。所有来源文件用 Qt 6 MD5 固化并在打开 USB 前复核，写入阶段同时展示当前目标和完整计划累计进度，支持分块取消与默认完成后复位。首版明确不兼容二进制 `config.cfg`。
+
+设备页展示 ChipInfo、Capability、FlashInfo、FlashID、容量和接口信息；分区页严格读取 GPT，并提供不覆盖输出的备份、容量受限写入、默认逐块回读、擦除、进度和安全取消。写入与擦除均使用显示端口、分区、LBA 和容量的独立确认。完整升级界面同时保留当前操作百分比和完整烧录计划的累计百分比，并记录最近 50 条本次会话升级任务及其成功、失败或取消结果。GUI 设备发现使用 libusb 1.0.30 事件式热插拔，不保留周期轮询；突发事件先去抖，USB 忙碌期间只记录待刷新状态，操作释放设备后再扫描。CLI 和 GUI 共用升级报告模型；报告包含设备身份、固件 MD5、不可变计划、校验策略、逐步骤耗时和 typed 终态，通过 `QSaveFile` 原子导出 JSON，默认不保存固件完整路径。
 
 下一批开发按以下顺序推进：
 
 1. **已完成**：建立 Ubuntu 26.04 x86_64 自包含 `.deb`、udev 权限、许可证/SBOM 和临时安装 smoke test。
 2. **已完成**：建立 CLI/GUI 共用的结构化升级报告、默认路径脱敏、逐步骤计时和历史任务导出。
 3. **已完成**：完善 GUI 设备详情和分区管理，复用 typed 设备信息、GPT、分区读写/擦除能力，并保持 USB 互斥、高危操作预检和确认。
-4. **进行中**：已建立 Windows x86_64 ZIP 与 macOS DMG 的构建、19 项跨平台无硬件测试、部署后启动检查和 CI 产物上传；Linux 另有第 20 项安装 smoke test。Windows libusb overlay 固定 1.0.30 并强制启用 `LIBUSB_WINDOWS_HOTPLUG`，同时保留签名 WinUSB INF/CAT 门禁；macOS CI 使用 ad-hoc 签名验证最终 bundle。正式 Authenticode/Developer ID 签名、公证和两平台 RK3588 真机验证仍属于发布门禁。
-5. **TODO（等待设备空闲，不阻塞当前开发）**：用第二块 RK3588/eMMC 板卡和更多 Loader revision 建立兼容矩阵，在有协议证据后再放宽当前严格身份匹配。第二块板卡当前用于其他测试，不要求中断。
+4. **已完成（待真机验收）**：实现 GUI 首标签“下载镜像”，支持设备 GPT、文本 `parameter.txt`、独立 Loader、Raw/Sparse、A/B 自动匹配、逐行校验、双进度、取消和复位。
+5. **进行中**：已建立 Windows x86_64 ZIP 与 macOS DMG 的构建、22 项跨平台无硬件测试、部署后启动检查和 CI 产物上传；Linux 另有第 23 项安装 smoke test。Windows libusb overlay 固定 1.0.30 并强制启用 `LIBUSB_WINDOWS_HOTPLUG`，同时保留签名 WinUSB INF/CAT 门禁；macOS CI 使用 ad-hoc 签名验证最终 bundle。正式 Authenticode/Developer ID 签名、公证和两平台 RK3588 真机验证仍属于发布门禁。
+6. **TODO（等待设备空闲，不阻塞当前开发）**：用第二块 RK3588/eMMC 板卡和更多 Loader revision 建立兼容矩阵，在有协议证据后再放宽当前严格身份匹配。第二块板卡当前用于其他测试，不要求中断。
 
 ## 18. 待验证与发布清单
 
@@ -739,6 +742,8 @@ Qt GUI 已通过可注入的操作 backend 与生产 workflow 解耦，并增加
 - [ ] 在干净的 Ubuntu 26.04 x86_64 主机安装 `zzrkdevtool_0.1.0_amd64.deb`，确认依赖、桌面入口、卸载和重新安装正常。
 - [ ] 使用普通用户验证 udev `uaccess`；无桌面会话时验证 `zzrkdevtool` 组权限，禁止以 root 运行应用规避权限问题。
 - [ ] 验证 GUI 设备页的 ChipInfo、Capability、FlashInfo、FlashID、eMMC 容量以及 USB 接口信息。
+- [ ] 在 Loader 模式读取设备 GPT，用“下载镜像”只选择一个可恢复测试分区，分别验证 Raw、Sparse、逐行校验开关、取消和完成后复位；不得用启动链分区做首次破坏性测试。
+- [ ] 使用同一套固件目录加载文本 `parameter.txt`，确认 `boot_a.img`/`boot_b.img` 优先于通用 `boot.img`，通用无后缀镜像可同时匹配 A/B；核对 Loader、GPT、分区写入顺序和当前/累计进度。二进制 `config.cfg` 不属于首版验收范围。
 - [ ] 验证 GUI 分区页的主 GPT 列表、分区范围和只读备份；确认已有备份文件不会被覆盖，取消时只留下明确的 `.partial` 文件。
 - [ ] 使用可恢复的专用测试分区验证 GUI 写入、逐块回读、擦除和取消。不得使用 `uboot_a/b`、`boot_a/b`、`vbmeta_a/b` 等启动链分区做首次破坏性测试。
 - [ ] 分别导出 CLI 与 GUI 的成功、失败、取消报告，检查 schema、固件 MD5、步骤耗时、typed 终态和默认路径脱敏。
@@ -746,14 +751,14 @@ Qt GUI 已通过可注入的操作 backend 与生产 workflow 解耦，并增加
 
 ### 18.2 Windows
 
-- [ ] 在 Windows 10 22H2 x64 和 Windows 11 x64 上完成 MSVC Release 构建、19 项无硬件测试、ZIP 解压启动、libusb 1.0.30 热插拔能力以及 Qt/libusb DLL 检查。
+- [ ] 在 Windows 10 22H2 x64 和 Windows 11 x64 上完成 MSVC Release 构建、22 项无硬件测试、ZIP 解压启动、libusb 1.0.30 热插拔能力以及 Qt/libusb DLL 检查。
 - [ ] 为测试设备记录现有 USB 驱动，再绑定兼容 WinUSB 驱动，验证 `list`、`info`、`--prepare-only` 和完整升级；同时验证恢复原驱动的流程。
 - [ ] 发布前制作项目自有 INF/CAT，完成可信签名；应用 EXE/DLL 完成 Authenticode SHA-256 签名和时间戳验证。
 - [ ] 在没有 Qt、Visual Studio 和 vcpkg 的干净机器验证 ZIP，确认 GUI、CLI 和 MSVC runtime 均为自包含。
 
 ### 18.3 macOS
 
-- [ ] 在真实 macOS 主机完成 19 项无硬件测试、libusb 热插拔能力、DMG 挂载、CLI 启动、bundle 签名以及 `@rpath` libusb 依赖检查。
+- [ ] 在真实 macOS 主机完成 22 项无硬件测试、libusb 热插拔能力、DMG 挂载、CLI 启动、bundle 签名以及 `@rpath` libusb 依赖检查。
 - [ ] 分别在 Apple Silicon 和仍计划支持的 Intel 主机执行 USB 枚举、`info`、`--prepare-only` 和完整升级验证。
 - [ ] 发布前使用 Developer ID Application 签名并启用 hardened runtime，提交 Apple 公证、staple DMG，再用 Gatekeeper 做离线验收。
 
