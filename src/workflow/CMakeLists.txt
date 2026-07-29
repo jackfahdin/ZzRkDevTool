@@ -5,6 +5,7 @@ add_library(
     src/DeviceManagementWorkflow.cpp
     src/FirmwareUpgradeReport.cpp
     src/FirmwareUpgradeWorkflow.cpp
+    src/ImageDownloadWorkflow.cpp
     src/LibusbFirmwareUpgradeBackend.cpp
 )
 add_library(zzrk::workflow ALIAS zzrk_workflow)

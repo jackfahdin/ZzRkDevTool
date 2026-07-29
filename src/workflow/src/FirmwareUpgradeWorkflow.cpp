@@ -2,6 +2,8 @@
 
 #include <zzrk/workflow/FirmwareUpgradeWorkflow.hpp>
 
+#include "FirmwareUpgradeWorkflowInternal.hpp"
+
 #include <zzrk/session/ReadChipInfo.hpp>
 #include <zzrk/session/ReadFlashId.hpp>
 #include <zzrk/session/ReadFlashInfo.hpp>
@@ -16,7 +18,7 @@
 #include <utility>
 
 namespace zzrk::workflow {
-namespace {
+namespace detail {
 
 using namespace std::chrono_literals;
 
@@ -90,7 +92,7 @@ makeError(const FirmwareUpgradeErrorCode code,
         expected, std::span{chipInfo.bytes}.first(expected.size()));
 }
 
-[[nodiscard]] std::variant<transport::UsbDeviceInfo, FirmwareUpgradeError>
+[[nodiscard]] SelectedDevice
 selectDevice(const transport::ScanResult& scan,
              const std::string_view portPath)
 {
@@ -171,10 +173,6 @@ waitForDevice(IFirmwareUpgradeBackend& backend,
                      portPath);
 }
 
-using PreparedTransport =
-    std::variant<std::unique_ptr<transport::IFlashTransport>,
-                 FirmwareUpgradeError>;
-
 [[nodiscard]] PreparedTransport openDevice(
     IFirmwareUpgradeBackend& backend,
     const transport::UsbDeviceInfo& device,
@@ -196,7 +194,7 @@ using PreparedTransport =
     IFirmwareUpgradeBackend& backend,
     const std::string_view portPath,
     const transport::UsbDeviceInfo& initialDevice,
-    const image::RkFirmwareImage& image,
+    const image::RkLoaderImage* loader,
     const FirmwareUpgradeProgressCallback& progress,
     const FirmwareUpgradeCancellationCallback& cancellation)
 {
@@ -281,8 +279,14 @@ using PreparedTransport =
         return maskromTransport;
     }
 
+    if (loader == nullptr) {
+        static_cast<void>(maskromTransport->close());
+        return makeError(FirmwareUpgradeErrorCode::planInvalid,
+                         FirmwareUpgradeStage::planImage, "Loader");
+    }
+
     report(progress, FirmwareUpgradeStage::downloadLoader, "Loader", 0,
-           image.loader.has_value() ? image.loader->idBlockSize : 0U);
+           loader->info.idBlockSize);
     const auto loaderProgress = [&](const std::string_view stage,
                                     const std::uint64_t completed,
                                     const std::uint64_t total) {
@@ -290,7 +294,7 @@ using PreparedTransport =
                completed, total);
     };
     const auto downloaded = image::downloadRkMaskromLoader(
-        *maskromTransport, image, loaderProgress, cancellation);
+        *maskromTransport, *loader, loaderProgress, cancellation);
     if (const auto* error =
             std::get_if<image::MaskromLoaderError>(&downloaded)) {
         auto result = makeError(
@@ -364,7 +368,14 @@ using PreparedTransport =
     return usbplugTransport;
 }
 
-} // namespace
+} // namespace detail
+
+using detail::cancelled;
+using detail::makeError;
+using detail::prepareRamLoader;
+using detail::report;
+using detail::selectDevice;
+using namespace std::chrono_literals;
 
 FirmwareUpgradeWorkflow::FirmwareUpgradeWorkflow(
     IFirmwareUpgradeBackend& backend,
@@ -463,8 +474,27 @@ FirmwareUpgradeResult FirmwareUpgradeWorkflow::execute(
     report(progress, FirmwareUpgradeStage::selectDevice, request.portPath, 0U,
            0U, {}, selectedDevice);
 
+    const auto loaderEntry = std::ranges::find(
+        prepared.image.entries, std::string{"bootloader"},
+        &image::FirmwareEntry::name);
+    std::optional<image::RkLoaderImage> loader;
+    if (prepared.image.loader.has_value()
+        && loaderEntry != prepared.image.entries.end()) {
+        loader = image::RkLoaderImage{
+            .source = image::FirmwarePayloadSource{
+                .sourcePath = prepared.image.sourcePath,
+                .fileOffset = loaderEntry->fileOffset,
+                .contentSize = loaderEntry->contentSize,
+                .logicalSize = loaderEntry->logicalSize,
+                .format = image::PayloadFormat::raw,
+            },
+            .info = *prepared.image.loader,
+        };
+    }
+
     auto preparedTransport = prepareRamLoader(
-        backend_, request.portPath, selectedDevice, prepared.image, progress,
+        backend_, request.portPath, selectedDevice,
+        loader.has_value() ? &*loader : nullptr, progress,
         cancellation);
     if (const auto* error =
             std::get_if<FirmwareUpgradeError>(&preparedTransport)) {
