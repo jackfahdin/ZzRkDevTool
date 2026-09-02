@@ -584,6 +584,9 @@ MainWindow::MainWindow(
     QWidget *parent)
     : QMainWindow(parent)
     , m_backend(std::move(backend))
+    , m_workspaceController(
+          std::make_unique<zzrk::gui::MainWorkspaceController>(
+              m_backend, showModalDialogs))
     , m_showModalDialogs(showModalDialogs)
 {
     if (!m_backend) {
@@ -1236,6 +1239,9 @@ MainWindow::MainWindow(
 
 MainWindow::~MainWindow()
 {
+    if (m_workspaceController) {
+        m_workspaceController->shutdown();
+    }
     m_shuttingDown = true;
     m_hotplugDebounceTimer->stop();
     m_backend->stopDeviceMonitoring();

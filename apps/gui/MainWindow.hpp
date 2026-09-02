@@ -3,6 +3,7 @@
 #pragma once
 
 #include "GuiOperationBackend.hpp"
+#include "MainWorkspaceController.hpp"
 #include "UpgradeProgressTracker.hpp"
 
 #include <zzrk/workflow/FirmwareUpgradeReport.hpp>
@@ -43,6 +44,12 @@ public:
     void loadFirmwareImage(const QString &path);
     void loadDownloadParameter(const QString &path);
     void loadDownloadDirectory(const QString &path);
+
+    [[nodiscard]] zzrk::gui::MainWorkspaceController *workspaceController()
+        const noexcept
+    {
+        return m_workspaceController.get();
+    }
 
 signals:
     void scanCompleted();
@@ -124,6 +131,8 @@ private:
     [[nodiscard]] bool usbOperationRunning() const;
 
     std::shared_ptr<zzrk::gui::IGuiOperationBackend> m_backend;
+    // 保留旧页面实现期间的工作区协调器；页面迁移完成后由其独占业务状态。
+    std::unique_ptr<zzrk::gui::MainWorkspaceController> m_workspaceController;
     QFutureWatcher<zzrk::transport::ScanResult> m_scanWatcher;
     QFutureWatcher<zzrk::workflow::PreparedFirmwareUpgradeResult>
         m_prepareWatcher;
