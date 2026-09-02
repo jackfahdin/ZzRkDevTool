@@ -2,3 +2,7 @@
 	path = thirdParty/spdlog
 	url = https://github.com/gabime/spdlog.git
 	branch = v2.x
+[submodule "thirdParty/ZzPureTools"]
+	path = thirdParty/ZzPureTools
+	url = git@github.com:jackfahdin/ZzPureTools.git
+	branch = master
