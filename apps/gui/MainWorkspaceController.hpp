@@ -10,9 +10,11 @@
 
 #include <QFutureWatcher>
 #include <QObject>
+#include <QPointer>
 #include <QString>
 
 #include <atomic>
+#include <functional>
 #include <memory>
 
 class QLabel;
@@ -54,6 +56,7 @@ public:
 
     void attachWorkspace(ZzFluentUI::ZzTabWidget *tabs,
                          QStatusBar *statusBar);
+    void setExternalBusyCallback(std::function<bool()> callback);
 
     [[nodiscard]] ZzCore::ZzResult<std::unique_ptr<ZzPureTools::ZzPageInstance>>
     createInitialDownloadPage(QWidget *pageParent);
@@ -87,7 +90,8 @@ private:
     void startMonitoring();
 
     std::shared_ptr<IGuiOperationBackend> m_backend;
-    MainWorkspaceViewModel m_viewModel;
+    std::unique_ptr<MainWorkspaceViewModel> m_viewModelOwner;
+    QPointer<MainWorkspaceViewModel> m_viewModel;
     QFutureWatcher<zzrk::transport::ScanResult> m_scanWatcher;
     ZzFluentUI::ZzTabWidget *m_tabs = nullptr;
     QStatusBar *m_statusBar = nullptr;
@@ -101,6 +105,7 @@ private:
     bool m_showModalDialogs = true;
     bool m_shuttingDown = false;
     bool m_monitoringStarted = false;
+    std::function<bool()> m_externalBusyCallback;
 };
 
 } // namespace zzrk::gui

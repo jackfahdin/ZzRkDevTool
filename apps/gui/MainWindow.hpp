@@ -133,7 +133,6 @@ private:
     std::shared_ptr<zzrk::gui::IGuiOperationBackend> m_backend;
     // 保留旧页面实现期间的工作区协调器；页面迁移完成后由其独占业务状态。
     std::unique_ptr<zzrk::gui::MainWorkspaceController> m_workspaceController;
-    QFutureWatcher<zzrk::transport::ScanResult> m_scanWatcher;
     QFutureWatcher<zzrk::workflow::PreparedFirmwareUpgradeResult>
         m_prepareWatcher;
     QFutureWatcher<zzrk::workflow::FirmwareUpgradeResult> m_upgradeWatcher;
@@ -151,7 +150,6 @@ private:
     QLabel *m_connectionText = nullptr;
     QLabel *m_lastScanText = nullptr;
     QToolButton *m_refreshButton = nullptr;
-    QTimer *m_hotplugDebounceTimer = nullptr;
     QComboBox *m_downloadDeviceCombo = nullptr;
     QComboBox *m_downloadLayoutCombo = nullptr;
     QLineEdit *m_downloadLayoutPathEdit = nullptr;
@@ -203,9 +201,6 @@ private:
     std::optional<zzrk::workflow::DevicePartitionTable> m_partitions;
     std::optional<zzrk::image::RockchipParameterLayout> m_downloadLayout;
     std::optional<zzrk::gui::UpgradeProgressTracker> m_progressTracker;
-    std::shared_ptr<std::atomic_bool> m_upgradeCancellation;
-    std::shared_ptr<std::atomic_bool> m_downloadCancellation;
-    std::shared_ptr<std::atomic_bool> m_partitionCancellation;
     std::shared_ptr<zzrk::workflow::FirmwareUpgradeReportBuilder>
         m_activeReportBuilder;
     std::unordered_map<std::uint64_t,
@@ -228,6 +223,5 @@ private:
     zzrk::workflow::PartitionOperationPhase m_partitionOperationPhase{
         zzrk::workflow::PartitionOperationPhase::read};
     bool m_showModalDialogs = true;
-    bool m_hotplugRefreshPending = false;
     bool m_shuttingDown = false;
 };
