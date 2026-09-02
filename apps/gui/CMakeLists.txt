@@ -16,6 +16,9 @@ target_link_libraries(
     zzrk_gui_support
     PRIVATE
         Qt6::Concurrent
+        Zz::PureTools
+        Zz::WindowKit
+        Zz::FluentUI
         zzrk::logging
         zzrk::qt_support
         zzrk_project_warnings
