@@ -3,6 +3,7 @@
 #include "MainWorkspaceController.hpp"
 
 #include <ZzFluentUI/ZzTabWidget.h>
+#include <ZzPureTools/ZzPageHost.h>
 
 #include <QDateTime>
 #include <QLabel>
@@ -159,6 +160,9 @@ MainWorkspaceController::createInitialDownloadPage(QWidget *pageParent)
 {
     if (pageParent == nullptr) {
         return pageFailure(QStringLiteral("下载镜像页面父对象不能为空"));
+    }
+    if (qobject_cast<ZzPureTools::ZzPageHost *>(pageParent) == nullptr) {
+        return pageFailure(QStringLiteral("下载镜像页面必须挂载到框架页面宿主"));
     }
 
     auto *view = new QWidget(pageParent);
