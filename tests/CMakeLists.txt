@@ -212,7 +212,7 @@ if(TARGET zzrk_gui_support)
     )
     target_link_libraries(
         gui_framework_test
-        PRIVATE Zz::WindowKit zzrk::gui zzrk_project_warnings
+        PRIVATE Zz::WindowKit Zz::FluentUI zzrk::gui zzrk_project_warnings
     )
     add_test(NAME gui_framework COMMAND gui_framework_test)
     set_tests_properties(

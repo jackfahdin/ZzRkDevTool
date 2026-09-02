@@ -8,6 +8,10 @@ qt_add_library(
     GuiOperationBackend.hpp
     GuiApplicationBootstrap.cpp
     GuiApplicationBootstrap.hpp
+    MainWorkspaceController.cpp
+    MainWorkspaceController.hpp
+    MainWorkspaceViewModel.cpp
+    MainWorkspaceViewModel.hpp
     MainWindow.cpp
     MainWindow.hpp
     UpgradeProgressTracker.cpp
