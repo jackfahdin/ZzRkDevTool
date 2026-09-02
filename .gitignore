@@ -5,6 +5,7 @@
 /build/
 /build-*/
 /cmake-build-*/
+/.worktrees/
 
 # Generated artifacts
 /dist/
