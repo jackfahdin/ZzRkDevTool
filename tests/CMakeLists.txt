@@ -198,6 +198,28 @@ if(TARGET ZzRkDevTool)
 endif()
 
 if(TARGET zzrk_gui_support)
+    add_executable(
+        gui_framework_test
+        gui_framework_test.cpp
+        GuiTestHarness.cpp
+        GuiTestHarness.hpp
+    )
+    target_include_directories(
+        gui_framework_test
+        PRIVATE
+            "${PROJECT_SOURCE_DIR}/apps/gui"
+            "${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+    target_link_libraries(
+        gui_framework_test
+        PRIVATE Zz::WindowKit zzrk::gui zzrk_project_warnings
+    )
+    add_test(NAME gui_framework COMMAND gui_framework_test)
+    set_tests_properties(
+        gui_framework
+        PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+
     add_executable(upgrade_progress_tracker_test
                    upgrade_progress_tracker_test.cpp)
     target_link_libraries(

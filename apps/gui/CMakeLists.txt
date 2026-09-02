@@ -6,6 +6,8 @@ qt_add_library(
     zzrk_gui_support STATIC
     GuiOperationBackend.cpp
     GuiOperationBackend.hpp
+    GuiApplicationBootstrap.cpp
+    GuiApplicationBootstrap.hpp
     MainWindow.cpp
     MainWindow.hpp
     UpgradeProgressTracker.cpp
@@ -16,7 +18,6 @@ target_link_libraries(
     zzrk_gui_support
     PRIVATE
         Qt6::Concurrent
-        Zz::PureTools
         Zz::WindowKit
         Zz::FluentUI
         zzrk::logging
@@ -26,6 +27,8 @@ target_link_libraries(
         Qt6::Core
         Qt6::Gui
         Qt6::Widgets
+        Zz::Core
+        Zz::PureTools
         zzrk::transport
         zzrk::workflow
 )
