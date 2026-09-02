@@ -46,3 +46,19 @@ Total Test time = 0.72 sec
 - 任务 3 的页面实例所有权契约已通过 `ZzPageInstance::create()` 验证，但下载 View 仍是占位页面；真实下载镜像页面和四标签完整装配留给后续任务 4-6。
 - 旧 `MainWindow` 业务逻辑暂未全部删除或改为 Controller 转发，以保持现有升级/下载 GUI 回归测试稳定；后续页面迁移完成后应移除重复 watcher 和旧顶层窗口实现。
 - 本工作树的旧 `build-zzpuretools` 目录会触发任务 1 的安装规则作用域检查，因此验证使用全新的 `build-task2` 目录。
+
+## 审查修复
+
+- 移除 `MainWindow` 的扫描 watcher、热插拔 debounce timer 和 backend 监控启动/停止；Controller 现在是唯一的设备扫描与热插拔协调者。旧窗口仅接收 `devicesChanged` 更新设备表，保留兼容业务信号和页面操作。
+- Controller 支持外部忙碌回调，避免升级、镜像下载或分区 watcher 运行时由热插拔触发并发扫描；MainWindow 的共享 cancellation token 改为使用 Controller ViewModel 中的唯一原子值。
+- Controller 将 ViewModel 所有权改为可转移的 `unique_ptr`。创建首个下载页面时转移该唯一 ViewModel 给 `ZzPageInstance`，Controller 仅以 `QPointer` 观察；页面销毁回调使用 Controller 的 guarded pointer，避免迟到销毁回调访问悬空对象。
+- MainWindow 的设备选中端口同步写入共享 ViewModel，后续页面可观察同一状态。
+
+修复后重新执行：
+
+```text
+cmake --build build-task2 --target gui_upgrade_test gui_image_download_test gui_framework_test -j2
+QT_QPA_PLATFORM=offscreen ctest --test-dir build-task2 -R 'gui_(upgrade|image_download|framework)' --output-on-failure
+```
+
+实际结果：三个目标成功构建，`gui_framework`、`gui_upgrade`、`gui_image_download` 全部通过（3/3，0.44 秒）。

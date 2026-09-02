@@ -1113,17 +1113,32 @@ MainWindow::MainWindow(
     statusBar()->addPermanentWidget(m_lastScanText);
     statusBar()->showMessage(QStringLiteral("准备就绪"));
 
-    m_hotplugDebounceTimer = new QTimer(this);
-    m_hotplugDebounceTimer->setInterval(150);
-    m_hotplugDebounceTimer->setSingleShot(true);
-
     connect(m_refreshButton, &QToolButton::clicked, this, &MainWindow::refreshDevices);
-    connect(m_hotplugDebounceTimer, &QTimer::timeout,
-            this, &MainWindow::processPendingDeviceRefresh);
-    connect(&m_scanWatcher,
-            &QFutureWatcher<zzrk::transport::ScanResult>::finished,
-            this,
-            &MainWindow::handleScanFinished);
+    connect(m_workspaceController.get(),
+            &zzrk::gui::MainWorkspaceController::devicesChanged,
+            this, &MainWindow::applyScanResult);
+    connect(m_workspaceController.get(),
+            &zzrk::gui::MainWorkspaceController::scanCompleted,
+            this, [this] {
+                emit scanCompleted();
+            });
+    connect(m_workspaceController.get(),
+            &zzrk::gui::MainWorkspaceController::deviceMonitoringError,
+            this, [this](const QString &message) {
+                zzrk::transport::UsbHotplugError error;
+                error.message = message.toStdString();
+                handleDeviceMonitoringError(error);
+            });
+    m_workspaceController->setExternalBusyCallback([this] {
+        return m_prepareWatcher.isRunning() || m_upgradeWatcher.isRunning()
+            || m_downloadPrepareWatcher.isRunning()
+            || m_imageDownloadWatcher.isRunning()
+            || m_inspectionWatcher.isRunning()
+            || m_partitionTableWatcher.isRunning()
+            || m_partitionOperationWatcher.isRunning();
+    });
+    // Controller 负责设备扫描和监控；旧窗口仅保留设备表的展示适配。
+    m_workspaceController->attachWorkspace(nullptr, statusBar());
     connect(m_deviceTable, &QTableWidget::itemSelectionChanged,
             this, &MainWindow::handleDeviceSelectionChanged);
     connect(m_downloadDeviceCombo, &QComboBox::currentIndexChanged,
@@ -1216,25 +1231,8 @@ MainWindow::MainWindow(
             &QFutureWatcher<zzrk::workflow::FirmwareUpgradeResult>::finished,
             this, &MainWindow::handleUpgradeFinished);
 
-    const auto monitoringError = m_backend->startDeviceMonitoring(
-        [this](zzrk::transport::UsbHotplugEvent) {
-            QMetaObject::invokeMethod(
-                this, [this] { handleDeviceChange(); }, Qt::QueuedConnection);
-        },
-        [this](const zzrk::transport::UsbHotplugError& error) {
-            QMetaObject::invokeMethod(
-                this,
-                [this, error] { handleDeviceMonitoringError(error); },
-                Qt::QueuedConnection);
-        });
-    if (monitoringError.has_value()) {
-        handleDeviceMonitoringError(*monitoringError);
-    }
-
     rebuildDownloadTable();
     updateUpgradeControls();
-
-    QTimer::singleShot(0, this, &MainWindow::refreshDevices);
 }
 
 MainWindow::~MainWindow()
@@ -1243,18 +1241,6 @@ MainWindow::~MainWindow()
         m_workspaceController->shutdown();
     }
     m_shuttingDown = true;
-    m_hotplugDebounceTimer->stop();
-    m_backend->stopDeviceMonitoring();
-    if (m_upgradeCancellation) {
-        m_upgradeCancellation->store(true);
-    }
-    if (m_downloadCancellation) {
-        m_downloadCancellation->store(true);
-    }
-    if (m_partitionCancellation) {
-        m_partitionCancellation->store(true);
-    }
-    disconnect(&m_scanWatcher, nullptr, this, nullptr);
     disconnect(&m_prepareWatcher, nullptr, this, nullptr);
     disconnect(&m_upgradeWatcher, nullptr, this, nullptr);
     disconnect(&m_downloadPrepareWatcher, nullptr, this, nullptr);
@@ -1262,7 +1248,6 @@ MainWindow::~MainWindow()
     disconnect(&m_inspectionWatcher, nullptr, this, nullptr);
     disconnect(&m_partitionTableWatcher, nullptr, this, nullptr);
     disconnect(&m_partitionOperationWatcher, nullptr, this, nullptr);
-    m_scanWatcher.waitForFinished();
     m_prepareWatcher.waitForFinished();
     m_upgradeWatcher.waitForFinished();
     m_downloadPrepareWatcher.waitForFinished();
@@ -1274,42 +1259,15 @@ MainWindow::~MainWindow()
 
 void MainWindow::refreshDevices()
 {
-    if (m_shuttingDown || usbOperationRunning()) {
-        return;
+    if (!m_shuttingDown && m_workspaceController != nullptr) {
+        m_workspaceController->refreshDevices();
     }
-
-    m_hotplugRefreshPending = false;
-    m_hotplugDebounceTimer->stop();
-    m_refreshButton->setEnabled(false);
-    statusBar()->showMessage(QStringLiteral("正在扫描 USB 设备..."));
-
-    const auto backend = m_backend;
-    auto future = QtConcurrent::run([backend] {
-        try {
-            return backend->scanDevices();
-        } catch (const std::exception &error) {
-            zzrk::transport::ScanResult result;
-            result.error = zzrk::transport::ScanError{-1, error.what()};
-            return result;
-        } catch (...) {
-            zzrk::transport::ScanResult result;
-            result.error = zzrk::transport::ScanError{-1, "Unknown USB scan failure"};
-            return result;
-        }
-    });
-    m_scanWatcher.setFuture(future);
-    updateUpgradeControls();
 }
 
 void MainWindow::handleDeviceChange()
 {
-    if (m_shuttingDown || !m_deviceMonitoringError.isEmpty()) {
-        return;
-    }
-
-    m_hotplugRefreshPending = true;
-    if (!usbOperationRunning()) {
-        m_hotplugDebounceTimer->start();
+    if (!m_shuttingDown && m_workspaceController != nullptr) {
+        m_workspaceController->handleDeviceChange();
     }
 }
 
@@ -1321,8 +1279,6 @@ void MainWindow::handleDeviceMonitoringError(
     }
 
     m_deviceMonitoringError = QString::fromStdString(error.message);
-    m_hotplugRefreshPending = false;
-    m_hotplugDebounceTimer->stop();
     m_connectionText->setProperty("hotplugAvailable", false);
     m_connectionText->setText(QStringLiteral("设备热插拔检测不可用"));
     m_connectionText->setToolTip(m_deviceMonitoringError);
@@ -1333,23 +1289,14 @@ void MainWindow::handleDeviceMonitoringError(
 
 void MainWindow::processPendingDeviceRefresh()
 {
-    if (m_shuttingDown || !m_hotplugRefreshPending
-        || usbOperationRunning()) {
-        return;
+    if (!m_shuttingDown && m_workspaceController != nullptr) {
+        m_workspaceController->processPendingDeviceRefresh();
     }
-    refreshDevices();
 }
 
 void MainWindow::handleScanFinished()
 {
-    if (m_shuttingDown) {
-        return;
-    }
-
-    applyScanResult(m_scanWatcher.result());
-    m_refreshButton->setEnabled(true);
-
-    emit scanCompleted();
+    // 扫描完成由 MainWorkspaceController 发出并转发到 applyScanResult。
 }
 
 void MainWindow::applyScanResult(const zzrk::transport::ScanResult &result)
@@ -1493,16 +1440,17 @@ QString MainWindow::selectedPartitionName() const
 
 bool MainWindow::usbOperationRunning() const
 {
-    return m_scanWatcher.isRunning() || m_upgradeWatcher.isRunning()
-        || m_imageDownloadWatcher.isRunning()
-        || m_inspectionWatcher.isRunning()
-        || m_partitionTableWatcher.isRunning()
-        || m_partitionOperationWatcher.isRunning();
+    return m_workspaceController != nullptr
+        ? m_workspaceController->usbOperationRunning()
+        : false;
 }
 
 void MainWindow::handleDeviceSelectionChanged()
 {
     const QString portPath = selectedPortPath();
+    if (m_workspaceController != nullptr) {
+        m_workspaceController->viewModel()->setSelectedPortPath(portPath);
+    }
     if (portPath != m_selectedPortCache) {
         m_selectedPortCache = portPath;
         clearDeviceInspection();
@@ -1887,7 +1835,9 @@ void MainWindow::startPartitionOperation(
     }
 
     m_partitionOperationPhase = phase;
-    m_partitionCancellation = std::make_shared<std::atomic_bool>(false);
+    const auto partitionCancellation =
+        m_workspaceController->viewModel()->partitionCancellation();
+    partitionCancellation->store(false);
     m_partitionProgress->setRange(0, 100);
     m_partitionProgress->setValue(0);
     m_partitionStatus->setText(
@@ -1896,7 +1846,7 @@ void MainWindow::startPartitionOperation(
     statusBar()->showMessage(QStringLiteral("分区操作进行中"));
 
     const auto backend = m_backend;
-    const auto cancellation = m_partitionCancellation;
+    const auto cancellation = partitionCancellation;
     const bool verify = m_verifyPartitionWriteCheckBox->isChecked();
     auto future = QtConcurrent::run(
         [this, backend, cancellation, phase, portPath, partition, path,
@@ -1964,11 +1914,12 @@ void MainWindow::handlePartitionOperationProgress(
 
 void MainWindow::cancelPartitionOperation()
 {
-    if (!m_partitionCancellation
-        || !m_partitionOperationWatcher.isRunning()) {
+    const auto cancellation = m_workspaceController->viewModel()
+        ->partitionCancellation();
+    if (!cancellation || !m_partitionOperationWatcher.isRunning()) {
         return;
     }
-    m_partitionCancellation->store(true);
+    cancellation->store(true);
     m_cancelPartitionButton->setEnabled(false);
     m_partitionStatus->setText(
         QStringLiteral("正在等待当前 USB 分块完成..."));
@@ -1980,7 +1931,6 @@ void MainWindow::handlePartitionOperationFinished()
         return;
     }
     const auto result = m_partitionOperationWatcher.result();
-    m_partitionCancellation.reset();
     m_partitionProgress->setRange(0, 100);
     if (const auto *error =
             std::get_if<zzrk::workflow::DeviceManagementError>(&result)) {
@@ -2628,14 +2578,16 @@ void MainWindow::handleDownloadPrepareFinished()
         std::get<zzrk::workflow::PreparedImageDownloadPlan>(
             std::move(result));
     const auto prepared = *m_preparedDownload;
-    m_downloadCancellation = std::make_shared<std::atomic_bool>(false);
+    const auto downloadCancellation =
+        m_workspaceController->viewModel()->downloadCancellation();
+    downloadCancellation->store(false);
     m_downloadOverallProgress->setRange(0, 100);
     m_downloadOverallProgress->setValue(0);
     m_downloadOperationProgress->setRange(0, 0);
     m_downloadStatus->setText(QStringLiteral("正在启动镜像下载..."));
     const auto backend = m_backend;
     const auto request = m_pendingDownloadRequest;
-    const auto cancellation = m_downloadCancellation;
+    const auto cancellation = downloadCancellation;
     auto future = QtConcurrent::run(
         [this, backend, request, prepared, cancellation]() mutable {
             const auto progress =
@@ -2662,10 +2614,12 @@ void MainWindow::handleDownloadPrepareFinished()
 
 void MainWindow::cancelImageDownload()
 {
-    if (!m_downloadCancellation || !m_imageDownloadWatcher.isRunning()) {
+    const auto cancellation = m_workspaceController->viewModel()
+        ->downloadCancellation();
+    if (!cancellation || !m_imageDownloadWatcher.isRunning()) {
         return;
     }
-    m_downloadCancellation->store(true);
+    cancellation->store(true);
     m_cancelDownloadButton->setEnabled(false);
     m_downloadStatus->setText(
         QStringLiteral("正在等待当前 USB 分块完成..."));
@@ -2733,7 +2687,6 @@ void MainWindow::handleImageDownloadFinished()
         return;
     }
     const auto result = m_imageDownloadWatcher.result();
-    m_downloadCancellation.reset();
     m_downloadOverallProgress->setRange(0, 100);
     m_downloadOperationProgress->setRange(0, 100);
     bool succeeded = false;
@@ -2882,9 +2835,8 @@ void MainWindow::updateUpgradeControls()
         m_partitionOperationWatcher.isRunning());
     updateDownloadControls();
     updateReportExportControls();
-    if (m_hotplugRefreshPending && !usbBusy
-        && !m_hotplugDebounceTimer->isActive()) {
-        m_hotplugDebounceTimer->start();
+    if (m_workspaceController != nullptr) {
+        m_workspaceController->processPendingDeviceRefresh();
     }
 }
 
@@ -3002,7 +2954,9 @@ void MainWindow::startUpgrade()
     }
 
     m_refreshButton->setEnabled(false);
-    m_upgradeCancellation = std::make_shared<std::atomic_bool>(false);
+    const auto upgradeCancellation =
+        m_workspaceController->viewModel()->upgradeCancellation();
+    upgradeCancellation->store(false);
     m_overallProgress->setRange(0, 100);
     m_overallProgress->setValue(0);
     m_operationProgress->setRange(0, 0);
@@ -3010,7 +2964,7 @@ void MainWindow::startUpgrade()
     statusBar()->showMessage(QStringLiteral("固件升级进行中"));
 
     const auto prepared = *m_preparedUpgrade;
-    const auto cancellation = m_upgradeCancellation;
+    const auto cancellation = upgradeCancellation;
     const auto verifyMode = verifyModeFromIndex(m_verifyModeCombo->currentIndex());
     m_progressTracker.emplace(prepared.plan, verifyMode);
     beginHistoryEntry(portPath);
@@ -3050,10 +3004,12 @@ void MainWindow::startUpgrade()
 
 void MainWindow::cancelUpgrade()
 {
-    if (!m_upgradeCancellation || !m_upgradeWatcher.isRunning()) {
+    const auto cancellation = m_workspaceController->viewModel()
+        ->upgradeCancellation();
+    if (!cancellation || !m_upgradeWatcher.isRunning()) {
         return;
     }
-    m_upgradeCancellation->store(true);
+    cancellation->store(true);
     m_cancelUpgradeButton->setEnabled(false);
     m_upgradeStatus->setText(QStringLiteral("正在等待当前 USB 分块完成..."));
     if (m_activeHistoryRow >= 0) {
@@ -3102,7 +3058,6 @@ void MainWindow::handleUpgradeFinished()
     auto completedReport =
         std::move(*m_activeReportBuilder).takeReport();
     m_activeReportBuilder.reset();
-    m_upgradeCancellation.reset();
     m_overallProgress->setRange(0, 100);
     m_operationProgress->setRange(0, 100);
     m_refreshButton->setEnabled(true);
