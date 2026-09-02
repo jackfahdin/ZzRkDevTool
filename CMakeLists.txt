@@ -168,38 +168,11 @@ if(ZZRK_BUILD_CLI)
 endif()
 
 if(ZZRK_BUILD_GUI)
-    foreach(
-        _zzrk_puretools_scope_option
-        BUILD_SHARED_LIBS
-        ZZ_BUILD_TESTS
-        ZZ_BUILD_EXAMPLES
-    )
-        if(DEFINED "${_zzrk_puretools_scope_option}")
-            set(
-                "_zzrk_puretools_scope_${_zzrk_puretools_scope_option}"
-                "${${_zzrk_puretools_scope_option}}"
-            )
-            set(
-                "_zzrk_puretools_scope_${_zzrk_puretools_scope_option}_was_defined"
-                TRUE
-            )
-        endif()
-    endforeach()
-
     include(cmake/ZzPureTools.cmake)
+    zzrk_capture_puretools_scope_snapshot(_zzrk_puretools_scope)
     zzrk_add_puretools()
     include("${PROJECT_SOURCE_DIR}/tests/zzpuretools_cmake_scope.cmake")
-
-    foreach(
-        _zzrk_puretools_scope_option
-        BUILD_SHARED_LIBS
-        ZZ_BUILD_TESTS
-        ZZ_BUILD_EXAMPLES
-    )
-        unset("_zzrk_puretools_scope_${_zzrk_puretools_scope_option}")
-        unset("_zzrk_puretools_scope_${_zzrk_puretools_scope_option}_was_defined")
-    endforeach()
-    unset(_zzrk_puretools_scope_option)
+    zzrk_clear_puretools_scope_snapshot(_zzrk_puretools_scope)
 
     add_subdirectory(apps/gui)
 endif()
