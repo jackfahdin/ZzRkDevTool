@@ -828,7 +828,10 @@ void MainWorkspaceController::handleScanFinished() {
   if (m_viewModel != nullptr) {
     m_viewModel->setBusy(false);
   }
+  QPointer<MainWorkspaceController> guard{this};
   applyScanResult(m_scanWatcher.result());
+  if (guard == nullptr)
+    return;
   if (m_refreshButton != nullptr) {
     m_refreshButton->setEnabled(true);
   }
@@ -883,8 +886,13 @@ void MainWorkspaceController::applyScanResult(
                    ? QStringLiteral("未检测到 Rockchip 设备")
                    : QStringLiteral("已连接 %1 台 Rockchip 设备").arg(count)));
   }
+  QPointer<MainWorkspaceController> guard{this};
   emit devicesChanged(result);
+  if (guard == nullptr)
+    return;
   handleDownloadDeviceChanged();
+  if (guard == nullptr)
+    return;
   handleDeviceSelectionChanged();
 }
 
@@ -896,15 +904,21 @@ void MainWorkspaceController::handleDeviceSelectionChanged() {
       m_viewModel != nullptr && m_viewModel->selectedPortPath() != port;
   if (m_viewModel != nullptr)
     m_viewModel->setSelectedPortPath(port);
+  QPointer<MainWorkspaceController> guard{this};
   if (changed) {
     clearDeviceInspection();
     setDevicePartitionTable(nullptr);
     m_partitionTableStatus = QStringLiteral("尚未读取分区表");
     clearPartitionTable();
     emit devicePartitionTableChanged();
+    if (guard == nullptr)
+      return;
   }
-  if (!port.isEmpty())
+  if (!port.isEmpty()) {
     syncDownloadDeviceFromTable();
+    if (guard == nullptr)
+      return;
+  }
   if (port.isEmpty()) {
     m_devicePage->setInspection(QStringLiteral("请选择 Loader 设备"));
   } else if (!selectedDeviceManageable()) {
@@ -1698,7 +1712,10 @@ void MainWorkspaceController::syncDeviceTableFromDownload() {
 void MainWorkspaceController::handleDownloadDeviceChanged() {
   if (m_downloadPage == nullptr)
     return;
+  QPointer<MainWorkspaceController> guard{this};
   syncDeviceTableFromDownload();
+  if (guard == nullptr)
+    return;
   if (m_downloadPage->layoutCombo()->currentIndex() == 0 &&
       m_viewModel != nullptr &&
       m_viewModel->downloadLayoutPort() != downloadPortPath()) {

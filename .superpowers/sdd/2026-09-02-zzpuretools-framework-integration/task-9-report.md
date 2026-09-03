@@ -280,3 +280,27 @@ rg -n "class MainWindow|QApplication application|new QTabWidget|QApplication::se
 ```
 
 没有命中运行时实现；`test ! -e apps/gui/MainWindow.hpp && test ! -e apps/gui/MainWindow.cpp` 通过。`git diff --check` 通过。截图仅保留在 `build-debug/visual` 和 `build-debug/visual-final` 构建目录，不纳入提交。
+
+## 定向复审修复（2026-09-03）
+
+复审指出首次修复只覆盖了完成信号，`applyScanResult()` 内的 `devicesChanged()` 和设备选择变化信号仍允许 DirectConnection 接收器同步销毁 controller。新增回归场景后，修复前的 ASan 红灯稳定为：
+
+```text
+ERROR: AddressSanitizer: heap-use-after-free
+MainWorkspaceController::applyScanResult(...)
+apps/gui/MainWorkspaceController.cpp:887
+0% tests passed, 1 tests failed out of 1
+```
+
+本轮完整审计 `MainWorkspaceController` 的公开信号边界并修复：
+
+- `handleScanFinished()` 在 `applyScanResult()` 返回后先检查 `QPointer`，再访问按钮、处理刷新和发出尾部 `scanCompleted()`。
+- `applyScanResult()` 在 `devicesChanged()` 之后，以及可能同步触发设备选择信号的 `handleDownloadDeviceChanged()` 之后检查 controller 是否存活。
+- `handleDeviceSelectionChanged()` 在 `devicePartitionTableChanged()` 之后，以及嵌套下载设备同步之后检查 controller；`selectedDeviceChanged()` 保持为函数最后动作。
+- `handleDownloadDeviceChanged()` 在可能同步触发 `selectedDeviceChanged()` 的设备表选择同步之后检查 controller。
+- 分区表成功/失败路径继续在首个 `devicePartitionTableChanged()` 后检查守卫，controller 已销毁时不再发出第二个 `partitionTableCompleted()`。
+- 其余监控错误、进度和单终态信号均位于所属函数最后动作，emit 后无 `this` 访问。
+
+`gui_framework_test` 通过隔离子进程分别连接 `devicesChanged`、`selectedDeviceChanged`、`devicePartitionTableChanged` 和 `scanCompleted` 到真实 `ZzPureApplication::beginShutdown()`；每个场景断言 controller/window 同步销毁，分区表场景另断言第二终态信号未发出。隔离进程避免在同一进程反复构造 `QApplication` 导致 Qt 全局窗口/调色板缓存被 LeakSanitizer 误报。
+
+文档测试数量同步为非 Linux 23 项、Linux 24 项。

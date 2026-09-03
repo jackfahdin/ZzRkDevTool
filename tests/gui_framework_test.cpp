@@ -32,6 +32,7 @@
 #include <QEvent>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
 #include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
@@ -39,6 +40,7 @@
 #include <QMessageBox>
 #include <QPointer>
 #include <QProgressBar>
+#include <QProcess>
 #include <QPushButton>
 #include <QStyle>
 #include <QStatusBar>
@@ -419,9 +421,91 @@ void expectWorkspaceAttachFailureRollsBack() {
   application.beginShutdown();
 }
 
+int runSynchronousShutdownScenario(const QString &scenario) {
+  auto backend = std::make_shared<FrameworkFakeBackend>();
+  auto harness = zzrk::gui::test::GuiTestHarness::create(backend);
+  expect(harness != nullptr,
+         "synchronous shutdown fixture creates an application");
+  if (harness == nullptr)
+    return failures;
+
+  auto *application = harness->application();
+  auto *controller = harness->controller();
+  QPointer<ZzPureTools::ZzApplicationWindow> window{harness->window()};
+  QPointer<zzrk::gui::MainWorkspaceController> controllerGuard{controller};
+  expect(application != nullptr && controller != nullptr && window != nullptr,
+         "synchronous shutdown fixture exposes framework objects");
+  if (application == nullptr || controller == nullptr)
+    return failures;
+
+  int partitionTableCompletions = 0;
+  if (scenario == QStringLiteral("devicesChanged")) {
+    QObject::connect(
+        controller, &zzrk::gui::MainWorkspaceController::devicesChanged,
+        application,
+        [application](const zzrk::transport::ScanResult &) {
+          application->beginShutdown();
+        },
+        Qt::DirectConnection);
+    controller->refreshDevices();
+  } else if (scenario == QStringLiteral("selectedDeviceChanged")) {
+    QObject::connect(
+        controller,
+        &zzrk::gui::MainWorkspaceController::selectedDeviceChanged,
+        application, [application] { application->beginShutdown(); },
+        Qt::DirectConnection);
+    controller->refreshDevices();
+  } else if (scenario == QStringLiteral("devicePartitionTableChanged")) {
+    controller->refreshDevices();
+    expect(waitFor([&] {
+             return controllerGuard != nullptr &&
+                    controllerGuard->viewModel()->selectedPortPath() ==
+                        QStringLiteral("1-5");
+           }),
+           "partition table fixture completes its initial scan");
+    QObject::connect(
+        controller,
+        &zzrk::gui::MainWorkspaceController::partitionTableCompleted,
+        application, [&](bool) { ++partitionTableCompletions; },
+        Qt::DirectConnection);
+    QObject::connect(
+        controller,
+        &zzrk::gui::MainWorkspaceController::devicePartitionTableChanged,
+        application, [application] { application->beginShutdown(); },
+        Qt::DirectConnection);
+    controller->readSelectedDevicePartitions();
+  } else if (scenario == QStringLiteral("scanCompleted")) {
+    QObject::connect(
+        controller, &zzrk::gui::MainWorkspaceController::scanCompleted,
+        application, [application] { application->beginShutdown(); },
+        Qt::DirectConnection);
+    controller->refreshDevices();
+  } else {
+    expect(false, "synchronous shutdown fixture receives a known scenario");
+    return failures;
+  }
+
+  expect(waitFor([&] { return controllerGuard == nullptr; }),
+         "terminal signal can synchronously destroy its controller");
+  expect(window == nullptr,
+         "terminal signal shutdown destroys the framework window");
+  if (scenario == QStringLiteral("devicePartitionTableChanged")) {
+    expect(partitionTableCompletions == 0,
+           "partition table shutdown suppresses the second terminal signal");
+  }
+  return failures;
+}
+
 } // namespace
 
-int main() {
+int main(int argc, char **argv) {
+  if (argc == 3 &&
+      QString::fromLocal8Bit(argv[1]) ==
+          QStringLiteral("--synchronous-shutdown")) {
+    return runSynchronousShutdownScenario(QString::fromLocal8Bit(argv[2]));
+  }
+  const QString executable =
+      QFileInfo{QString::fromLocal8Bit(argv[0])}.absoluteFilePath();
   const auto bootstrap = ZzWindowKit::ZzWindowKitBootstrap::prepare();
   expect(static_cast<bool>(bootstrap),
          "WindowKit bootstrap supports rollback fixture");
@@ -885,34 +969,16 @@ int main() {
          "window close waits for every controller watcher");
 
   harness.reset();
-  auto shutdownBackend = std::make_shared<FrameworkFakeBackend>();
-  auto shutdownHarness =
-      zzrk::gui::test::GuiTestHarness::create(shutdownBackend);
-  expect(shutdownHarness != nullptr,
-         "shutdown reentrancy fixture creates an application");
-  if (shutdownHarness != nullptr) {
-    auto *shutdownApplication = shutdownHarness->application();
-    auto *shutdownController = shutdownHarness->controller();
-    QPointer<ZzPureTools::ZzApplicationWindow> shutdownWindow{
-        shutdownHarness->window()};
-    QPointer<zzrk::gui::MainWorkspaceController> controllerGuard{
-        shutdownController};
-    expect(shutdownApplication != nullptr && shutdownController != nullptr &&
-               shutdownWindow != nullptr,
-           "shutdown reentrancy fixture exposes framework objects");
-    if (shutdownApplication != nullptr && shutdownController != nullptr) {
-      QObject::connect(
-          shutdownController,
-          &zzrk::gui::MainWorkspaceController::scanCompleted,
-          shutdownApplication,
-          [shutdownApplication] { shutdownApplication->beginShutdown(); },
-          Qt::DirectConnection);
-      shutdownController->refreshDevices();
-      expect(waitFor([&] { return controllerGuard == nullptr; }),
-             "scan completion can synchronously destroy its controller");
-      expect(shutdownWindow == nullptr,
-             "scan completion shutdown destroys the framework window");
-    }
+  const QStringList shutdownScenarios{
+      QStringLiteral("devicesChanged"),
+      QStringLiteral("selectedDeviceChanged"),
+      QStringLiteral("devicePartitionTableChanged"),
+      QStringLiteral("scanCompleted")};
+  for (const QString &scenario : shutdownScenarios) {
+    const int exitCode = QProcess::execute(
+        executable, {QStringLiteral("--synchronous-shutdown"), scenario});
+    expect(exitCode == 0,
+           "isolated synchronous shutdown scenario exits successfully");
   }
   return failures;
 }
