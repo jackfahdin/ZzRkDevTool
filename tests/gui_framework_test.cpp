@@ -11,6 +11,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
@@ -19,6 +20,7 @@
 #include <QTableWidget>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QToolButton>
 
 #include <atomic>
 #include <chrono>
@@ -76,6 +78,7 @@ public:
   bool monitoring = false;
   int stopCalls = 0;
   std::atomic_int scans = 0;
+  std::atomic_int partitionReads = 0;
   std::atomic_bool preparationFails = true;
 
   [[nodiscard]] zzrk::transport::ScanResult scanDevices() override {
@@ -154,8 +157,41 @@ public:
   }
 
   [[nodiscard]] zzrk::workflow::DevicePartitionTableResult
-  readPartitions(const std::string &) override {
-    return unusedManagementError();
+  readPartitions(const std::string &portPath) override {
+    ++partitionReads;
+    zzrk::transport::UsbDeviceInfo device{
+        .vendorId = 0x2207U,
+        .productId = 0x350bU,
+        .bcdUsb = 0x0201U,
+        .bcdDevice = 0x0223U,
+        .busNumber = 1U,
+        .portNumbers = {5U},
+        .portPath = portPath,
+        .mode = zzrk::transport::DeviceMode::Loader,
+        .deviceAddress = 7U,
+    };
+    zzrk::storage::GptPartitionTable table{};
+    table.revision = 0x00010000U;
+    table.backupStatus = zzrk::storage::BackupGptStatus::verified;
+    table.partitions = {
+        zzrk::storage::GptPartition{
+            .name = "boot_a",
+            .firstLba = 32'768U,
+            .lastLba = 196'607U,
+            .attributes = 0U,
+        },
+        zzrk::storage::GptPartition{
+            .name = "userdata",
+            .firstLba = 20'971'520U,
+            .lastLba = 124'190'686U,
+            .attributes = 0U,
+        },
+    };
+    return zzrk::workflow::DevicePartitionTable{
+        .device = std::move(device),
+        .deviceSectors = 124'190'720U,
+        .table = std::move(table),
+    };
   }
 
   [[nodiscard]] zzrk::workflow::PartitionOperationResult readPartition(
@@ -259,6 +295,24 @@ int main() {
                               Qt::DirectConnection);
     expect(selectedDeviceChanges == 1,
            "unchanged device selection does not emit another change");
+
+    auto *readGptButton =
+        downloadPage.value()->view()->findChild<QToolButton *>(
+            QStringLiteral("readDownloadGptButton"));
+    expect(readGptButton != nullptr && readGptButton->isEnabled(),
+           "selected Loader device can read its GPT");
+    if (readGptButton != nullptr)
+      readGptButton->click();
+    QEventLoop gptLoop;
+    QTimer::singleShot(100, &gptLoop, &QEventLoop::quit);
+    gptLoop.exec();
+    const auto *layoutPath =
+        downloadPage.value()->view()->findChild<QLineEdit *>(
+            QStringLiteral("downloadParameterPath"));
+    expect(backend->partitionReads.load() == 1 && layoutPath != nullptr &&
+               layoutPath->text() == QStringLiteral("1-5 / 设备 GPT") &&
+               downloadTable->rowCount() == 3,
+           "controller reads and applies device GPT without MainWindow");
 
     bool inspectionFinished = false;
     QEventLoop inspectionLoop;

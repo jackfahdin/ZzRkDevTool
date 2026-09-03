@@ -51,3 +51,39 @@ git diff --check
 - `DevicePage` 仍包含设备可管理/可刷写判定，并且端口为空时未恢复基线的 `portNumbers` 降级显示；设备规则后续应收敛到 Controller，避免页面与 Controller 两处规则漂移。
 - 设备表未恢复基线的固定列宽、默认总线排序和总线数值 `DisplayRole`，总线号达到两位数时手动排序仍按文本顺序。
 - `MainWindow.cpp` 顶部仍有已迁移设备/下载列与 role 的无引用常量，可在任务 6 删除旧窗口适配器时一并清理。
+
+## 正式审查修复
+
+- 将设备 GPT 读取 workflow 和 `QFutureWatcher` 完整迁入 `MainWorkspaceController`，并将 watcher 纳入 USB busy 判定、关闭等待和 pending hotplug 排空。`MainWindow` 仅通过 Controller 发起读取并刷新旧分区页适配 UI。
+- 新增 Controller-only 回归测试：不构造 `MainWindow`，从下载页点击“读取设备 GPT”，验证后端读取一次、路径切换到“1-5 / 设备 GPT”，以及 Loader 和两个真实 GPT 分区组成的三行计划。
+- `ImageDownloadPage` 通过 `PlanRow`、`PlanChoice`、`PlanTarget` 和状态更新方法封装下载行模型；Controller 不再引用 `QTableWidget`、下载列枚举或 item role。
+- 将设备可刷写/可管理规则移入 Controller，`DevicePage` 只接收展示行和准入结果。原“DevicePage 仍包含规则”的疑虑已解决；固定列宽、默认总线排序、数值 `DisplayRole` 及旧窗口无引用常量等 Minor 保留，未扩大本次修复范围。
+
+### 修复后验证
+
+```text
+cmake --build build-task2 --target gui_framework_test gui_image_download_test gui_upgrade_test -j2
+```
+
+结果：三个目标成功编译并链接。
+
+```text
+QT_QPA_PLATFORM=offscreen ctest --test-dir build-task2 -R 'gui_(image_download|upgrade|framework)' --output-on-failure
+```
+
+实际结果：
+
+```text
+1/3 Test #20: gui_framework ....................   Passed    0.17 sec
+2/3 Test #22: gui_upgrade ......................   Passed    0.28 sec
+3/3 Test #23: gui_image_download ...............   Passed    0.13 sec
+
+100% tests passed, 0 tests failed out of 3
+Total Test time (real) = 0.58 sec
+```
+
+```text
+git diff --check
+```
+
+结果：无输出，通过。

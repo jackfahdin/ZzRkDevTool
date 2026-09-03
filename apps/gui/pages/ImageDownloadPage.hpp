@@ -2,7 +2,11 @@
 
 #pragma once
 
+#include <QString>
 #include <QWidget>
+
+#include <optional>
+#include <vector>
 
 class QCheckBox;
 class QComboBox;
@@ -11,6 +15,7 @@ class QLineEdit;
 class QProgressBar;
 class QPushButton;
 class QTableWidget;
+class QTableWidgetItem;
 class QToolButton;
 
 namespace zzrk::gui {
@@ -19,6 +24,34 @@ class ImageDownloadPage final : public QWidget {
   Q_OBJECT
 
 public:
+  enum class RowKind { loader, partitionTable, partition };
+
+  struct PlanRow {
+    RowKind kind = RowKind::partition;
+    QString target;
+    QString lba;
+    QString capacity;
+    QString file;
+    QString format;
+    QString expandedSize;
+    QString status;
+    bool selected = false;
+    bool selectionForced = false;
+    bool verify = true;
+  };
+
+  struct PlanChoice {
+    RowKind kind = RowKind::partition;
+    QString target;
+    bool selected = false;
+    bool verify = true;
+  };
+
+  struct PlanTarget {
+    RowKind kind = RowKind::partition;
+    QString target;
+  };
+
   enum Column {
     SelectedColumn,
     TargetColumn,
@@ -32,23 +65,23 @@ public:
     ColumnCount
   };
 
-  static constexpr int TargetRole = Qt::UserRole + 8;
-  static constexpr int KindRole = Qt::UserRole + 9;
-  static constexpr int CapacityRole = Qt::UserRole + 10;
-
   [[nodiscard]] static ImageDownloadPage *buildUi(QWidget *parent);
 
   [[nodiscard]] QComboBox *deviceCombo() const noexcept;
   [[nodiscard]] QComboBox *layoutCombo() const noexcept;
   [[nodiscard]] QLineEdit *layoutPathEdit() const noexcept;
   [[nodiscard]] QLineEdit *directoryEdit() const noexcept;
-  [[nodiscard]] QTableWidget *table() const noexcept;
   [[nodiscard]] QCheckBox *rebootCheckBox() const noexcept;
   [[nodiscard]] QString selectedPortPath() const;
   [[nodiscard]] bool selectedDeviceManageable() const;
   [[nodiscard]] int selectedDeviceMode() const;
 
-  void setPlan(int rowCount);
+  [[nodiscard]] std::vector<PlanChoice> planChoices() const;
+  [[nodiscard]] std::optional<PlanTarget> currentTarget() const;
+
+  void setPlan(std::vector<PlanRow> rows);
+  void setTargetStatus(const QString &target, const QString &status);
+  void setSelectedTargetsStatus(const QString &status);
   void setProgress(int overallPercent, int operationPercent,
                    bool overallIndeterminate = false,
                    bool operationIndeterminate = false);
@@ -69,6 +102,7 @@ signals:
 
 private:
   explicit ImageDownloadPage(QWidget *parent);
+  void handlePlanItemChanged(QTableWidgetItem *item);
 
   QComboBox *m_deviceCombo = nullptr;
   QComboBox *m_layoutCombo = nullptr;
@@ -86,6 +120,7 @@ private:
   QProgressBar *m_overallProgress = nullptr;
   QProgressBar *m_operationProgress = nullptr;
   QLabel *m_status = nullptr;
+  std::vector<PlanRow> m_planRows;
 };
 
 } // namespace zzrk::gui

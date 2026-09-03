@@ -16,36 +16,6 @@
 
 namespace zzrk::gui {
 namespace {
-QString portText(const zzrk::transport::UsbDeviceInfo &device) {
-  return device.portPath.empty() ? QStringLiteral("-")
-                                 : QString::fromStdString(device.portPath);
-}
-QString modeText(const zzrk::transport::DeviceMode mode) {
-  switch (mode) {
-  case zzrk::transport::DeviceMode::Adb:
-    return QStringLiteral("ADB");
-  case zzrk::transport::DeviceMode::Maskrom:
-    return QStringLiteral("Maskrom");
-  case zzrk::transport::DeviceMode::Loader:
-    return QStringLiteral("Loader");
-  case zzrk::transport::DeviceMode::Unknown:
-    return QStringLiteral("未知");
-  }
-  return QStringLiteral("未知");
-}
-bool flashable(const zzrk::transport::UsbDeviceInfo &device) {
-  if (device.vendorId != 0x2207U || device.productId != 0x350bU)
-    return false;
-  return (device.mode == zzrk::transport::DeviceMode::Loader &&
-          device.bcdUsb == 0x0201U && device.bcdDevice == 0x0223U) ||
-         (device.mode == zzrk::transport::DeviceMode::Maskrom &&
-          device.bcdUsb == 0x0200U && device.bcdDevice == 0x0100U);
-}
-bool manageable(const zzrk::transport::UsbDeviceInfo &device) {
-  return device.vendorId == 0x2207U && device.productId == 0x350bU &&
-         device.bcdUsb == 0x0201U && device.bcdDevice == 0x0223U &&
-         device.mode == zzrk::transport::DeviceMode::Loader;
-}
 QTableWidgetItem *item(const QString &text) {
   auto *value = new QTableWidgetItem(text);
   value->setFlags(value->flags() & ~Qt::ItemIsEditable);
@@ -126,61 +96,38 @@ DevicePage::DevicePage(QWidget *parent) : QWidget(parent) {
           &DevicePage::inspectRequested);
 }
 
-QTableWidget *DevicePage::table() const noexcept { return m_table; }
 QString DevicePage::selectedPortPath() const {
   const int row = m_table->currentRow();
   const auto *value = row < 0 ? nullptr : m_table->item(row, StatusColumn);
-  return value == nullptr ? QString{} : value->data(PortPathRole).toString();
-}
-bool DevicePage::selectedDeviceFlashable() const {
-  const int row = m_table->currentRow();
-  const auto *value = row < 0 ? nullptr : m_table->item(row, StatusColumn);
-  return value != nullptr && value->data(FlashableRole).toBool();
-}
-bool DevicePage::selectedDeviceManageable() const {
-  const int row = m_table->currentRow();
-  const auto *value = row < 0 ? nullptr : m_table->item(row, StatusColumn);
-  return value != nullptr && value->data(ManageableRole).toBool();
+  return value == nullptr ? QString{} : value->data(Qt::UserRole).toString();
 }
 void DevicePage::selectPort(const QString &port) {
   for (int row = 0; row < m_table->rowCount(); ++row) {
     const auto *value = m_table->item(row, StatusColumn);
-    if (value != nullptr && value->data(PortPathRole).toString() == port) {
+    if (value != nullptr && value->data(Qt::UserRole).toString() == port) {
       m_table->selectRow(row);
       return;
     }
   }
 }
-void DevicePage::setDevices(const zzrk::transport::ScanResult &result) {
+void DevicePage::setDevices(std::vector<DeviceRow> devices) {
   const QSignalBlocker blocker{m_table};
   const QString selected = selectedPortPath();
   m_table->setSortingEnabled(false);
   m_table->clearContents();
-  m_table->setRowCount(static_cast<int>(result.devices.size()));
+  m_table->setRowCount(static_cast<int>(devices.size()));
   int row = 0;
-  for (const auto &device : result.devices) {
-    auto *status = item(QStringLiteral("已连接"));
+  for (const auto &device : devices) {
+    auto *status = item(device.status);
     status->setIcon(style()->standardIcon(QStyle::SP_DialogApplyButton));
-    status->setData(
-        DeviceKeyRole,
-        QStringLiteral("%1|%2").arg(device.busNumber).arg(portText(device)));
-    status->setData(PortPathRole, portText(device));
-    status->setData(FlashableRole, flashable(device));
-    status->setData(ManageableRole, manageable(device));
+    status->setData(Qt::UserRole, device.portPath);
+    status->setToolTip(device.key);
     m_table->setItem(row, StatusColumn, status);
-    m_table->setItem(row, ModeColumn, item(modeText(device.mode)));
-    m_table->setItem(row, DeviceIdColumn,
-                     item(QStringLiteral("%1:%2")
-                              .arg(device.vendorId, 4, 16, QLatin1Char('0'))
-                              .arg(device.productId, 4, 16, QLatin1Char('0'))
-                              .toUpper()));
-    m_table->setItem(row, BusColumn, item(QString::number(device.busNumber)));
-    m_table->setItem(row, PortColumn, item(portText(device)));
-    m_table->setItem(row, UsbVersionColumn,
-                     item(QStringLiteral("%1.%2%3")
-                              .arg((device.bcdUsb >> 8) & 0xff)
-                              .arg((device.bcdUsb >> 4) & 0x0f)
-                              .arg(device.bcdUsb & 0x0f)));
+    m_table->setItem(row, ModeColumn, item(device.mode));
+    m_table->setItem(row, DeviceIdColumn, item(device.deviceId));
+    m_table->setItem(row, BusColumn, item(device.bus));
+    m_table->setItem(row, PortColumn, item(device.portPath));
+    m_table->setItem(row, UsbVersionColumn, item(device.usbVersion));
     ++row;
   }
   m_table->setSortingEnabled(true);
@@ -203,9 +150,9 @@ void DevicePage::setInspection(const QString &status, const QString &chipInfo,
   m_usbInterface->setText(usbInterface.isEmpty() ? QStringLiteral("-")
                                                  : usbInterface);
 }
-void DevicePage::setBusy(const bool busy) {
+void DevicePage::setBusy(const bool busy, const bool canInspect) {
   m_table->setEnabled(!busy);
-  m_inspectButton->setEnabled(!busy && selectedDeviceManageable());
+  m_inspectButton->setEnabled(!busy && canInspect);
 }
 
 } // namespace zzrk::gui

@@ -71,7 +71,7 @@ private:
     void processPendingDeviceRefresh();
     void handleScanFinished();
     void readSelectedDevicePartitions();
-    void handlePartitionTableFinished();
+    void handlePartitionTableFinished(bool success);
     void backupSelectedPartition();
     void writeSelectedPartition();
     void eraseSelectedPartition();
@@ -107,8 +107,6 @@ private:
     QFutureWatcher<zzrk::workflow::PreparedFirmwareUpgradeResult>
         m_prepareWatcher;
     QFutureWatcher<zzrk::workflow::FirmwareUpgradeResult> m_upgradeWatcher;
-    QFutureWatcher<zzrk::workflow::DevicePartitionTableResult>
-        m_partitionTableWatcher;
     QFutureWatcher<zzrk::workflow::PartitionOperationResult>
         m_partitionOperationWatcher;
     QTabWidget *m_tabs = nullptr;

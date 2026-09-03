@@ -12,6 +12,7 @@
 #include <QLineEdit>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QStyle>
 #include <QTableWidget>
 #include <QToolButton>
@@ -174,7 +175,7 @@ ImageDownloadPage::ImageDownloadPage(QWidget *parent) : QWidget(parent) {
   connect(m_table, &QTableWidget::itemSelectionChanged, this,
           &ImageDownloadPage::planChanged);
   connect(m_table, &QTableWidget::itemChanged, this,
-          &ImageDownloadPage::planChanged);
+          &ImageDownloadPage::handlePlanItemChanged);
   connect(m_startButton, &QPushButton::clicked, this,
           &ImageDownloadPage::startRequested);
   connect(m_cancelButton, &QPushButton::clicked, this,
@@ -193,7 +194,6 @@ QLineEdit *ImageDownloadPage::layoutPathEdit() const noexcept {
 QLineEdit *ImageDownloadPage::directoryEdit() const noexcept {
   return m_directoryEdit;
 }
-QTableWidget *ImageDownloadPage::table() const noexcept { return m_table; }
 QCheckBox *ImageDownloadPage::rebootCheckBox() const noexcept {
   return m_rebootCheckBox;
 }
@@ -207,9 +207,101 @@ int ImageDownloadPage::selectedDeviceMode() const {
   return m_deviceCombo->currentData(Qt::UserRole + 2).toInt();
 }
 
-void ImageDownloadPage::setPlan(const int rowCount) {
+std::vector<ImageDownloadPage::PlanChoice>
+ImageDownloadPage::planChoices() const {
+  std::vector<PlanChoice> choices;
+  choices.reserve(m_planRows.size());
+  for (const auto &row : m_planRows) {
+    choices.push_back({.kind = row.kind,
+                       .target = row.target,
+                       .selected = row.selected,
+                       .verify = row.verify});
+  }
+  return choices;
+}
+
+std::optional<ImageDownloadPage::PlanTarget>
+ImageDownloadPage::currentTarget() const {
+  const int row = m_table->currentRow();
+  if (row < 0 || static_cast<std::size_t>(row) >= m_planRows.size())
+    return std::nullopt;
+  const auto &target = m_planRows[static_cast<std::size_t>(row)];
+  return PlanTarget{.kind = target.kind, .target = target.target};
+}
+
+void ImageDownloadPage::setPlan(std::vector<PlanRow> rows) {
+  const QSignalBlocker blocker{m_table};
+  m_planRows = std::move(rows);
   m_table->clearContents();
-  m_table->setRowCount(rowCount);
+  m_table->setRowCount(static_cast<int>(m_planRows.size()));
+  const auto makeItem = [](const QString &text) {
+    auto *item = new QTableWidgetItem(text);
+    item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+    return item;
+  };
+  int index = 0;
+  for (const auto &row : m_planRows) {
+    auto *selected = makeItem({});
+    selected->setFlags(selected->flags() | Qt::ItemIsUserCheckable);
+    selected->setCheckState(row.selected ? Qt::Checked : Qt::Unchecked);
+    if (row.selectionForced)
+      selected->setFlags(selected->flags() & ~Qt::ItemIsEnabled);
+    m_table->setItem(index, SelectedColumn, selected);
+    m_table->setItem(index, TargetColumn, makeItem(row.target));
+    m_table->setItem(index, LbaColumn, makeItem(row.lba));
+    m_table->setItem(index, CapacityColumn, makeItem(row.capacity));
+    auto *file = makeItem(row.file);
+    file->setToolTip(row.file);
+    m_table->setItem(index, FileColumn, file);
+    m_table->setItem(index, FormatColumn, makeItem(row.format));
+    m_table->setItem(index, ExpandedSizeColumn, makeItem(row.expandedSize));
+    auto *verify = makeItem({});
+    verify->setFlags(verify->flags() | Qt::ItemIsUserCheckable);
+    verify->setCheckState(row.verify ? Qt::Checked : Qt::Unchecked);
+    m_table->setItem(index, VerifyColumn, verify);
+    m_table->setItem(index, StatusColumn, makeItem(row.status));
+    ++index;
+  }
+  if (!m_planRows.empty())
+    m_table->selectRow(0);
+}
+
+void ImageDownloadPage::setTargetStatus(const QString &target,
+                                        const QString &status) {
+  for (std::size_t index = 0; index < m_planRows.size(); ++index) {
+    auto &row = m_planRows[index];
+    if (row.target != target)
+      continue;
+    row.status = status;
+    if (auto *item = m_table->item(static_cast<int>(index), StatusColumn))
+      item->setText(status);
+    return;
+  }
+}
+
+void ImageDownloadPage::setSelectedTargetsStatus(const QString &status) {
+  for (std::size_t index = 0; index < m_planRows.size(); ++index) {
+    auto &row = m_planRows[index];
+    if (!row.selected)
+      continue;
+    row.status = status;
+    if (auto *item = m_table->item(static_cast<int>(index), StatusColumn))
+      item->setText(status);
+  }
+}
+
+void ImageDownloadPage::handlePlanItemChanged(QTableWidgetItem *item) {
+  if (item == nullptr || item->row() < 0 ||
+      static_cast<std::size_t>(item->row()) >= m_planRows.size())
+    return;
+  auto &row = m_planRows[static_cast<std::size_t>(item->row())];
+  if (item->column() == SelectedColumn)
+    row.selected = item->checkState() == Qt::Checked;
+  else if (item->column() == VerifyColumn)
+    row.verify = item->checkState() == Qt::Checked;
+  else
+    return;
+  emit planChanged();
 }
 
 void ImageDownloadPage::setProgress(const int overall, const int operation,
@@ -237,13 +329,11 @@ void ImageDownloadPage::setBusy(const bool busy, const bool canStart,
                               selectedDeviceManageable());
   m_chooseDirectoryButton->setEnabled(!busy);
   m_table->setEnabled(!busy);
-  const auto *target = m_table->currentRow() < 0
-                           ? nullptr
-                           : m_table->item(m_table->currentRow(), TargetColumn);
+  const auto target = currentTarget();
   const bool specialGpt =
-      target != nullptr && target->data(KindRole).toInt() == 1;
-  m_chooseImageButton->setEnabled(!busy && target != nullptr && !specialGpt);
-  m_clearImageButton->setEnabled(!busy && target != nullptr && !specialGpt);
+      target.has_value() && target->kind == RowKind::partitionTable;
+  m_chooseImageButton->setEnabled(!busy && target.has_value() && !specialGpt);
+  m_clearImageButton->setEnabled(!busy && target.has_value() && !specialGpt);
   m_rebootCheckBox->setEnabled(!busy);
   m_startButton->setEnabled(!busy && canStart);
   m_cancelButton->setEnabled(canCancel);

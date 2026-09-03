@@ -2,9 +2,10 @@
 
 #pragma once
 
-#include <zzrk/transport/UsbDeviceScanner.hpp>
-
+#include <QString>
 #include <QWidget>
+
+#include <vector>
 
 class QLabel;
 class QPushButton;
@@ -16,6 +17,16 @@ class DevicePage final : public QWidget {
   Q_OBJECT
 
 public:
+  struct DeviceRow {
+    QString key;
+    QString status;
+    QString mode;
+    QString deviceId;
+    QString bus;
+    QString portPath;
+    QString usbVersion;
+  };
+
   enum Column {
     StatusColumn,
     ModeColumn,
@@ -25,24 +36,16 @@ public:
     UsbVersionColumn,
     ColumnCount
   };
-  static constexpr int DeviceKeyRole = Qt::UserRole + 1;
-  static constexpr int PortPathRole = Qt::UserRole + 2;
-  static constexpr int FlashableRole = Qt::UserRole + 3;
-  static constexpr int ManageableRole = Qt::UserRole + 5;
-
   [[nodiscard]] static DevicePage *buildUi(QWidget *parent);
-  [[nodiscard]] QTableWidget *table() const noexcept;
   [[nodiscard]] QString selectedPortPath() const;
-  [[nodiscard]] bool selectedDeviceFlashable() const;
-  [[nodiscard]] bool selectedDeviceManageable() const;
   void selectPort(const QString &port);
-  void setDevices(const zzrk::transport::ScanResult &result);
+  void setDevices(std::vector<DeviceRow> devices);
   void setInspection(const QString &status, const QString &chipInfo = {},
                      const QString &capability = {},
                      const QString &flashId = {}, const QString &capacity = {},
                      const QString &flashInfo = {},
                      const QString &usbInterface = {});
-  void setBusy(bool busy);
+  void setBusy(bool busy, bool canInspect);
 
 signals:
   void selectionChanged();
