@@ -7,6 +7,8 @@
 #include "pages/PartitionPage.hpp"
 
 #include <QCheckBox>
+#include <QCoreApplication>
+#include <QEventLoop>
 #include <QLabel>
 #include <QProgressBar>
 #include <QPushButton>
@@ -40,6 +42,10 @@ public:
   std::atomic_int partitionOperations{};
   std::atomic_int monitoringStarts{};
   std::atomic_int monitoringStops{};
+  std::atomic_bool holdUpgrade{false};
+  std::atomic_bool upgradeEntered{false};
+  std::atomic_bool holdPartition{false};
+  std::atomic_bool partitionEntered{false};
 
   [[nodiscard]] zzrk::transport::ScanResult scanDevices() override {
     ++scans;
@@ -139,7 +145,12 @@ public:
       const zzrk::workflow::FirmwareUpgradeCancellationCallback &cancellation)
       override {
     ++upgrades;
-    emitDeviceChange(zzrk::transport::UsbHotplugEvent::Left);
+    upgradeEntered.store(true);
+    while (holdUpgrade.load()) {
+      std::this_thread::sleep_for(2ms);
+    }
+    if (!cancellation || !cancellation())
+      emitDeviceChange(zzrk::transport::UsbHotplugEvent::Left);
     std::this_thread::sleep_for(20ms);
     const auto reportEvent = [&](zzrk::workflow::FirmwareUpgradeEvent event) {
       if (progress) {
@@ -366,6 +377,10 @@ private:
       const zzrk::workflow::DeviceManagementCancellationCallback
           &cancellation) {
     ++partitionOperations;
+    partitionEntered.store(true);
+    while (holdPartition.load()) {
+      std::this_thread::sleep_for(2ms);
+    }
     constexpr std::uint64_t bytes = 1024U;
     if (progress) {
       progress({phase, partition, bytes / 2U, bytes});
@@ -402,6 +417,125 @@ int main() {
     return EXIT_FAILURE;
   }
   auto &application = *harness->application();
+
+  const auto cancellationButtonsStayDisabled = [&]() {
+    auto cancelBackend = std::make_shared<AutomatedGuiBackend>();
+    MainWindow cancelWindow{cancelBackend, false};
+    cancelWindow.show();
+    QEventLoop scanLoop;
+    bool scanFinished = false;
+    QObject::connect(&cancelWindow, &MainWindow::scanCompleted, &scanLoop, [&] {
+      scanFinished = true;
+      scanLoop.quit();
+    });
+    QTimer::singleShot(2000, &scanLoop, &QEventLoop::quit);
+    scanLoop.exec();
+    if (!scanFinished)
+      return false;
+
+    QEventLoop preparationLoop;
+    bool preparationFinished = false;
+    QObject::connect(&cancelWindow, &MainWindow::firmwarePreparationCompleted,
+                     &preparationLoop, [&](const bool success) {
+                       preparationFinished = success;
+                       preparationLoop.quit();
+                     });
+    cancelWindow.loadFirmwareImage(QStringLiteral("cancel-test.img"));
+    QTimer::singleShot(2000, &preparationLoop, &QEventLoop::quit);
+    preparationLoop.exec();
+    auto *startUpgrade = cancelWindow.findChild<QPushButton *>(
+        QStringLiteral("startUpgradeButton"));
+    auto *cancelUpgrade = cancelWindow.findChild<QPushButton *>(
+        QStringLiteral("cancelUpgradeButton"));
+    if (!preparationFinished || startUpgrade == nullptr ||
+        cancelUpgrade == nullptr || !startUpgrade->isEnabled())
+      return false;
+
+    cancelBackend->holdUpgrade.store(true);
+    startUpgrade->click();
+    QEventLoop upgradeStartedLoop;
+    QTimer pollUpgrade;
+    pollUpgrade.setInterval(2);
+    QObject::connect(&pollUpgrade, &QTimer::timeout, &upgradeStartedLoop, [&] {
+      if (cancelBackend->upgradeEntered.load())
+        upgradeStartedLoop.quit();
+    });
+    pollUpgrade.start();
+    QTimer::singleShot(2000, &upgradeStartedLoop, &QEventLoop::quit);
+    upgradeStartedLoop.exec();
+    if (!cancelBackend->upgradeEntered.load())
+      return false;
+    cancelUpgrade->click();
+    QCoreApplication::processEvents();
+    const bool upgradeCancellationRequested =
+        cancelWindow.workspaceController()->viewModel()
+            ->upgradeCancellation()->load();
+    const bool upgradeCancelDisabled =
+        upgradeCancellationRequested && !cancelUpgrade->isEnabled();
+    QEventLoop upgradeFinishedLoop;
+    QObject::connect(&cancelWindow, &MainWindow::upgradeCompleted,
+                     &upgradeFinishedLoop, &QEventLoop::quit);
+    cancelBackend->holdUpgrade.store(false);
+    QTimer::singleShot(2000, &upgradeFinishedLoop, &QEventLoop::quit);
+    upgradeFinishedLoop.exec();
+
+    auto *readPartitions = cancelWindow.findChild<QToolButton *>(
+        QStringLiteral("readPartitionsButton"));
+    if (readPartitions == nullptr || !readPartitions->isEnabled())
+      return false;
+    QEventLoop tableLoop;
+    bool tableFinished = false;
+    QObject::connect(&cancelWindow, &MainWindow::partitionTableCompleted,
+                     &tableLoop, [&](const bool success) {
+                       tableFinished = success;
+                       tableLoop.quit();
+                     });
+    readPartitions->click();
+    QTimer::singleShot(2000, &tableLoop, &QEventLoop::quit);
+    tableLoop.exec();
+    auto *partitions = cancelWindow.findChild<QTableWidget *>(
+        QStringLiteral("partitionTable"));
+    auto *erasePartition = cancelWindow.findChild<QPushButton *>(
+        QStringLiteral("erasePartitionButton"));
+    auto *cancelPartition = cancelWindow.findChild<QPushButton *>(
+        QStringLiteral("cancelPartitionButton"));
+    if (!tableFinished || partitions == nullptr || erasePartition == nullptr ||
+        cancelPartition == nullptr || partitions->rowCount() == 0)
+      return false;
+    partitions->selectRow(0);
+    cancelBackend->holdPartition.store(true);
+    erasePartition->click();
+    QEventLoop partitionStartedLoop;
+    QTimer pollPartition;
+    pollPartition.setInterval(2);
+    QObject::connect(&pollPartition, &QTimer::timeout, &partitionStartedLoop,
+                     [&] {
+                       if (cancelBackend->partitionEntered.load())
+                         partitionStartedLoop.quit();
+                     });
+    pollPartition.start();
+    QTimer::singleShot(2000, &partitionStartedLoop, &QEventLoop::quit);
+    partitionStartedLoop.exec();
+    if (!cancelBackend->partitionEntered.load())
+      return false;
+    cancelPartition->click();
+    QCoreApplication::processEvents();
+    const bool partitionCancellationRequested =
+        cancelWindow.workspaceController()->viewModel()
+            ->partitionCancellation()->load();
+    const bool partitionCancelDisabled =
+        partitionCancellationRequested && !cancelPartition->isEnabled();
+    QEventLoop partitionFinishedLoop;
+    QObject::connect(&cancelWindow, &MainWindow::partitionOperationCompleted,
+                     &partitionFinishedLoop, &QEventLoop::quit);
+    cancelBackend->holdPartition.store(false);
+    QTimer::singleShot(2000, &partitionFinishedLoop, &QEventLoop::quit);
+    partitionFinishedLoop.exec();
+    return upgradeCancelDisabled && partitionCancelDisabled;
+  };
+  if (!cancellationButtonsStayDisabled())
+    return EXIT_FAILURE;
+
   MainWindow window{backend, false};
   window.show();
 
