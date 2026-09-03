@@ -198,27 +198,35 @@ if(TARGET ZzRkDevTool)
 endif()
 
 if(TARGET zzrk_gui_support)
-    add_executable(
-        gui_framework_test
-        gui_framework_test.cpp
-        GuiTestHarness.cpp
-        GuiTestHarness.hpp
-    )
-    target_include_directories(
-        gui_framework_test
-        PRIVATE
-            "${PROJECT_SOURCE_DIR}/apps/gui"
-            "${CMAKE_CURRENT_SOURCE_DIR}"
-    )
-    target_link_libraries(
-        gui_framework_test
-        PRIVATE Zz::WindowKit Zz::FluentUI zzrk::gui zzrk_project_warnings
-    )
-    add_test(NAME gui_framework COMMAND gui_framework_test)
-    set_tests_properties(
-        gui_framework
-        PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-    )
+    function(zzrk_add_gui_test test_name source)
+        add_executable(
+            "${test_name}_test"
+            "${source}"
+            GuiTestHarness.cpp
+            GuiTestHarness.hpp
+        )
+        target_include_directories(
+            "${test_name}_test"
+            PRIVATE
+                "${PROJECT_SOURCE_DIR}/apps/gui"
+                "${CMAKE_CURRENT_SOURCE_DIR}"
+        )
+        target_link_libraries(
+            "${test_name}_test"
+            PRIVATE
+                Zz::WindowKit
+                Zz::FluentUI
+                zzrk::gui
+                zzrk_project_warnings
+        )
+        add_test(NAME "${test_name}" COMMAND "${test_name}_test")
+        set_tests_properties(
+            "${test_name}"
+            PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        )
+    endfunction()
+
+    zzrk_add_gui_test(gui_framework gui_framework_test.cpp)
 
     add_executable(upgrade_progress_tracker_test
                    upgrade_progress_tracker_test.cpp)
@@ -229,35 +237,8 @@ if(TARGET zzrk_gui_support)
     add_test(NAME upgrade_progress_tracker
              COMMAND upgrade_progress_tracker_test)
 
-    add_executable(gui_upgrade_test
-                   gui_upgrade_test.cpp
-                   GuiTestHarness.cpp
-                   GuiTestHarness.hpp)
-    target_include_directories(gui_upgrade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_link_libraries(
-        gui_upgrade_test
-        PRIVATE Zz::WindowKit zzrk::gui zzrk_project_warnings
-    )
-    add_test(NAME gui_upgrade COMMAND gui_upgrade_test)
-    set_tests_properties(
-        gui_upgrade
-        PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-    )
-
-    add_executable(gui_image_download_test
-                   gui_image_download_test.cpp
-                   GuiTestHarness.cpp
-                   GuiTestHarness.hpp)
-    target_include_directories(gui_image_download_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-    target_link_libraries(
-        gui_image_download_test
-        PRIVATE Zz::WindowKit zzrk::gui zzrk_project_warnings
-    )
-    add_test(NAME gui_image_download COMMAND gui_image_download_test)
-    set_tests_properties(
-        gui_image_download
-        PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-    )
+    zzrk_add_gui_test(gui_upgrade gui_upgrade_test.cpp)
+    zzrk_add_gui_test(gui_image_download gui_image_download_test.cpp)
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND TARGET ZzRkDevTool

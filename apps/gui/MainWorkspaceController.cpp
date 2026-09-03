@@ -832,8 +832,8 @@ void MainWorkspaceController::handleScanFinished() {
   if (m_refreshButton != nullptr) {
     m_refreshButton->setEnabled(true);
   }
-  emit scanCompleted();
   processPendingDeviceRefresh();
+  emit scanCompleted();
 }
 
 void MainWorkspaceController::applyScanResult(
@@ -960,8 +960,8 @@ void MainWorkspaceController::handleInspectionFinished() {
     if (m_showModalDialogs)
       QMessageBox::critical(m_devicePage, QStringLiteral("读取失败"), message);
     setPagesBusy(false);
-    emit deviceInspectionCompleted(false);
     processPendingDeviceRefresh();
+    emit deviceInspectionCompleted(false);
     return;
   }
   const auto &inspection = std::get<zzrk::workflow::DeviceInspection>(result);
@@ -995,8 +995,8 @@ void MainWorkspaceController::handleInspectionFinished() {
   if (m_statusBar != nullptr)
     m_statusBar->showMessage(QStringLiteral("设备详情已更新"));
   setPagesBusy(false);
-  emit deviceInspectionCompleted(true);
   processPendingDeviceRefresh();
+  emit deviceInspectionCompleted(true);
 }
 
 void MainWorkspaceController::readSelectedDevicePartitions() {
@@ -1046,9 +1046,11 @@ void MainWorkspaceController::handlePartitionTableFinished() {
                             m_partitionTableStatus);
     }
     setPagesBusy(false);
-    emit devicePartitionTableChanged();
-    emit partitionTableCompleted(false);
     processPendingDeviceRefresh();
+    QPointer<MainWorkspaceController> guard{this};
+    emit devicePartitionTableChanged();
+    if (guard != nullptr)
+      emit partitionTableCompleted(false);
     return;
   }
 
@@ -1082,9 +1084,11 @@ void MainWorkspaceController::handlePartitionTableFinished() {
   if (m_statusBar != nullptr)
     m_statusBar->showMessage(QStringLiteral("GPT 分区表已更新"));
   setPagesBusy(false);
-  emit devicePartitionTableChanged();
-  emit partitionTableCompleted(true);
   processPendingDeviceRefresh();
+  QPointer<MainWorkspaceController> guard{this};
+  emit devicePartitionTableChanged();
+  if (guard != nullptr)
+    emit partitionTableCompleted(true);
 }
 
 void MainWorkspaceController::clearPartitionTable() {
@@ -1315,8 +1319,8 @@ void MainWorkspaceController::handlePartitionOperationFinished() {
     successValue = true;
   }
   setPagesBusy(false);
-  emit partitionOperationCompleted(successValue);
   processPendingDeviceRefresh();
+  emit partitionOperationCompleted(successValue);
 }
 
 void MainWorkspaceController::updatePartitionControls() {
@@ -1385,8 +1389,8 @@ void MainWorkspaceController::handlePrepareFinished() {
     if (m_statusBar != nullptr)
       m_statusBar->showMessage(QStringLiteral("固件预检失败"));
     setPagesBusy(false);
-    emit firmwarePreparationCompleted(false);
     processPendingDeviceRefresh();
+    emit firmwarePreparationCompleted(false);
     return;
   }
   m_preparedUpgrade =
@@ -1416,8 +1420,8 @@ void MainWorkspaceController::handlePrepareFinished() {
     m_statusBar->showMessage(QStringLiteral("升级计划已生成"));
   setPagesBusy(false);
   updateUpgradeControls();
-  emit firmwarePreparationCompleted(true);
   processPendingDeviceRefresh();
+  emit firmwarePreparationCompleted(true);
 }
 
 void MainWorkspaceController::startUpgrade() {
@@ -1577,8 +1581,8 @@ void MainWorkspaceController::handleUpgradeFinished() {
   }
   m_progressTracker.reset();
   setPagesBusy(false);
-  emit upgradeCompleted();
   processPendingDeviceRefresh();
+  emit upgradeCompleted();
 }
 
 void MainWorkspaceController::beginHistoryEntry(const QString &portPath) {
