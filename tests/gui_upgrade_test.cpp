@@ -3,6 +3,8 @@
 #include "GuiOperationBackend.hpp"
 #include "GuiTestHarness.hpp"
 #include "MainWindow.hpp"
+#include "pages/FullUpgradePage.hpp"
+#include "pages/PartitionPage.hpp"
 
 #include <QCheckBox>
 #include <QLabel>
@@ -408,9 +410,16 @@ int main() {
   bool partitionsCompleted = false;
   bool partitionOperationFinished = false;
   bool upgradeUiCompleted = false;
+  bool observedWorkspaceBusy = false;
   bool failed = false;
   int completedScans = 0;
   std::vector<std::pair<int, int>> progressValues;
+
+  QObject::connect(window.workspaceController()->viewModel(),
+                   &zzrk::gui::MainWorkspaceViewModel::busyChanged,
+                   &application, [&](const bool busy) {
+                     observedWorkspaceBusy = observedWorkspaceBusy || busy;
+                   });
 
   QObject::connect(&window, &MainWindow::scanCompleted, &application, [&] {
     ++completedScans;
@@ -439,6 +448,15 @@ int main() {
       return;
     }
     started = true;
+    const auto *upgradePage = window.findChild<zzrk::gui::FullUpgradePage *>(
+        QStringLiteral("fullUpgradePage"));
+    const auto *partitionPage = window.findChild<zzrk::gui::PartitionPage *>(
+        QStringLiteral("partitionPage"));
+    if (upgradePage == nullptr || partitionPage == nullptr) {
+      failed = true;
+      application.exit(EXIT_FAILURE);
+      return;
+    }
     auto *devices =
         window.findChild<QTableWidget *>(QStringLiteral("deviceTable"));
     if (devices == nullptr || devices->rowCount() != 1) {
@@ -572,6 +590,9 @@ int main() {
         status->text().startsWith(QStringLiteral("升级完成")) &&
         exportReport != nullptr && exportReport->isEnabled() &&
         !progressValues.empty() && monotonic && independent &&
+        observedWorkspaceBusy &&
+        window.workspaceController()->viewModel()->overallProgress() == 100 &&
+        window.workspaceController()->viewModel()->operationProgress() == 100 &&
         inspectionCompleted && partitionsCompleted &&
         partitionOperationFinished && backend->scans.load() >= 1 &&
         backend->preparations.load() == 1 && backend->upgrades.load() == 1 &&
