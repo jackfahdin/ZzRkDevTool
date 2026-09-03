@@ -77,10 +77,14 @@ public:
   [[nodiscard]] bool selectedDeviceFlashable() const;
   [[nodiscard]] bool selectedDeviceManageable() const;
   void setPagesBusy(bool busy);
+  void readSelectedDevicePartitions();
   void loadDownloadParameter(const QString &path);
   void loadDownloadDirectory(const QString &path);
   void setDevicePartitionTable(
       const zzrk::workflow::DevicePartitionTable *partitions);
+  [[nodiscard]] const std::optional<zzrk::workflow::DevicePartitionTable> &
+  devicePartitionTable() const noexcept;
+  [[nodiscard]] const QString &partitionTableStatus() const noexcept;
 
   [[nodiscard]] ZzFluentUI::ZzTabWidget *mainTabs() const noexcept;
   [[nodiscard]] QLabel *connectionStatusText() const noexcept;
@@ -92,7 +96,8 @@ signals:
   void deviceMonitoringError(const QString &message);
   void devicesChanged(const zzrk::transport::ScanResult &result);
   void selectedDeviceChanged();
-  void readDownloadGptRequested();
+  void devicePartitionTableChanged();
+  void partitionTableCompleted(bool success);
   void imageDownloadCompleted(bool success);
   void imageDownloadProgressChanged(int overallPercent, int operationPercent);
   void deviceInspectionCompleted(bool success);
@@ -102,6 +107,7 @@ private slots:
   void handleDeviceSelectionChanged();
   void inspectSelectedDevice();
   void handleInspectionFinished();
+  void handlePartitionTableFinished();
   void handleDownloadDeviceChanged();
   void handleDownloadLayoutChanged();
   void handleDownloadPlanChanged();
@@ -140,6 +146,8 @@ private:
       m_downloadPrepareWatcher;
   QFutureWatcher<zzrk::workflow::ImageDownloadResult> m_imageDownloadWatcher;
   QFutureWatcher<zzrk::workflow::DeviceInspectionResult> m_inspectionWatcher;
+  QFutureWatcher<zzrk::workflow::DevicePartitionTableResult>
+      m_partitionTableWatcher;
   QPointer<ImageDownloadPage> m_downloadPage;
   QPointer<DevicePage> m_devicePage;
   ZzFluentUI::ZzTabWidget *m_tabs = nullptr;
@@ -150,6 +158,7 @@ private:
   QTimer *m_hotplugDebounceTimer = nullptr;
   zzrk::transport::ScanResult m_lastScanResult;
   QString m_deviceMonitoringError;
+  QString m_partitionTableStatus{QStringLiteral("尚未读取分区表")};
   bool m_hotplugRefreshPending = false;
   bool m_showModalDialogs = true;
   bool m_shuttingDown = false;

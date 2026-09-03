@@ -21,7 +21,6 @@
 #include <QSignalBlocker>
 #include <QStatusBar>
 #include <QStyle>
-#include <QTableWidget>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -71,10 +70,71 @@ QString dataSizeText(const std::uint64_t bytes) {
                                      QLocale::DataSizeTraditionalFormat);
 }
 
-QTableWidgetItem *makeItem(const QString &text) {
-  auto *item = new QTableWidgetItem(text);
-  item->setFlags(item->flags() & ~Qt::ItemIsEditable);
-  return item;
+QString devicePortText(const zzrk::transport::UsbDeviceInfo &device) {
+  return device.portPath.empty() ? QStringLiteral("-")
+                                 : QString::fromStdString(device.portPath);
+}
+
+QString deviceModeText(const zzrk::transport::DeviceMode mode) {
+  switch (mode) {
+  case zzrk::transport::DeviceMode::Adb:
+    return QStringLiteral("ADB");
+  case zzrk::transport::DeviceMode::Maskrom:
+    return QStringLiteral("Maskrom");
+  case zzrk::transport::DeviceMode::Loader:
+    return QStringLiteral("Loader");
+  case zzrk::transport::DeviceMode::Unknown:
+    return QStringLiteral("未知");
+  }
+  return QStringLiteral("未知");
+}
+
+bool isSupportedFlashDevice(const zzrk::transport::UsbDeviceInfo &device) {
+  if (device.vendorId != 0x2207U || device.productId != 0x350bU)
+    return false;
+  return (device.mode == zzrk::transport::DeviceMode::Loader &&
+          device.bcdUsb == 0x0201U && device.bcdDevice == 0x0223U) ||
+         (device.mode == zzrk::transport::DeviceMode::Maskrom &&
+          device.bcdUsb == 0x0200U && device.bcdDevice == 0x0100U);
+}
+
+bool isSupportedManagementDevice(const zzrk::transport::UsbDeviceInfo &device) {
+  return device.vendorId == 0x2207U && device.productId == 0x350bU &&
+         device.bcdUsb == 0x0201U && device.bcdDevice == 0x0223U &&
+         device.mode == zzrk::transport::DeviceMode::Loader;
+}
+
+std::vector<DevicePage::DeviceRow>
+deviceRows(const zzrk::transport::ScanResult &result) {
+  std::vector<DevicePage::DeviceRow> rows;
+  rows.reserve(result.devices.size());
+  for (const auto &device : result.devices) {
+    const QString port = devicePortText(device);
+    rows.push_back({
+        .key = QStringLiteral("%1|%2").arg(device.busNumber).arg(port),
+        .status = QStringLiteral("已连接"),
+        .mode = deviceModeText(device.mode),
+        .deviceId = QStringLiteral("%1:%2")
+                        .arg(device.vendorId, 4, 16, QLatin1Char('0'))
+                        .arg(device.productId, 4, 16, QLatin1Char('0'))
+                        .toUpper(),
+        .bus = QString::number(device.busNumber),
+        .portPath = port,
+        .usbVersion = QStringLiteral("%1.%2%3")
+                          .arg((device.bcdUsb >> 8) & 0xff)
+                          .arg((device.bcdUsb >> 4) & 0x0f)
+                          .arg(device.bcdUsb & 0x0f),
+    });
+  }
+  return rows;
+}
+
+const zzrk::transport::UsbDeviceInfo *
+findDevice(const zzrk::transport::ScanResult &result, const QString &port) {
+  const auto found =
+      std::ranges::find(result.devices, port.toStdString(),
+                        &zzrk::transport::UsbDeviceInfo::portPath);
+  return found == result.devices.end() ? nullptr : &*found;
 }
 
 template <std::size_t Size>
@@ -117,6 +177,19 @@ std::string slotBaseTarget(const std::string &target) {
                  (target.ends_with("_a") || target.ends_with("_b"))
              ? target.substr(0U, target.size() - 2U)
              : target;
+}
+
+ImageDownloadPage::RowKind
+pageRowKind(const zzrk::workflow::ImageDownloadItemKind kind) {
+  switch (kind) {
+  case zzrk::workflow::ImageDownloadItemKind::loader:
+    return ImageDownloadPage::RowKind::loader;
+  case zzrk::workflow::ImageDownloadItemKind::partitionTable:
+    return ImageDownloadPage::RowKind::partitionTable;
+  case zzrk::workflow::ImageDownloadItemKind::partition:
+    return ImageDownloadPage::RowKind::partition;
+  }
+  return ImageDownloadPage::RowKind::partition;
 }
 
 QString imageDownloadStageText(const zzrk::workflow::ImageDownloadStage stage) {
@@ -355,6 +428,9 @@ MainWorkspaceController::MainWorkspaceController(
   connect(&m_inspectionWatcher,
           &QFutureWatcher<zzrk::workflow::DeviceInspectionResult>::finished,
           this, &MainWorkspaceController::handleInspectionFinished);
+  connect(&m_partitionTableWatcher,
+          &QFutureWatcher<zzrk::workflow::DevicePartitionTableResult>::finished,
+          this, &MainWorkspaceController::handlePartitionTableFinished);
 }
 
 MainWorkspaceController::~MainWorkspaceController() { shutdown(); }
@@ -463,11 +539,7 @@ void MainWorkspaceController::attachPages(ImageDownloadPage *downloadPage,
       connect(m_downloadPage, &ImageDownloadPage::chooseParameterRequested,
               this, &MainWorkspaceController::chooseDownloadParameter);
       connect(m_downloadPage, &ImageDownloadPage::readDeviceGptRequested, this,
-              [this] {
-                m_downloadPage->setStatus(
-                    QStringLiteral("正在读取并校验设备 GPT..."));
-                emit readDownloadGptRequested();
-              });
+              &MainWorkspaceController::readSelectedDevicePartitions);
       connect(m_downloadPage, &ImageDownloadPage::chooseDirectoryRequested,
               this, &MainWorkspaceController::chooseDownloadDirectory);
       connect(m_downloadPage, &ImageDownloadPage::chooseImageRequested, this,
@@ -492,7 +564,7 @@ void MainWorkspaceController::attachPages(ImageDownloadPage *downloadPage,
               &MainWorkspaceController::handleDeviceSelectionChanged);
       connect(m_devicePage, &DevicePage::inspectRequested, this,
               &MainWorkspaceController::inspectSelectedDevice);
-      m_devicePage->setDevices(m_lastScanResult);
+      m_devicePage->setDevices(deviceRows(m_lastScanResult));
     }
   }
 }
@@ -643,21 +715,15 @@ void MainWorkspaceController::applyScanResult(
     const zzrk::transport::ScanResult &result) {
   m_lastScanResult = result;
   if (m_devicePage != nullptr) {
-    m_devicePage->setDevices(result);
+    m_devicePage->setDevices(deviceRows(result));
   }
   if (m_downloadPage != nullptr) {
     const QSignalBlocker blocker{m_downloadPage->deviceCombo()};
     const QString selected = m_downloadPage->selectedPortPath();
     m_downloadPage->deviceCombo()->clear();
     for (const auto &device : result.devices) {
-      const bool loader =
-          device.vendorId == 0x2207U && device.productId == 0x350bU &&
-          device.bcdUsb == 0x0201U && device.bcdDevice == 0x0223U &&
-          device.mode == zzrk::transport::DeviceMode::Loader;
-      const bool maskrom =
-          device.vendorId == 0x2207U && device.productId == 0x350bU &&
-          device.bcdUsb == 0x0200U && device.bcdDevice == 0x0100U &&
-          device.mode == zzrk::transport::DeviceMode::Maskrom;
+      const bool loader = isSupportedManagementDevice(device);
+      const bool maskrom = isSupportedFlashDevice(device) && !loader;
       if (!loader && !maskrom)
         continue;
       const QString port = QString::fromStdString(device.portPath);
@@ -705,13 +771,17 @@ void MainWorkspaceController::handleDeviceSelectionChanged() {
       m_viewModel != nullptr && m_viewModel->selectedPortPath() != port;
   if (m_viewModel != nullptr)
     m_viewModel->setSelectedPortPath(port);
-  if (changed)
+  if (changed) {
     clearDeviceInspection();
+    setDevicePartitionTable(nullptr);
+    m_partitionTableStatus = QStringLiteral("尚未读取分区表");
+    emit devicePartitionTableChanged();
+  }
   if (!port.isEmpty())
     syncDownloadDeviceFromTable();
   if (port.isEmpty()) {
     m_devicePage->setInspection(QStringLiteral("请选择 Loader 设备"));
-  } else if (!m_devicePage->selectedDeviceManageable()) {
+  } else if (!selectedDeviceManageable()) {
     m_devicePage->setInspection(QStringLiteral("当前模式不支持详情与分区操作"));
   }
   updateDownloadControls();
@@ -801,6 +871,71 @@ void MainWorkspaceController::handleInspectionFinished() {
   processPendingDeviceRefresh();
 }
 
+void MainWorkspaceController::readSelectedDevicePartitions() {
+  if (m_shuttingDown || usbOperationRunning() || !selectedDeviceManageable())
+    return;
+  const QString port = selectedPortPath();
+  if (port.isEmpty())
+    return;
+  m_partitionTableStatus = QStringLiteral("正在读取并校验 GPT...");
+  if (m_downloadPage != nullptr)
+    m_downloadPage->setStatus(m_partitionTableStatus);
+  if (m_statusBar != nullptr)
+    m_statusBar->showMessage(QStringLiteral("正在读取 GPT 分区表"));
+  const auto backend = m_backend;
+  m_partitionTableWatcher.setFuture(QtConcurrent::run([backend, port] {
+    try {
+      return backend->readPartitions(port.toStdString());
+    } catch (...) {
+      return zzrk::workflow::DevicePartitionTableResult{
+          unexpectedDeviceManagementError(port.toStdString())};
+    }
+  }));
+  setPagesBusy(true);
+}
+
+void MainWorkspaceController::handlePartitionTableFinished() {
+  if (m_shuttingDown)
+    return;
+  auto result = m_partitionTableWatcher.result();
+  if (const auto *error =
+          std::get_if<zzrk::workflow::DeviceManagementError>(&result)) {
+    setDevicePartitionTable(nullptr);
+    m_partitionTableStatus = deviceManagementErrorText(*error);
+    if (m_downloadPage != nullptr)
+      m_downloadPage->setStatus(m_partitionTableStatus);
+    if (m_statusBar != nullptr)
+      m_statusBar->showMessage(QStringLiteral("GPT 分区表读取失败"));
+    if (m_showModalDialogs && m_downloadPage != nullptr) {
+      QMessageBox::critical(m_downloadPage, QStringLiteral("读取失败"),
+                            m_partitionTableStatus);
+    }
+    setPagesBusy(false);
+    emit devicePartitionTableChanged();
+    emit partitionTableCompleted(false);
+    processPendingDeviceRefresh();
+    return;
+  }
+
+  const auto partitions =
+      std::get<zzrk::workflow::DevicePartitionTable>(std::move(result));
+  setDevicePartitionTable(&partitions);
+  const auto backup = zzrk::storage::toString(partitions.table.backupStatus);
+  m_partitionTableStatus =
+      QStringLiteral("端口 %1：%2 个分区，eMMC %3，备份 GPT %4")
+          .arg(QString::fromStdString(partitions.device.portPath))
+          .arg(static_cast<qulonglong>(partitions.table.partitions.size()))
+          .arg(dataSizeText(partitions.deviceSectors * 512U))
+          .arg(QString::fromLatin1(backup.data(),
+                                   static_cast<qsizetype>(backup.size())));
+  if (m_statusBar != nullptr)
+    m_statusBar->showMessage(QStringLiteral("GPT 分区表已更新"));
+  setPagesBusy(false);
+  emit devicePartitionTableChanged();
+  emit partitionTableCompleted(true);
+  processPendingDeviceRefresh();
+}
+
 void MainWorkspaceController::syncDownloadDeviceFromTable() {
   if (m_downloadPage == nullptr || m_devicePage == nullptr)
     return;
@@ -863,23 +998,10 @@ void MainWorkspaceController::handleDownloadLayoutChanged() {
 void MainWorkspaceController::handleDownloadPlanChanged() {
   if (m_downloadPage == nullptr)
     return;
-  auto *table = m_downloadPage->table();
-  for (int row = 0; row < table->rowCount(); ++row) {
-    const auto *target = table->item(row, ImageDownloadPage::TargetColumn);
-    const auto *selected = table->item(row, ImageDownloadPage::SelectedColumn);
-    const auto *verify = table->item(row, ImageDownloadPage::VerifyColumn);
-    if (target == nullptr)
-      continue;
-    const std::string key =
-        target->data(ImageDownloadPage::TargetRole).toString().toStdString();
-    if (selected != nullptr) {
-      m_downloadSelections.insert_or_assign(key, selected->checkState() ==
-                                                     Qt::Checked);
-    }
-    if (verify != nullptr) {
-      m_downloadVerifications.insert_or_assign(key, verify->checkState() ==
-                                                        Qt::Checked);
-    }
+  for (const auto &choice : m_downloadPage->planChoices()) {
+    const std::string key = choice.target.toStdString();
+    m_downloadSelections.insert_or_assign(key, choice.selected);
+    m_downloadVerifications.insert_or_assign(key, choice.verify);
   }
   updateDownloadControls();
 }
@@ -1059,8 +1181,6 @@ void MainWorkspaceController::assignDownloadImage(
 void MainWorkspaceController::rebuildDownloadTable() {
   if (m_downloadPage == nullptr)
     return;
-  auto *table = m_downloadPage->table();
-  const QSignalBlocker blocker{table};
   const int partitionRows =
       m_downloadLayout.has_value()
           ? static_cast<int>(m_downloadLayout->partitions.size())
@@ -1068,38 +1188,12 @@ void MainWorkspaceController::rebuildDownloadTable() {
   const bool parameterLayout =
       m_downloadPage->layoutCombo()->currentIndex() == 1 &&
       m_downloadLayout.has_value();
-  m_downloadPage->setPlan(1 + (parameterLayout ? 1 : 0) + partitionRows);
-  const auto addRow = [&](const int row,
-                          const zzrk::workflow::ImageDownloadItemKind kind,
+  std::vector<ImageDownloadPage::PlanRow> rows;
+  rows.reserve(
+      static_cast<std::size_t>(1 + (parameterLayout ? 1 : 0) + partitionRows));
+  const auto addRow = [&](const zzrk::workflow::ImageDownloadItemKind kind,
                           const std::string &target, const QString &lba,
                           const std::uint64_t capacity, const bool forced) {
-    auto *selected = makeItem({});
-    selected->setFlags(selected->flags() | Qt::ItemIsUserCheckable);
-    selected->setCheckState(forced || (m_downloadSelections.contains(target) &&
-                                       m_downloadSelections.at(target))
-                                ? Qt::Checked
-                                : Qt::Unchecked);
-    if (forced)
-      selected->setFlags(selected->flags() & ~Qt::ItemIsEnabled);
-    table->setItem(row, ImageDownloadPage::SelectedColumn, selected);
-    auto *targetItem = makeItem(QString::fromStdString(target));
-    targetItem->setData(ImageDownloadPage::TargetRole,
-                        QString::fromStdString(target));
-    targetItem->setData(ImageDownloadPage::KindRole, static_cast<int>(kind));
-    targetItem->setData(ImageDownloadPage::CapacityRole,
-                        QVariant::fromValue<qulonglong>(capacity));
-    table->setItem(row, ImageDownloadPage::TargetColumn, targetItem);
-    table->setItem(row, ImageDownloadPage::LbaColumn, makeItem(lba));
-    table->setItem(row, ImageDownloadPage::CapacityColumn,
-                   makeItem(capacity == 0U ? QStringLiteral("-")
-                                           : dataSizeText(capacity)));
-    auto *verify = makeItem({});
-    verify->setFlags(verify->flags() | Qt::ItemIsUserCheckable);
-    verify->setCheckState(m_downloadVerifications.contains(target) &&
-                                  !m_downloadVerifications.at(target)
-                              ? Qt::Unchecked
-                              : Qt::Checked);
-    table->setItem(row, ImageDownloadPage::VerifyColumn, verify);
     QString file = QStringLiteral("-");
     QString format = QStringLiteral("-");
     QString expanded = QStringLiteral("-");
@@ -1131,19 +1225,27 @@ void MainWorkspaceController::rebuildDownloadTable() {
                    ? QStringLiteral("就绪")
                    : QStringLiteral("镜像无效或超过分区容量");
     }
-    auto *fileItem = makeItem(file);
-    fileItem->setToolTip(file);
-    table->setItem(row, ImageDownloadPage::FileColumn, fileItem);
-    table->setItem(row, ImageDownloadPage::FormatColumn, makeItem(format));
-    table->setItem(row, ImageDownloadPage::ExpandedSizeColumn,
-                   makeItem(expanded));
-    table->setItem(row, ImageDownloadPage::StatusColumn, makeItem(status));
+    rows.push_back({
+        .kind = pageRowKind(kind),
+        .target = QString::fromStdString(target),
+        .lba = lba,
+        .capacity =
+            capacity == 0U ? QStringLiteral("-") : dataSizeText(capacity),
+        .file = file,
+        .format = format,
+        .expandedSize = expanded,
+        .status = status,
+        .selected = forced || (m_downloadSelections.contains(target) &&
+                               m_downloadSelections.at(target)),
+        .selectionForced = forced,
+        .verify = !m_downloadVerifications.contains(target) ||
+                  m_downloadVerifications.at(target),
+    });
   };
-  addRow(0, zzrk::workflow::ImageDownloadItemKind::loader, "Loader",
+  addRow(zzrk::workflow::ImageDownloadItemKind::loader, "Loader",
          QStringLiteral("64"), 0U, false);
-  int row = 1;
   if (parameterLayout)
-    addRow(row++, zzrk::workflow::ImageDownloadItemKind::partitionTable, "GPT",
+    addRow(zzrk::workflow::ImageDownloadItemKind::partitionTable, "GPT",
            QStringLiteral("主 / 备"), 67U * 512U, true);
   if (m_downloadLayout.has_value()) {
     for (const auto &partition : m_downloadLayout->partitions) {
@@ -1153,31 +1255,23 @@ void MainWorkspaceController::rebuildDownloadTable() {
                       std::numeric_limits<std::uint64_t>::max() / 512U
               ? *partition.sectorCount * 512U
               : 0U;
-      addRow(row++, zzrk::workflow::ImageDownloadItemKind::partition,
-             partition.name,
+      addRow(zzrk::workflow::ImageDownloadItemKind::partition, partition.name,
              QString::number(static_cast<qulonglong>(partition.firstLba)),
              capacity, false);
     }
   }
-  if (table->rowCount() > 0)
-    table->selectRow(0);
+  m_downloadPage->setPlan(std::move(rows));
   updateDownloadControls();
 }
 
 void MainWorkspaceController::chooseSelectedDownloadImage() {
   if (m_downloadPage == nullptr)
     return;
-  auto *table = m_downloadPage->table();
-  const int row = table->currentRow();
-  const auto *item =
-      row < 0 ? nullptr : table->item(row, ImageDownloadPage::TargetColumn);
-  if (item == nullptr ||
-      item->data(ImageDownloadPage::KindRole).toInt() ==
-          static_cast<int>(
-              zzrk::workflow::ImageDownloadItemKind::partitionTable))
+  const auto selected = m_downloadPage->currentTarget();
+  if (!selected.has_value() ||
+      selected->kind == ImageDownloadPage::RowKind::partitionTable)
     return;
-  const std::string target =
-      item->data(ImageDownloadPage::TargetRole).toString().toStdString();
+  const std::string target = selected->target.toStdString();
   const QString path = QFileDialog::getOpenFileName(
       m_downloadPage,
       target == "Loader" ? QStringLiteral("选择 MiniLoaderAll.bin")
@@ -1194,32 +1288,12 @@ void MainWorkspaceController::chooseSelectedDownloadImage() {
 void MainWorkspaceController::clearSelectedDownloadImage() {
   if (m_downloadPage == nullptr)
     return;
-  auto *table = m_downloadPage->table();
-  for (int i = 0; i < table->rowCount(); ++i) {
-    const auto *target = table->item(i, ImageDownloadPage::TargetColumn);
-    const auto *selected = table->item(i, ImageDownloadPage::SelectedColumn);
-    const auto *verify = table->item(i, ImageDownloadPage::VerifyColumn);
-    if (target != nullptr) {
-      const std::string key =
-          target->data(ImageDownloadPage::TargetRole).toString().toStdString();
-      if (selected != nullptr)
-        m_downloadSelections.insert_or_assign(key, selected->checkState() ==
-                                                       Qt::Checked);
-      if (verify != nullptr)
-        m_downloadVerifications.insert_or_assign(key, verify->checkState() ==
-                                                          Qt::Checked);
-    }
-  }
-  const int row = table->currentRow();
-  const auto *item =
-      row < 0 ? nullptr : table->item(row, ImageDownloadPage::TargetColumn);
-  if (item == nullptr ||
-      item->data(ImageDownloadPage::KindRole).toInt() ==
-          static_cast<int>(
-              zzrk::workflow::ImageDownloadItemKind::partitionTable))
+  handleDownloadPlanChanged();
+  const auto selected = m_downloadPage->currentTarget();
+  if (!selected.has_value() ||
+      selected->kind == ImageDownloadPage::RowKind::partitionTable)
     return;
-  const std::string target =
-      item->data(ImageDownloadPage::TargetRole).toString().toStdString();
+  const std::string target = selected->target.toStdString();
   m_downloadImages.erase(target);
   m_downloadSelections.erase(target);
   m_downloadVerifications.erase(target);
@@ -1248,36 +1322,25 @@ MainWorkspaceController::imageDownloadPrepareRequest() const {
       request.deviceSectors = m_devicePartitions->deviceSectors;
     }
   }
-  auto *table = m_downloadPage->table();
-  for (int row = 0; row < table->rowCount(); ++row) {
-    const auto *selected = table->item(row, ImageDownloadPage::SelectedColumn);
-    const auto *targetItem = table->item(row, ImageDownloadPage::TargetColumn);
-    const auto *verify = table->item(row, ImageDownloadPage::VerifyColumn);
-    if (selected == nullptr || targetItem == nullptr ||
-        selected->checkState() != Qt::Checked)
+  for (const auto &choice : m_downloadPage->planChoices()) {
+    if (!choice.selected)
       continue;
-    const std::string target = targetItem->data(ImageDownloadPage::TargetRole)
-                                   .toString()
-                                   .toStdString();
-    const auto kind = static_cast<zzrk::workflow::ImageDownloadItemKind>(
-        targetItem->data(ImageDownloadPage::KindRole).toInt());
-    const bool shouldVerify =
-        verify != nullptr && verify->checkState() == Qt::Checked;
-    if (kind == zzrk::workflow::ImageDownloadItemKind::partitionTable) {
-      request.verifyPartitionTable = shouldVerify;
+    const std::string target = choice.target.toStdString();
+    if (choice.kind == ImageDownloadPage::RowKind::partitionTable) {
+      request.verifyPartitionTable = choice.verify;
       continue;
     }
     const auto path = m_downloadImages.find(target);
     if (path == m_downloadImages.end() ||
         !m_validDownloadImages.contains(target))
       return std::nullopt;
-    if (kind == zzrk::workflow::ImageDownloadItemKind::loader) {
+    if (choice.kind == ImageDownloadPage::RowKind::loader) {
       request.loaderPath = path->second;
-      request.verifyLoader = shouldVerify;
+      request.verifyLoader = choice.verify;
     } else {
       request.partitions.push_back({.target = target,
                                     .imagePath = path->second,
-                                    .verify = shouldVerify});
+                                    .verify = choice.verify});
     }
   }
   if (request.layoutSource ==
@@ -1434,18 +1497,10 @@ void MainWorkspaceController::handleDownloadProgress(
       *event.itemIndex < m_preparedDownload->items.size()) {
     const QString target = QString::fromStdString(
         m_preparedDownload->items[*event.itemIndex].target);
-    auto *table = m_downloadPage->table();
-    for (int row = 0; row < table->rowCount(); ++row) {
-      const auto *item = table->item(row, ImageDownloadPage::TargetColumn);
-      if (item != nullptr &&
-          item->data(ImageDownloadPage::TargetRole).toString() == target) {
-        table->item(row, ImageDownloadPage::StatusColumn)
-            ->setText(event.totalBytes == 0U
-                          ? stage
-                          : QStringLiteral("%1 %2%").arg(stage).arg(operation));
-        break;
-      }
-    }
+    m_downloadPage->setTargetStatus(
+        target, event.totalBytes == 0U
+                    ? stage
+                    : QStringLiteral("%1 %2%").arg(stage).arg(operation));
   }
   if (m_viewModel != nullptr)
     m_viewModel->setProgress(overall, operation);
@@ -1460,7 +1515,6 @@ void MainWorkspaceController::handleImageDownloadFinished() {
       m_viewModel != nullptr ? m_viewModel->overallProgress() : 0,
       m_viewModel != nullptr ? m_viewModel->operationProgress() : 0);
   bool succeeded = false;
-  auto *table = m_downloadPage->table();
   if (const auto *error =
           std::get_if<zzrk::workflow::ImageDownloadError>(&result)) {
     const QString message = imageDownloadErrorText(*error);
@@ -1469,19 +1523,11 @@ void MainWorkspaceController::handleImageDownloadFinished() {
         *error->itemIndex < m_preparedDownload->items.size()) {
       const QString target = QString::fromStdString(
           m_preparedDownload->items[*error->itemIndex].target);
-      for (int row = 0; row < table->rowCount(); ++row) {
-        const auto *item = table->item(row, ImageDownloadPage::TargetColumn);
-        if (item != nullptr &&
-            item->data(ImageDownloadPage::TargetRole).toString() == target) {
-          table->item(row, ImageDownloadPage::StatusColumn)
-              ->setText(
-                  error->code ==
-                          zzrk::workflow::ImageDownloadErrorCode::cancelled
-                      ? QStringLiteral("已取消")
-                      : QStringLiteral("失败"));
-          break;
-        }
-      }
+      m_downloadPage->setTargetStatus(
+          target,
+          error->code == zzrk::workflow::ImageDownloadErrorCode::cancelled
+              ? QStringLiteral("已取消")
+              : QStringLiteral("失败"));
     }
     if (m_showModalDialogs &&
         error->code != zzrk::workflow::ImageDownloadErrorCode::cancelled)
@@ -1491,13 +1537,7 @@ void MainWorkspaceController::handleImageDownloadFinished() {
     const auto &success =
         std::get<zzrk::workflow::ImageDownloadSuccess>(result);
     m_downloadPage->setProgress(100, 100);
-    for (int row = 0; row < table->rowCount(); ++row) {
-      const auto *selected =
-          table->item(row, ImageDownloadPage::SelectedColumn);
-      if (selected != nullptr && selected->checkState() == Qt::Checked)
-        table->item(row, ImageDownloadPage::StatusColumn)
-            ->setText(QStringLiteral("完成"));
-    }
+    m_downloadPage->setSelectedTargetsStatus(QStringLiteral("完成"));
     const QString message =
         QStringLiteral("下载完成：写入 %1 项，校验 %2 项，共 %3")
             .arg(success.itemsWritten)
@@ -1532,7 +1572,7 @@ void MainWorkspaceController::updateDownloadControls() {
                               request.has_value() && maskromHasLoader,
                           running);
   if (m_devicePage != nullptr)
-    m_devicePage->setBusy(busy);
+    m_devicePage->setBusy(busy, selectedDeviceManageable());
   if (m_refreshButton != nullptr)
     m_refreshButton->setEnabled(!busy);
 }
@@ -1577,6 +1617,15 @@ void MainWorkspaceController::setDevicePartitionTable(
           .arg(static_cast<qulonglong>(m_downloadLayout->partitions.size())));
 }
 
+const std::optional<zzrk::workflow::DevicePartitionTable> &
+MainWorkspaceController::devicePartitionTable() const noexcept {
+  return m_devicePartitions;
+}
+
+const QString &MainWorkspaceController::partitionTableStatus() const noexcept {
+  return m_partitionTableStatus;
+}
+
 void MainWorkspaceController::shutdown() noexcept {
   if (m_shuttingDown) {
     return;
@@ -1606,16 +1655,19 @@ void MainWorkspaceController::shutdown() noexcept {
   disconnect(&m_downloadPrepareWatcher, nullptr, this, nullptr);
   disconnect(&m_imageDownloadWatcher, nullptr, this, nullptr);
   disconnect(&m_inspectionWatcher, nullptr, this, nullptr);
+  disconnect(&m_partitionTableWatcher, nullptr, this, nullptr);
   m_scanWatcher.waitForFinished();
   m_downloadPrepareWatcher.waitForFinished();
   m_imageDownloadWatcher.waitForFinished();
   m_inspectionWatcher.waitForFinished();
+  m_partitionTableWatcher.waitForFinished();
 }
 
 bool MainWorkspaceController::usbOperationRunning() const noexcept {
   return m_scanWatcher.isRunning() || m_downloadPrepareWatcher.isRunning() ||
          m_imageDownloadWatcher.isRunning() ||
          m_inspectionWatcher.isRunning() ||
+         m_partitionTableWatcher.isRunning() ||
          (m_externalBusyCallback && m_externalBusyCallback());
 }
 
@@ -1629,16 +1681,18 @@ QString MainWorkspaceController::downloadPortPath() const {
 }
 
 bool MainWorkspaceController::selectedDeviceFlashable() const {
-  return m_devicePage != nullptr && m_devicePage->selectedDeviceFlashable();
+  const auto *device = findDevice(m_lastScanResult, selectedPortPath());
+  return device != nullptr && isSupportedFlashDevice(*device);
 }
 
 bool MainWorkspaceController::selectedDeviceManageable() const {
-  return m_devicePage != nullptr && m_devicePage->selectedDeviceManageable();
+  const auto *device = findDevice(m_lastScanResult, selectedPortPath());
+  return device != nullptr && isSupportedManagementDevice(*device);
 }
 
 void MainWorkspaceController::setPagesBusy(const bool busy) {
   if (m_devicePage != nullptr)
-    m_devicePage->setBusy(busy);
+    m_devicePage->setBusy(busy, selectedDeviceManageable());
   updateDownloadControls();
 }
 

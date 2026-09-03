@@ -651,7 +651,6 @@ MainWindow::MainWindow(
             });
     m_workspaceController->setExternalBusyCallback([this] {
         return m_prepareWatcher.isRunning() || m_upgradeWatcher.isRunning()
-            || m_partitionTableWatcher.isRunning()
             || m_partitionOperationWatcher.isRunning();
     });
     // Controller 负责设备扫描和监控；旧窗口仅保留设备表的展示适配。
@@ -675,13 +674,10 @@ MainWindow::MainWindow(
                 clearPartitionTable();
                 updateUpgradeControls();
             });
-    connect(m_workspaceController.get(),
-            &zzrk::gui::MainWorkspaceController::readDownloadGptRequested,
-            this, &MainWindow::readSelectedDevicePartitions);
     connect(m_readPartitionsButton, &QToolButton::clicked,
             this, &MainWindow::readSelectedDevicePartitions);
-    connect(&m_partitionTableWatcher,
-            &QFutureWatcher<zzrk::workflow::DevicePartitionTableResult>::finished,
+    connect(m_workspaceController.get(),
+            &zzrk::gui::MainWorkspaceController::partitionTableCompleted,
             this, &MainWindow::handlePartitionTableFinished);
     connect(m_partitionTable, &QTableWidget::itemSelectionChanged,
             this, &MainWindow::updateUpgradeControls);
@@ -724,11 +720,9 @@ MainWindow::~MainWindow()
     m_shuttingDown = true;
     disconnect(&m_prepareWatcher, nullptr, this, nullptr);
     disconnect(&m_upgradeWatcher, nullptr, this, nullptr);
-    disconnect(&m_partitionTableWatcher, nullptr, this, nullptr);
     disconnect(&m_partitionOperationWatcher, nullptr, this, nullptr);
     m_prepareWatcher.waitForFinished();
     m_upgradeWatcher.waitForFinished();
-    m_partitionTableWatcher.waitForFinished();
     m_partitionOperationWatcher.waitForFinished();
 }
 
@@ -806,67 +800,38 @@ void MainWindow::clearPartitionTable()
     m_partitionProgress->setRange(0, 100);
     m_partitionProgress->setValue(0);
     m_partitionStatus->setText(QStringLiteral("尚未读取分区表"));
-    if (m_workspaceController != nullptr) {
-        m_workspaceController->setDevicePartitionTable(nullptr);
-    }
 }
 
 void MainWindow::readSelectedDevicePartitions()
 {
-    if (usbOperationRunning()) {
-        return;
+    if (m_workspaceController != nullptr) {
+        m_partitionStatus->setText(QStringLiteral("正在读取并校验 GPT..."));
+        m_partitionProgress->setRange(0, 0);
+        m_workspaceController->readSelectedDevicePartitions();
     }
-    const QString portPath = selectedPortPath();
-    if (portPath.isEmpty()) {
-        return;
-    }
-    m_partitionStatus->setText(QStringLiteral("正在读取并校验 GPT..."));
-    m_partitionProgress->setRange(0, 0);
-    statusBar()->showMessage(QStringLiteral("正在读取 GPT 分区表"));
-    const auto backend = m_backend;
-    auto future = QtConcurrent::run([backend, portPath] {
-        try {
-            return backend->readPartitions(portPath.toStdString());
-        } catch (...) {
-            return zzrk::workflow::DevicePartitionTableResult{
-                unexpectedDeviceManagementError(portPath.toStdString())};
-        }
-    });
-    m_partitionTableWatcher.setFuture(future);
-    updateUpgradeControls();
 }
 
-void MainWindow::handlePartitionTableFinished()
+void MainWindow::handlePartitionTableFinished(const bool success)
 {
     if (m_shuttingDown) {
         return;
     }
-    auto result = m_partitionTableWatcher.result();
     m_partitionProgress->setRange(0, 100);
     m_partitionProgress->setValue(0);
-    if (const auto *error =
-            std::get_if<zzrk::workflow::DeviceManagementError>(&result)) {
+    if (!success || m_workspaceController == nullptr
+        || !m_workspaceController->devicePartitionTable().has_value()) {
         clearPartitionTable();
-        const QString message = deviceManagementErrorText(*error);
-        m_partitionStatus->setText(message);
         if (m_workspaceController != nullptr) {
-            m_workspaceController->setDevicePartitionTable(nullptr);
-        }
-        statusBar()->showMessage(QStringLiteral("GPT 分区表读取失败"));
-        if (m_showModalDialogs) {
-            QMessageBox::critical(this, QStringLiteral("读取失败"), message);
+            m_partitionStatus->setText(
+                m_workspaceController->partitionTableStatus());
         }
         updateUpgradeControls();
         emit partitionTableCompleted(false);
         return;
     }
 
-    m_partitions =
-        std::get<zzrk::workflow::DevicePartitionTable>(std::move(result));
+    m_partitions = *m_workspaceController->devicePartitionTable();
     m_partitionPort = QString::fromStdString(m_partitions->device.portPath);
-    if (m_workspaceController != nullptr) {
-        m_workspaceController->setDevicePartitionTable(&*m_partitions);
-    }
     m_partitionTable->setSortingEnabled(false);
     m_partitionTable->setRowCount(
         static_cast<int>(m_partitions->table.partitions.size()));
@@ -898,16 +863,7 @@ void MainWindow::handlePartitionTableFinished()
         ++row;
     }
     m_partitionTable->setSortingEnabled(true);
-    const auto backup = zzrk::storage::toString(
-        m_partitions->table.backupStatus);
-    m_partitionStatus->setText(
-        QStringLiteral("端口 %1：%2 个分区，eMMC %3，备份 GPT %4")
-            .arg(m_partitionPort)
-            .arg(m_partitionTable->rowCount())
-            .arg(dataSizeText(m_partitions->deviceSectors * 512U))
-            .arg(QString::fromLatin1(backup.data(),
-                                     static_cast<qsizetype>(backup.size()))));
-    statusBar()->showMessage(QStringLiteral("GPT 分区表已更新"));
+    m_partitionStatus->setText(m_workspaceController->partitionTableStatus());
     updateUpgradeControls();
     emit partitionTableCompleted(true);
 }
