@@ -12,6 +12,10 @@ qt_add_library(
     MainWorkspaceController.hpp
     MainWorkspaceViewModel.cpp
     MainWorkspaceViewModel.hpp
+    pages/DevicePage.cpp
+    pages/DevicePage.hpp
+    pages/ImageDownloadPage.cpp
+    pages/ImageDownloadPage.hpp
     MainWindow.cpp
     MainWindow.hpp
     UpgradeProgressTracker.cpp

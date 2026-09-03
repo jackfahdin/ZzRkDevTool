@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 
 #include "GuiOperationBackend.hpp"
+#include "GuiTestHarness.hpp"
 #include "MainWindow.hpp"
 
-#include <QApplication>
 #include <QCheckBox>
 #include <QLabel>
 #include <QProgressBar>
@@ -64,9 +64,8 @@ public:
     hotplugErrorCallback_ = {};
   }
 
-  void emitDeviceChange(
-      const zzrk::transport::UsbHotplugEvent event =
-          zzrk::transport::UsbHotplugEvent::Arrived) {
+  void emitDeviceChange(const zzrk::transport::UsbHotplugEvent event =
+                            zzrk::transport::UsbHotplugEvent::Arrived) {
     zzrk::transport::UsbHotplugEventCallback callback;
     {
       std::lock_guard lock{monitoringMutex_};
@@ -260,19 +259,20 @@ public:
     flashInfo.legacy.sectorCount = 124'190'720U;
     zzrk::session::FlashId flashId{};
     flashId.rawBytes = {
-        std::byte{'E'}, std::byte{'M'}, std::byte{'M'}, std::byte{'C'},
-        std::byte{' '},
+        std::byte{'E'}, std::byte{'M'}, std::byte{'M'},
+        std::byte{'C'}, std::byte{' '},
     };
     return zzrk::workflow::DeviceInspection{
         .device = std::move(device),
-        .interfaceInfo = zzrk::transport::FlashInterfaceInfo{
-            .interfaceNumber = 0U,
-            .alternateSetting = 0U,
-            .bulkInEndpoint = 0x81U,
-            .bulkOutEndpoint = 0x01U,
-            .bulkInMaxPacketSize = 512U,
-            .bulkOutMaxPacketSize = 512U,
-        },
+        .interfaceInfo =
+            zzrk::transport::FlashInterfaceInfo{
+                .interfaceNumber = 0U,
+                .alternateSetting = 0U,
+                .bulkInEndpoint = 0x81U,
+                .bulkOutEndpoint = 0x01U,
+                .bulkInMaxPacketSize = 512U,
+                .bulkOutMaxPacketSize = 512U,
+            },
         .chipInfo = chipInfo,
         .capability = capability,
         .flashInfo = flashInfo,
@@ -361,7 +361,8 @@ private:
       const zzrk::workflow::PartitionOperationPhase phase,
       const std::string &partition, const bool verified,
       const zzrk::workflow::PartitionOperationProgressCallback &progress,
-      const zzrk::workflow::DeviceManagementCancellationCallback &cancellation) {
+      const zzrk::workflow::DeviceManagementCancellationCallback
+          &cancellation) {
     ++partitionOperations;
     constexpr std::uint64_t bytes = 1024U;
     if (progress) {
@@ -392,9 +393,13 @@ private:
 
 } // namespace
 
-int main(int argc, char *argv[]) {
-  QApplication application(argc, argv);
+int main() {
   auto backend = std::make_shared<AutomatedGuiBackend>();
+  auto harness = zzrk::gui::test::GuiTestHarness::create(backend);
+  if (harness == nullptr || harness->application() == nullptr) {
+    return EXIT_FAILURE;
+  }
+  auto &application = *harness->application();
   MainWindow window{backend, false};
   window.show();
 
@@ -442,8 +447,8 @@ int main(int argc, char *argv[]) {
       return;
     }
     devices->selectRow(0);
-    auto *inspect = window.findChild<QPushButton *>(
-        QStringLiteral("inspectDeviceButton"));
+    auto *inspect =
+        window.findChild<QPushButton *>(QStringLiteral("inspectDeviceButton"));
     if (inspect == nullptr || !inspect->isEnabled()) {
       failed = true;
       application.exit(EXIT_FAILURE);
@@ -452,75 +457,75 @@ int main(int argc, char *argv[]) {
     inspect->click();
   });
 
-  QObject::connect(&window, &MainWindow::deviceInspectionCompleted,
-                   &application, [&](const bool success) {
-                     const auto *chipInfo = window.findChild<QLabel *>(
-                         QStringLiteral("deviceDetailStatus"));
-                     auto *readPartitions = window.findChild<QToolButton *>(
-                         QStringLiteral("readPartitionsButton"));
-                     inspectionCompleted = success && chipInfo != nullptr &&
-                         chipInfo->text().contains(QStringLiteral("读取完成")) &&
-                         readPartitions != nullptr &&
-                         readPartitions->isEnabled();
-                     if (!inspectionCompleted) {
-                       failed = true;
-                       application.exit(EXIT_FAILURE);
-                       return;
-                     }
-                     readPartitions->click();
-                   });
+  QObject::connect(
+      &window, &MainWindow::deviceInspectionCompleted, &application,
+      [&](const bool success) {
+        const auto *chipInfo =
+            window.findChild<QLabel *>(QStringLiteral("deviceDetailStatus"));
+        auto *readPartitions = window.findChild<QToolButton *>(
+            QStringLiteral("readPartitionsButton"));
+        inspectionCompleted =
+            success && chipInfo != nullptr &&
+            chipInfo->text().contains(QStringLiteral("读取完成")) &&
+            readPartitions != nullptr && readPartitions->isEnabled();
+        if (!inspectionCompleted) {
+          failed = true;
+          application.exit(EXIT_FAILURE);
+          return;
+        }
+        readPartitions->click();
+      });
 
-  QObject::connect(&window, &MainWindow::partitionTableCompleted,
-                   &application, [&](const bool success) {
-                     auto *partitions = window.findChild<QTableWidget *>(
-                         QStringLiteral("partitionTable"));
-                     if (!success || partitions == nullptr ||
-                         partitions->rowCount() != 2 ||
-                         partitions->item(0, 0) == nullptr) {
-                       failed = true;
-                       application.exit(EXIT_FAILURE);
-                       return;
-                     }
-                     partitions->selectRow(0);
-                     const auto *backup = window.findChild<QPushButton *>(
-                         QStringLiteral("backupPartitionButton"));
-                     const auto *write = window.findChild<QPushButton *>(
-                         QStringLiteral("writePartitionButton"));
-                     auto *erase = window.findChild<QPushButton *>(
-                         QStringLiteral("erasePartitionButton"));
-                     const auto *verify = window.findChild<QCheckBox *>(
-                         QStringLiteral("verifyPartitionWriteCheckBox"));
-                     partitionsCompleted = backup != nullptr &&
-                         backup->isEnabled() && write != nullptr &&
-                         write->isEnabled() && erase != nullptr &&
-                         erase->isEnabled() && verify != nullptr &&
-                         verify->isChecked();
-                     if (!partitionsCompleted) {
-                       failed = true;
-                       application.exit(EXIT_FAILURE);
-                       return;
-                     }
-                     erase->click();
-                   });
+  QObject::connect(
+      &window, &MainWindow::partitionTableCompleted, &application,
+      [&](const bool success) {
+        auto *partitions =
+            window.findChild<QTableWidget *>(QStringLiteral("partitionTable"));
+        if (!success || partitions == nullptr || partitions->rowCount() != 2 ||
+            partitions->item(0, 0) == nullptr) {
+          failed = true;
+          application.exit(EXIT_FAILURE);
+          return;
+        }
+        partitions->selectRow(0);
+        const auto *backup = window.findChild<QPushButton *>(
+            QStringLiteral("backupPartitionButton"));
+        const auto *write = window.findChild<QPushButton *>(
+            QStringLiteral("writePartitionButton"));
+        auto *erase = window.findChild<QPushButton *>(
+            QStringLiteral("erasePartitionButton"));
+        const auto *verify = window.findChild<QCheckBox *>(
+            QStringLiteral("verifyPartitionWriteCheckBox"));
+        partitionsCompleted = backup != nullptr && backup->isEnabled() &&
+                              write != nullptr && write->isEnabled() &&
+                              erase != nullptr && erase->isEnabled() &&
+                              verify != nullptr && verify->isChecked();
+        if (!partitionsCompleted) {
+          failed = true;
+          application.exit(EXIT_FAILURE);
+          return;
+        }
+        erase->click();
+      });
 
-  QObject::connect(&window, &MainWindow::partitionOperationCompleted,
-                   &application, [&](const bool success) {
-                     const auto *progress = window.findChild<QProgressBar *>(
-                         QStringLiteral("partitionProgress"));
-                     const auto *status = window.findChild<QLabel *>(
-                         QStringLiteral("partitionStatus"));
-                     partitionOperationFinished = success &&
-                         progress != nullptr && progress->value() == 100 &&
-                         status != nullptr &&
-                         status->text().startsWith(QStringLiteral("擦除完成"));
-                     if (!partitionOperationFinished) {
-                       failed = true;
-                       application.exit(EXIT_FAILURE);
-                       return;
-                     }
-                     window.loadFirmwareImage(
-                         QStringLiteral("automated-update.img"));
-                   });
+  QObject::connect(
+      &window, &MainWindow::partitionOperationCompleted, &application,
+      [&](const bool success) {
+        const auto *progress = window.findChild<QProgressBar *>(
+            QStringLiteral("partitionProgress"));
+        const auto *status =
+            window.findChild<QLabel *>(QStringLiteral("partitionStatus"));
+        partitionOperationFinished =
+            success && progress != nullptr && progress->value() == 100 &&
+            status != nullptr &&
+            status->text().startsWith(QStringLiteral("擦除完成"));
+        if (!partitionOperationFinished) {
+          failed = true;
+          application.exit(EXIT_FAILURE);
+          return;
+        }
+        window.loadFirmwareImage(QStringLiteral("automated-update.img"));
+      });
 
   QObject::connect(&window, &MainWindow::firmwarePreparationCompleted,
                    &application, [&](const bool success) {
@@ -548,8 +553,8 @@ int main(int argc, char *argv[]) {
         window.findChild<QTableWidget *>(QStringLiteral("upgradeHistoryTable"));
     const auto *status =
         window.findChild<QLabel *>(QStringLiteral("upgradeStatus"));
-    const auto *exportReport = window.findChild<QToolButton *>(
-        QStringLiteral("exportReportButton"));
+    const auto *exportReport =
+        window.findChild<QToolButton *>(QStringLiteral("exportReportButton"));
     bool monotonic = true;
     bool independent = false;
     int previous = 0;
@@ -568,9 +573,9 @@ int main(int argc, char *argv[]) {
         exportReport != nullptr && exportReport->isEnabled() &&
         !progressValues.empty() && monotonic && independent &&
         inspectionCompleted && partitionsCompleted &&
-        partitionOperationFinished &&
-        backend->scans.load() >= 1 && backend->preparations.load() == 1 &&
-        backend->upgrades.load() == 1 && backend->inspections.load() == 1 &&
+        partitionOperationFinished && backend->scans.load() >= 1 &&
+        backend->preparations.load() == 1 && backend->upgrades.load() == 1 &&
+        backend->inspections.load() == 1 &&
         backend->partitionReads.load() == 1 &&
         backend->partitionOperations.load() == 1;
     upgradeUiCompleted = complete;
