@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 
-foreach(_required_variable IN ITEMS BUILD_DIR SOURCE_DIR INSTALL_CONFIG)
+foreach(_required_variable IN ITEMS BUILD_DIR SOURCE_DIR)
     if(NOT DEFINED ${_required_variable} OR "${${_required_variable}}" STREQUAL "")
         message(FATAL_ERROR "${_required_variable} is required")
     endif()
@@ -12,10 +12,13 @@ set(_cli "${_install_prefix}/bin/zzrkdevtool-cli")
 set(_gui "${_install_prefix}/bin/ZzRkDevTool")
 
 file(REMOVE_RECURSE "${_install_root}")
+set(_install_command "${CMAKE_COMMAND}" --install "${BUILD_DIR}")
+if(DEFINED INSTALL_CONFIG AND NOT "${INSTALL_CONFIG}" STREQUAL "")
+    list(APPEND _install_command --config "${INSTALL_CONFIG}")
+endif()
+list(APPEND _install_command --prefix "${_install_prefix}")
 execute_process(
-    COMMAND
-        "${CMAKE_COMMAND}" --install "${BUILD_DIR}"
-        --config "${INSTALL_CONFIG}" --prefix "${_install_prefix}"
+    COMMAND ${_install_command}
     RESULT_VARIABLE _install_result
     OUTPUT_VARIABLE _install_output
     ERROR_VARIABLE _install_error
@@ -42,10 +45,30 @@ set(
     "${_install_prefix}/share/doc/zzrkdevtool/sbom.spdx.json"
     "${_install_prefix}/share/doc/zzrkdevtool/licenses/Qt/LGPL-3.0-only.txt"
     "${_install_prefix}/share/doc/zzrkdevtool/licenses/libusb/LGPL-2.1-or-later.txt"
+    "${_install_prefix}/share/doc/zzrkdevtool/licenses/ZzPureTools/ZzPureTools-MIT.txt"
+    "${_install_prefix}/share/doc/zzrkdevtool/licenses/ZzLog/LICENSE"
+    "${_install_prefix}/share/doc/zzrkdevtool/licenses/QWindowKit/QWindowKit-Apache-2.0.txt"
 )
 foreach(_required_file IN LISTS _required_files)
     if(NOT EXISTS "${_required_file}")
         message(FATAL_ERROR "Installed file is missing: ${_required_file}")
+    endif()
+endforeach()
+
+set(
+    _framework_license_pairs
+    "${SOURCE_DIR}/thirdParty/ZzPureTools/LICENSE|${_install_prefix}/share/doc/zzrkdevtool/licenses/ZzPureTools/ZzPureTools-MIT.txt"
+    "${SOURCE_DIR}/thirdParty/ZzPureTools/ZzThirdParty/ZzLog/LICENSE|${_install_prefix}/share/doc/zzrkdevtool/licenses/ZzLog/LICENSE"
+    "${SOURCE_DIR}/thirdParty/ZzPureTools/ZzThirdParty/qwindowkit/LICENSE|${_install_prefix}/share/doc/zzrkdevtool/licenses/QWindowKit/QWindowKit-Apache-2.0.txt"
+)
+foreach(_framework_license_pair IN LISTS _framework_license_pairs)
+    string(REPLACE "|" ";" _framework_license_paths "${_framework_license_pair}")
+    list(GET _framework_license_paths 0 _framework_license_source)
+    list(GET _framework_license_paths 1 _framework_license_installed)
+    file(READ "${_framework_license_source}" _framework_license_source_content)
+    file(READ "${_framework_license_installed}" _framework_license_installed_content)
+    if(NOT _framework_license_source_content STREQUAL _framework_license_installed_content)
+        message(FATAL_ERROR "Installed framework license differs from source: ${_framework_license_installed}")
     endif()
 endforeach()
 
