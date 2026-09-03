@@ -1315,8 +1315,11 @@ void MainWorkspaceController::updatePartitionControls() {
   const bool canOperate = m_partitionPage->selectedPartition().has_value() &&
                           m_viewModel != nullptr &&
                           m_viewModel->partitionPort() == selectedPortPath();
+  const auto cancellation =
+      m_viewModel != nullptr ? m_viewModel->partitionCancellation() : nullptr;
   m_partitionPage->setBusy(busy, canRead, canOperate,
-                           m_partitionOperationWatcher.isRunning());
+                           m_partitionOperationWatcher.isRunning() &&
+                               cancellation && !cancellation->load());
 }
 
 void MainWorkspaceController::chooseFirmwareImage() {
@@ -1651,7 +1654,11 @@ void MainWorkspaceController::updateUpgradeControls() {
     canExport = reportId.has_value() &&
                 m_viewModel->historyReports().contains(*reportId);
   }
-  m_upgradePage->setBusy(busy, canStart, m_upgradeWatcher.isRunning(),
+  const auto cancellation =
+      m_viewModel != nullptr ? m_viewModel->upgradeCancellation() : nullptr;
+  m_upgradePage->setBusy(busy, canStart,
+                         m_upgradeWatcher.isRunning() && cancellation &&
+                             !cancellation->load(),
                          canExport);
 }
 
