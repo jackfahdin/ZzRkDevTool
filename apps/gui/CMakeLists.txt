@@ -16,6 +16,10 @@ qt_add_library(
     pages/DevicePage.hpp
     pages/ImageDownloadPage.cpp
     pages/ImageDownloadPage.hpp
+    pages/FullUpgradePage.cpp
+    pages/FullUpgradePage.hpp
+    pages/PartitionPage.cpp
+    pages/PartitionPage.hpp
     MainWindow.cpp
     MainWindow.hpp
     UpgradeProgressTracker.cpp

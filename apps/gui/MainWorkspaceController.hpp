@@ -4,6 +4,7 @@
 
 #include "GuiOperationBackend.hpp"
 #include "MainWorkspaceViewModel.hpp"
+#include "UpgradeProgressTracker.hpp"
 
 #include <ZzCore/ZzResult.h>
 #include <ZzPureTools/ZzPageInstance.h>
@@ -34,7 +35,9 @@ class ZzTabWidget;
 namespace zzrk::gui {
 
 class DevicePage;
+class FullUpgradePage;
 class ImageDownloadPage;
+class PartitionPage;
 
 /**
  * @brief 工作区级设备协调器。
@@ -61,7 +64,9 @@ public:
 
   void attachWorkspace(ZzFluentUI::ZzTabWidget *tabs, QStatusBar *statusBar);
   void setExternalBusyCallback(std::function<bool()> callback);
-  void attachPages(ImageDownloadPage *downloadPage, DevicePage *devicePage);
+  void attachPages(ImageDownloadPage *downloadPage, DevicePage *devicePage,
+                   FullUpgradePage *upgradePage = nullptr,
+                   PartitionPage *partitionPage = nullptr);
 
   [[nodiscard]] ZzCore::ZzResult<std::unique_ptr<ZzPureTools::ZzPageInstance>>
   createInitialDownloadPage(QWidget *pageParent);
@@ -80,6 +85,7 @@ public:
   void readSelectedDevicePartitions();
   void loadDownloadParameter(const QString &path);
   void loadDownloadDirectory(const QString &path);
+  void loadFirmwareImage(const QString &path);
   void setDevicePartitionTable(
       const zzrk::workflow::DevicePartitionTable *partitions);
   [[nodiscard]] const std::optional<zzrk::workflow::DevicePartitionTable> &
@@ -101,6 +107,10 @@ signals:
   void imageDownloadCompleted(bool success);
   void imageDownloadProgressChanged(int overallPercent, int operationPercent);
   void deviceInspectionCompleted(bool success);
+  void firmwarePreparationCompleted(bool success);
+  void upgradeProgressChanged(int overallPercent, int operationPercent);
+  void upgradeCompleted();
+  void partitionOperationCompleted(bool success);
 
 private slots:
   void handleScanFinished();
@@ -108,6 +118,16 @@ private slots:
   void inspectSelectedDevice();
   void handleInspectionFinished();
   void handlePartitionTableFinished();
+  void backupSelectedPartition();
+  void writeSelectedPartition();
+  void eraseSelectedPartition();
+  void cancelPartitionOperation();
+  void handlePartitionOperationFinished();
+  void chooseFirmwareImage();
+  void handlePrepareFinished();
+  void startUpgrade();
+  void cancelUpgrade();
+  void exportSelectedReport();
   void handleDownloadDeviceChanged();
   void handleDownloadLayoutChanged();
   void handleDownloadPlanChanged();
@@ -137,6 +157,19 @@ private:
   imageDownloadPrepareRequest() const;
   void handleDownloadProgress(const zzrk::workflow::ImageDownloadEvent &event);
   void updateDownloadControls();
+  void clearPartitionTable();
+  void startPartitionOperation(zzrk::workflow::PartitionOperationPhase phase,
+                               const std::filesystem::path &path = {});
+  void handlePartitionOperationProgress(
+      const zzrk::workflow::PartitionOperationProgress &progress);
+  void updatePartitionControls();
+  void handleUpgradeProgress(const zzrk::workflow::FirmwareUpgradeEvent &event);
+  void handleUpgradeFinished();
+  void updateUpgradeControls();
+  void beginHistoryEntry(const QString &portPath);
+  void finishHistoryEntry(const QString &result, const QString &detail,
+                          zzrk::workflow::FirmwareUpgradeReport report);
+  void updateReportExportControls();
 
   std::shared_ptr<IGuiOperationBackend> m_backend;
   std::unique_ptr<MainWorkspaceViewModel> m_viewModelOwner;
@@ -148,8 +181,15 @@ private:
   QFutureWatcher<zzrk::workflow::DeviceInspectionResult> m_inspectionWatcher;
   QFutureWatcher<zzrk::workflow::DevicePartitionTableResult>
       m_partitionTableWatcher;
+  QFutureWatcher<zzrk::workflow::PartitionOperationResult>
+      m_partitionOperationWatcher;
+  QFutureWatcher<zzrk::workflow::PreparedFirmwareUpgradeResult>
+      m_prepareWatcher;
+  QFutureWatcher<zzrk::workflow::FirmwareUpgradeResult> m_upgradeWatcher;
   QPointer<ImageDownloadPage> m_downloadPage;
   QPointer<DevicePage> m_devicePage;
+  QPointer<FullUpgradePage> m_upgradePage;
+  QPointer<PartitionPage> m_partitionPage;
   ZzFluentUI::ZzTabWidget *m_tabs = nullptr;
   QStatusBar *m_statusBar = nullptr;
   QLabel *m_connectionText = nullptr;
@@ -166,6 +206,15 @@ private:
   std::function<bool()> m_externalBusyCallback;
   std::optional<zzrk::workflow::PreparedImageDownloadPlan> m_preparedDownload;
   std::optional<zzrk::workflow::DevicePartitionTable> m_devicePartitions;
+  std::optional<zzrk::workflow::PreparedFirmwareUpgrade> m_preparedUpgrade;
+  std::optional<UpgradeProgressTracker> m_progressTracker;
+  std::shared_ptr<zzrk::workflow::FirmwareUpgradeReportBuilder>
+      m_activeReportBuilder;
+  std::uint64_t m_nextReportId = 1U;
+  int m_activeHistoryRow = -1;
+  QString m_firmwarePath;
+  zzrk::workflow::PartitionOperationPhase m_partitionOperationPhase{
+      zzrk::workflow::PartitionOperationPhase::read};
   std::optional<zzrk::image::RockchipParameterLayout> m_downloadLayout;
   zzrk::workflow::ImageDownloadRequest m_pendingDownloadRequest;
   std::filesystem::path m_downloadParameterPath;
