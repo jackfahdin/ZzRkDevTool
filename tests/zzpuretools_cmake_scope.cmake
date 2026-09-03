@@ -63,16 +63,32 @@ foreach(_zzrk_puretools_cache_variable IN LISTS _zzrk_puretools_scope_CACHE_VARI
         CACHE "${_zzrk_puretools_cache_variable}"
         PROPERTY TYPE
     )
+    get_property(
+        _zzrk_puretools_cache_help
+        CACHE "${_zzrk_puretools_cache_variable}"
+        PROPERTY HELPSTRING
+    )
+    get_property(
+        _zzrk_puretools_cache_advanced
+        CACHE "${_zzrk_puretools_cache_variable}"
+        PROPERTY ADVANCED
+    )
     if(NOT "${_zzrk_puretools_cache_value}" STREQUAL
        "${_zzrk_puretools_scope_CACHE_${_zzrk_puretools_cache_variable}_VALUE}"
        OR NOT "${_zzrk_puretools_cache_type}" STREQUAL
-              "${_zzrk_puretools_scope_CACHE_${_zzrk_puretools_cache_variable}_TYPE}")
+              "${_zzrk_puretools_scope_CACHE_${_zzrk_puretools_cache_variable}_TYPE}"
+       OR NOT "${_zzrk_puretools_cache_help}" STREQUAL
+              "${_zzrk_puretools_scope_CACHE_${_zzrk_puretools_cache_variable}_HELPSTRING}"
+       OR NOT "${_zzrk_puretools_cache_advanced}" STREQUAL
+              "${_zzrk_puretools_scope_CACHE_${_zzrk_puretools_cache_variable}_ADVANCED}")
         message(
             FATAL_ERROR
             "ZzPureTools changed cache entry ${_zzrk_puretools_cache_variable}"
         )
     endif()
 endforeach()
+unset(_zzrk_puretools_cache_advanced)
+unset(_zzrk_puretools_cache_help)
 unset(_zzrk_puretools_cache_type)
 unset(_zzrk_puretools_cache_value)
 unset(_zzrk_puretools_cache_snapshot_index)

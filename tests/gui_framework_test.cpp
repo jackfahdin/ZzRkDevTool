@@ -25,8 +25,8 @@
 #include <ZzPureTools/ZzRouteId.h>
 #include <ZzWindowKit/ZzWindowKitBootstrap.h>
 
-#include <QApplication>
 #include <QAbstractButton>
+#include <QApplication>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEvent>
@@ -39,14 +39,14 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPointer>
-#include <QProgressBar>
 #include <QProcess>
+#include <QProgressBar>
 #include <QPushButton>
-#include <QStyle>
 #include <QStatusBar>
+#include <QStyle>
 #include <QTableWidget>
-#include <QThread>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QTimer>
 #include <QToolButton>
 
@@ -95,8 +95,7 @@ bool saveVisualEvidence(ZzPureTools::ZzPureApplication &application,
     return false;
   const auto originalMode = themeController->mode();
   const QSize originalSize = window.size();
-  const auto capture = [&](const QSize size,
-                           const ZzFluentUI::ZzThemeMode mode,
+  const auto capture = [&](const QSize size, const ZzFluentUI::ZzThemeMode mode,
                            const QString &fileName) {
     themeController->setMode(mode);
     window.resize(size);
@@ -298,8 +297,8 @@ private:
 
 namespace {
 
-ZzPureTools::ZzApplicationWindow *buildBareFrameworkWindow(
-    ZzPureTools::ZzPureApplication &application) {
+ZzPureTools::ZzApplicationWindow *
+buildBareFrameworkWindow(ZzPureTools::ZzPureApplication &application) {
   const ZzPureTools::ZzRouteId route{QStringLiteral("rollback-test")};
   QPointer<ZzPureTools::ZzApplicationWindow> window;
 
@@ -308,14 +307,15 @@ ZzPureTools::ZzApplicationWindow *buildBareFrameworkWindow(
   registration.routeId = route;
   registration.lifetime = ZzPureTools::ZzPageLifetimePolicy::WhileActive;
   registration.factory = [](QWidget *parent) {
-    return ZzPureTools::ZzPageInstance::create(
-        parent, new QWidget(parent), std::make_unique<QObject>(),
-        std::make_unique<QObject>());
+    return ZzPureTools::ZzPageInstance::create(parent, new QWidget(parent),
+                                               std::make_unique<QObject>(),
+                                               std::make_unique<QObject>());
   };
   if (!builder.addPage(std::move(registration)) ||
-      !builder.addNavigationNode(
-          {route, QStringLiteral("gui_framework_test"),
-           QStringLiteral("Rollback test"), {}}) ||
+      !builder.addNavigationNode({route,
+                                  QStringLiteral("gui_framework_test"),
+                                  QStringLiteral("Rollback test"),
+                                  {}}) ||
       !builder.setInitialRoute(route) ||
       !builder.setWindowSetupCallback(
           [&window](ZzPureTools::ZzApplicationWindow &created) {
@@ -373,7 +373,7 @@ void expectWorkspaceAttachFailureRollsBack() {
   static char *applicationArguments[] = {applicationName, nullptr};
   int argumentCount = 1;
   ZzPureTools::ZzPureApplication application(argumentCount,
-                                               applicationArguments);
+                                             applicationArguments);
   auto *window = buildBareFrameworkWindow(application);
   expect(window != nullptr, "rollback fixture creates a framework window");
   if (window == nullptr) {
@@ -406,7 +406,8 @@ void expectWorkspaceAttachFailureRollsBack() {
   expect(window->findChild<QWidget *>(QStringLiteral("zzWorkspaceRoot")) ==
              nullptr,
          "failed workspace attach removes the workspace root");
-  expect(navigation != nullptr && navigation->parentWidget() == originalCentral &&
+  expect(navigation != nullptr &&
+             navigation->parentWidget() == originalCentral &&
              originalCentral->isAncestorOf(navigation),
          "failed workspace attach restores the navigation pane");
   expect(pageHost != nullptr && pageHost->parentWidget() == originalCentral &&
@@ -439,62 +440,122 @@ int runSynchronousShutdownScenario(const QString &scenario) {
     return failures;
 
   int partitionTableCompletions = 0;
+  const auto waitForInitialSelection = [&] {
+    controller->refreshDevices();
+    return waitFor([&] {
+      return controllerGuard != nullptr &&
+             controllerGuard->viewModel()->selectedPortPath() ==
+                 QStringLiteral("1-5");
+    });
+  };
   if (scenario == QStringLiteral("viewModelDeviceSelectionChanged")) {
     QObject::connect(
         controller->viewModel(),
-        &zzrk::gui::MainWorkspaceViewModel::deviceSelectionChanged,
-        application, [application] { application->beginShutdown(); },
-        Qt::DirectConnection);
+        &zzrk::gui::MainWorkspaceViewModel::deviceSelectionChanged, application,
+        [application] { application->beginShutdown(); }, Qt::DirectConnection);
     controller->viewModel()->setSelectedPortPath(QStringLiteral("1-5"));
   } else if (scenario == QStringLiteral("viewModelBusyChanged")) {
     QObject::connect(
-        controller->viewModel(), &zzrk::gui::MainWorkspaceViewModel::busyChanged,
-        application, [application](bool) { application->beginShutdown(); },
+        controller->viewModel(),
+        &zzrk::gui::MainWorkspaceViewModel::busyChanged, application,
+        [application](bool) { application->beginShutdown(); },
         Qt::DirectConnection);
     controller->viewModel()->setBusy(true);
   } else if (scenario == QStringLiteral("viewModelProgressChanged")) {
     QObject::connect(
         controller->viewModel(),
-        &zzrk::gui::MainWorkspaceViewModel::progressChanged,
-        application, [application](int, int) { application->beginShutdown(); },
+        &zzrk::gui::MainWorkspaceViewModel::progressChanged, application,
+        [application](int, int) { application->beginShutdown(); },
         Qt::DirectConnection);
     controller->viewModel()->setProgress(1, 1);
   } else if (scenario == QStringLiteral("viewModelHistoryChanged")) {
     QObject::connect(
-        controller->viewModel(), &zzrk::gui::MainWorkspaceViewModel::historyChanged,
-        application, [application] { application->beginShutdown(); },
-        Qt::DirectConnection);
+        controller->viewModel(),
+        &zzrk::gui::MainWorkspaceViewModel::historyChanged, application,
+        [application] { application->beginShutdown(); }, Qt::DirectConnection);
     controller->viewModel()->setHistoryReports({});
   } else if (scenario == QStringLiteral("refreshDevicesBusyChanged")) {
     QObject::connect(
-        controller->viewModel(), &zzrk::gui::MainWorkspaceViewModel::busyChanged,
-        application, [application](bool) { application->beginShutdown(); },
+        controller->viewModel(),
+        &zzrk::gui::MainWorkspaceViewModel::busyChanged, application,
+        [application](bool) { application->beginShutdown(); },
         Qt::DirectConnection);
     controller->refreshDevices();
   } else if (scenario == QStringLiteral("shutdownBusyChanged")) {
     controller->viewModel()->setBusy(true);
     QObject::connect(
-        controller->viewModel(), &zzrk::gui::MainWorkspaceViewModel::busyChanged,
-        application, [application](bool) { application->beginShutdown(); },
+        controller->viewModel(),
+        &zzrk::gui::MainWorkspaceViewModel::busyChanged, application,
+        [application](bool) { application->beginShutdown(); },
         Qt::DirectConnection);
     controller->shutdown();
   } else if (scenario == QStringLiteral("loadDownloadParameterLayoutChanged")) {
     QTemporaryDir directory;
     const QString parameterPath = directory.filePath("parameter.txt");
-    expect(directory.isValid() &&
-               writeFile(parameterPath,
-                         QByteArray{"MACHINE_MODEL: gui-rk3588\n"
-                                    "TYPE: GPT\n"
-                                    "CMDLINE:mtdparts=rk29xxnand:"
-                                    "0x100@0x8000(boot_a)\n"}),
-           "download layout shutdown fixture creates parameter.txt");
+    expect(
+        directory.isValid() &&
+            writeFile(parameterPath, QByteArray{"MACHINE_MODEL: gui-rk3588\n"
+                                                "TYPE: GPT\n"
+                                                "CMDLINE:mtdparts=rk29xxnand:"
+                                                "0x100@0x8000(boot_a)\n"}),
+        "download layout shutdown fixture creates parameter.txt");
     controller->viewModel()->setDownloadLayoutPort(QStringLiteral("1-5"));
     QObject::connect(
         controller->viewModel(),
-        &zzrk::gui::MainWorkspaceViewModel::deviceSelectionChanged,
-        application, [application] { application->beginShutdown(); },
-        Qt::DirectConnection);
+        &zzrk::gui::MainWorkspaceViewModel::deviceSelectionChanged, application,
+        [application] { application->beginShutdown(); }, Qt::DirectConnection);
     controller->loadDownloadParameter(parameterPath);
+  } else if (scenario == QStringLiteral("selectionClearsInspection")) {
+    expect(waitForInitialSelection(),
+           "selection inspection shutdown fixture completes its initial scan");
+    controller->viewModel()->setSelectedPortPath(QStringLiteral("stale"));
+    controller->viewModel()->setInspectedPort(QStringLiteral("1-5"));
+    int selectionNotifications = 0;
+    QObject::connect(
+        controller->viewModel(),
+        &zzrk::gui::MainWorkspaceViewModel::deviceSelectionChanged, application,
+        [application, &selectionNotifications] {
+          ++selectionNotifications;
+          if (selectionNotifications == 2)
+            application->beginShutdown();
+        },
+        Qt::DirectConnection);
+    QMetaObject::invokeMethod(controller, "handleDeviceSelectionChanged",
+                              Qt::DirectConnection);
+  } else if (scenario == QStringLiteral("selectionClearsDeviceGpt")) {
+    expect(waitForInitialSelection(),
+           "selection GPT shutdown fixture completes its initial scan");
+    controller->viewModel()->setSelectedPortPath(QStringLiteral("stale"));
+    controller->viewModel()->setDownloadLayoutPort(QStringLiteral("1-5"));
+    int selectionNotifications = 0;
+    QObject::connect(
+        controller->viewModel(),
+        &zzrk::gui::MainWorkspaceViewModel::deviceSelectionChanged, application,
+        [application, &selectionNotifications] {
+          ++selectionNotifications;
+          if (selectionNotifications == 2)
+            application->beginShutdown();
+        },
+        Qt::DirectConnection);
+    QMetaObject::invokeMethod(controller, "handleDeviceSelectionChanged",
+                              Qt::DirectConnection);
+  } else if (scenario == QStringLiteral("selectionClearsPartitionTable")) {
+    expect(waitForInitialSelection(),
+           "selection partition shutdown fixture completes its initial scan");
+    controller->viewModel()->setSelectedPortPath(QStringLiteral("stale"));
+    controller->viewModel()->setPartitionPort(QStringLiteral("1-5"));
+    int selectionNotifications = 0;
+    QObject::connect(
+        controller->viewModel(),
+        &zzrk::gui::MainWorkspaceViewModel::deviceSelectionChanged, application,
+        [application, &selectionNotifications] {
+          ++selectionNotifications;
+          if (selectionNotifications == 2)
+            application->beginShutdown();
+        },
+        Qt::DirectConnection);
+    QMetaObject::invokeMethod(controller, "handleDeviceSelectionChanged",
+                              Qt::DirectConnection);
   } else if (scenario == QStringLiteral("devicesChanged")) {
     QObject::connect(
         controller, &zzrk::gui::MainWorkspaceController::devicesChanged,
@@ -506,8 +567,7 @@ int runSynchronousShutdownScenario(const QString &scenario) {
     controller->refreshDevices();
   } else if (scenario == QStringLiteral("selectedDeviceChanged")) {
     QObject::connect(
-        controller,
-        &zzrk::gui::MainWorkspaceController::selectedDeviceChanged,
+        controller, &zzrk::gui::MainWorkspaceController::selectedDeviceChanged,
         application, [application] { application->beginShutdown(); },
         Qt::DirectConnection);
     controller->refreshDevices();
@@ -529,6 +589,15 @@ int runSynchronousShutdownScenario(const QString &scenario) {
         &zzrk::gui::MainWorkspaceController::devicePartitionTableChanged,
         application, [application] { application->beginShutdown(); },
         Qt::DirectConnection);
+    controller->readSelectedDevicePartitions();
+  } else if (scenario == QStringLiteral("partitionTableAppliesDeviceGpt")) {
+    expect(
+        waitForInitialSelection(),
+        "partition table layout shutdown fixture completes its initial scan");
+    QObject::connect(
+        controller->viewModel(),
+        &zzrk::gui::MainWorkspaceViewModel::deviceSelectionChanged, application,
+        [application] { application->beginShutdown(); }, Qt::DirectConnection);
     controller->readSelectedDevicePartitions();
   } else if (scenario == QStringLiteral("scanCompleted")) {
     QObject::connect(
@@ -555,9 +624,8 @@ int runSynchronousShutdownScenario(const QString &scenario) {
 } // namespace
 
 int main(int argc, char **argv) {
-  if (argc == 3 &&
-      QString::fromLocal8Bit(argv[1]) ==
-          QStringLiteral("--synchronous-shutdown")) {
+  if (argc == 3 && QString::fromLocal8Bit(argv[1]) ==
+                       QStringLiteral("--synchronous-shutdown")) {
     return runSynchronousShutdownScenario(QString::fromLocal8Bit(argv[2]));
   }
   const QString executable =
@@ -637,7 +705,8 @@ int main(int argc, char **argv) {
     expect(window->navigationPane() != nullptr &&
                !window->navigationPane()->isVisible(),
            "framework navigation pane is hidden");
-    for (auto *activityBar : window->findChildren<ZzFluentUI::ZzActivityBar *>())
+    for (auto *activityBar :
+         window->findChildren<ZzFluentUI::ZzActivityBar *>())
       expect(activityBar->isHidden(), "workspace activity bars are hidden");
     for (auto *sidePane : window->findChildren<ZzFluentUI::ZzSidePane *>())
       expect(sidePane->isHidden(), "workspace side panes are hidden");
@@ -645,10 +714,9 @@ int main(int argc, char **argv) {
         QStringLiteral("mainTabs"));
     expect(mainTabs != nullptr, "window exposes Fluent main tabs");
     if (mainTabs != nullptr) {
-      const QStringList expectedTabs{QStringLiteral("下载镜像"),
-                                     QStringLiteral("设备"),
-                                     QStringLiteral("完整升级"),
-                                     QStringLiteral("分区")};
+      const QStringList expectedTabs{
+          QStringLiteral("下载镜像"), QStringLiteral("设备"),
+          QStringLiteral("完整升级"), QStringLiteral("分区")};
       QStringList actualTabs;
       for (int index = 0; index < mainTabs->count(); ++index)
         actualTabs.append(mainTabs->tabText(index));
@@ -660,8 +728,7 @@ int main(int argc, char **argv) {
       expect(bar != nullptr, "main tabs expose a Fluent tab bar");
       if (bar != nullptr) {
         expect(!bar->isTearOffEnabled(), "main tabs cannot be detached");
-        expect(!bar->isTabTransferEnabled(),
-               "main tabs cannot be transferred");
+        expect(!bar->isTabTransferEnabled(), "main tabs cannot be transferred");
         expect(bar->newTabButton() != nullptr,
                "main tabs expose the new-tab control for policy enforcement");
         if (bar->newTabButton() != nullptr) {
@@ -672,26 +739,28 @@ int main(int argc, char **argv) {
 
       const int selectedTab = mainTabs->currentIndex();
       mainTabs->setTabPinned(0, true);
-      expect(mainTabs->count() == expectedTabs.size() &&
-                 mainTabs->currentIndex() == selectedTab,
-             "pin decoration does not create, remove, or navigate business tabs");
+      expect(
+          mainTabs->count() == expectedTabs.size() &&
+              mainTabs->currentIndex() == selectedTab,
+          "pin decoration does not create, remove, or navigate business tabs");
       mainTabs->setTabModified(1, true);
       expect(mainTabs->count() == expectedTabs.size() &&
                  mainTabs->currentIndex() == selectedTab,
-             "modified decoration does not create, remove, or navigate business tabs");
+             "modified decoration does not create, remove, or navigate "
+             "business tabs");
       mainTabs->setTabAttention(2, true);
       expect(mainTabs->count() == expectedTabs.size() &&
                  mainTabs->currentIndex() == selectedTab,
-             "attention decoration does not create, remove, or navigate business tabs");
-
+             "attention decoration does not create, remove, or navigate "
+             "business tabs");
     }
   }
 
   if (window == nullptr) {
     return 1;
   }
-  auto *tabs = window->findChild<ZzFluentUI::ZzTabWidget *>(
-      QStringLiteral("mainTabs"));
+  auto *tabs =
+      window->findChild<ZzFluentUI::ZzTabWidget *>(QStringLiteral("mainTabs"));
   auto *downloadView =
       window->findChild<QWidget *>(QStringLiteral("downloadImagePage"));
   expect(tabs != nullptr && controller->mainTabs() == tabs,
@@ -705,9 +774,8 @@ int main(int argc, char **argv) {
   expect(downloadView != nullptr,
          "initial route creates the download page in the framework host");
   if (downloadView != nullptr && tabs != nullptr) {
-    auto *downloadTable =
-        downloadView->findChild<QTableWidget *>(
-            QStringLiteral("downloadImageTable"));
+    auto *downloadTable = downloadView->findChild<QTableWidget *>(
+        QStringLiteral("downloadImageTable"));
     expect(downloadTable != nullptr && downloadTable->columnCount() == 9,
            "initial page exposes the nine-column download plan");
     expect(downloadView->findChild<QProgressBar *>(
@@ -761,7 +829,8 @@ int main(int argc, char **argv) {
                return themeController->mode() == ZzFluentUI::ZzThemeMode::Light;
              }),
              "theme controller accepts the light baseline");
-      const QColor lightTitleSurface = titleBar->palette().color(QPalette::Window);
+      const QColor lightTitleSurface =
+          titleBar->palette().color(QPalette::Window);
       const QColor lightTabsSurface = tabs->palette().color(QPalette::Window);
       const QColor lightStatusSurface =
           window->statusBar()->palette().color(QPalette::Window);
@@ -770,7 +839,8 @@ int main(int argc, char **argv) {
       themeController->setMode(ZzFluentUI::ZzThemeMode::Dark);
       expect(waitFor([&] { return snapshotChanges > snapshotsBeforeDark; }),
              "dark theme publishes a new snapshot");
-      const QColor darkSurface = QApplication::palette().color(QPalette::Window);
+      const QColor darkSurface =
+          QApplication::palette().color(QPalette::Window);
       expect(titleBar->themeMode() == ZzFluentUI::ZzThemeMode::Dark,
              "dark snapshot refreshes the title-bar theme state");
       expect(titleBar->palette().color(QPalette::Window) == darkSurface &&
@@ -800,24 +870,23 @@ int main(int argc, char **argv) {
              "title-bar theme toggle changes the application theme");
 
       themeController->setMode(originalThemeMode);
-      expect(waitFor([&] {
-               return themeController->mode() == originalThemeMode;
-             }),
-             "theme controller restores the original mode");
+      expect(
+          waitFor([&] { return themeController->mode() == originalThemeMode; }),
+          "theme controller restores the original mode");
       titleBar->setThemeInteractionMode(originalThemeInteraction);
       expect(QApplication::style() == originalStyle,
              "theme switching preserves the application style object");
     }
 
     auto *buttonTitleBar = window->titleBar();
-    auto *minimizeButton = buttonTitleBar != nullptr
-                               ? qobject_cast<QAbstractButton *>(
-                                     buttonTitleBar->minimizeButton())
-                               : nullptr;
-    auto *maximizeButton = buttonTitleBar != nullptr
-                               ? qobject_cast<QAbstractButton *>(
-                                     buttonTitleBar->maximizeButton())
-                               : nullptr;
+    auto *minimizeButton =
+        buttonTitleBar != nullptr
+            ? qobject_cast<QAbstractButton *>(buttonTitleBar->minimizeButton())
+            : nullptr;
+    auto *maximizeButton =
+        buttonTitleBar != nullptr
+            ? qobject_cast<QAbstractButton *>(buttonTitleBar->maximizeButton())
+            : nullptr;
     expect(minimizeButton != nullptr,
            "framework title bar exposes a minimize intent button");
     expect(maximizeButton != nullptr,
@@ -842,9 +911,8 @@ int main(int argc, char **argv) {
            }),
            "title-bar restore intent returns the framework window to normal");
 
-    auto *readGptButton =
-        downloadView->findChild<QToolButton *>(
-            QStringLiteral("readDownloadGptButton"));
+    auto *readGptButton = downloadView->findChild<QToolButton *>(
+        QStringLiteral("readDownloadGptButton"));
     expect(readGptButton != nullptr && readGptButton->isEnabled(),
            "selected Loader device can read its GPT");
     if (readGptButton != nullptr)
@@ -852,9 +920,8 @@ int main(int argc, char **argv) {
     QEventLoop gptLoop;
     QTimer::singleShot(100, &gptLoop, &QEventLoop::quit);
     gptLoop.exec();
-    const auto *layoutPath =
-        downloadView->findChild<QLineEdit *>(
-            QStringLiteral("downloadParameterPath"));
+    const auto *layoutPath = downloadView->findChild<QLineEdit *>(
+        QStringLiteral("downloadParameterPath"));
     expect(backend->partitionReads.load() == 1 && layoutPath != nullptr &&
                layoutPath->text() == QStringLiteral("1-5 / 设备 GPT") &&
                downloadTable->rowCount() == 3,
@@ -910,8 +977,7 @@ int main(int argc, char **argv) {
     bool downloadFinished = false;
     QEventLoop downloadLoop;
     QObject::connect(
-        controller,
-        &zzrk::gui::MainWorkspaceController::imageDownloadCompleted,
+        controller, &zzrk::gui::MainWorkspaceController::imageDownloadCompleted,
         &downloadLoop, [&](bool) {
           downloadFinished = true;
           downloadLoop.quit();
@@ -944,9 +1010,8 @@ int main(int argc, char **argv) {
       startButton->click();
     QTimer::singleShot(2000, &downloadLoop, &QEventLoop::quit);
     downloadLoop.exec();
-    const auto *downloadStatus =
-        downloadView->findChild<QLabel *>(
-            QStringLiteral("imageDownloadStatus"));
+    const auto *downloadStatus = downloadView->findChild<QLabel *>(
+        QStringLiteral("imageDownloadStatus"));
     expect(downloadFinished && downloadStatus != nullptr &&
                downloadStatus->text() ==
                    QStringLiteral("分区布局无效（parameter.txt）"),
@@ -958,12 +1023,10 @@ int main(int argc, char **argv) {
       startButton->click();
     QTimer::singleShot(2000, &downloadLoop, &QEventLoop::quit);
     downloadLoop.exec();
-    const auto *overallProgress =
-        downloadView->findChild<QProgressBar *>(
-            QStringLiteral("overallImageDownloadProgress"));
-    const auto *operationProgress =
-        downloadView->findChild<QProgressBar *>(
-            QStringLiteral("operationImageDownloadProgress"));
+    const auto *overallProgress = downloadView->findChild<QProgressBar *>(
+        QStringLiteral("overallImageDownloadProgress"));
+    const auto *operationProgress = downloadView->findChild<QProgressBar *>(
+        QStringLiteral("operationImageDownloadProgress"));
     QString bootStatus;
     if (downloadTable != nullptr) {
       for (int row = 0; row < downloadTable->rowCount(); ++row) {
@@ -985,7 +1048,8 @@ int main(int argc, char **argv) {
                bootStatus == QStringLiteral("失败"),
            "failed image execution marks the matching plan row");
   }
-  const auto upgradeCancellation = controller->viewModel()->upgradeCancellation();
+  const auto upgradeCancellation =
+      controller->viewModel()->upgradeCancellation();
   const auto downloadCancellation =
       controller->viewModel()->downloadCancellation();
   const auto partitionCancellation =
@@ -993,10 +1057,10 @@ int main(int argc, char **argv) {
   expect(saveVisualEvidence(*application, *window),
          "visual smoke saves light, minimum, and dark screenshots");
   auto *titleBar = window->titleBar();
-  auto *closeButton = titleBar != nullptr
-                          ? qobject_cast<QAbstractButton *>(
-                                titleBar->closeButton())
-                          : nullptr;
+  auto *closeButton =
+      titleBar != nullptr
+          ? qobject_cast<QAbstractButton *>(titleBar->closeButton())
+          : nullptr;
   expect(closeButton != nullptr,
          "framework title bar exposes a close intent button");
   QPointer<ZzPureTools::ZzApplicationWindow> closedWindow{window};
@@ -1004,7 +1068,8 @@ int main(int argc, char **argv) {
   if (closeButton != nullptr)
     closeButton->click();
   expect(waitFor([application] { return application->windowCount() == 0; }),
-         "title-bar close removes the framework window from application ownership");
+         "title-bar close removes the framework window from application "
+         "ownership");
   expect(closedWindow == nullptr,
          "title-bar close destroys the unique framework window");
   expect(closedController == nullptr,
@@ -1033,9 +1098,13 @@ int main(int argc, char **argv) {
       QStringLiteral("refreshDevicesBusyChanged"),
       QStringLiteral("shutdownBusyChanged"),
       QStringLiteral("loadDownloadParameterLayoutChanged"),
+      QStringLiteral("selectionClearsInspection"),
+      QStringLiteral("selectionClearsDeviceGpt"),
+      QStringLiteral("selectionClearsPartitionTable"),
       QStringLiteral("devicesChanged"),
       QStringLiteral("selectedDeviceChanged"),
       QStringLiteral("devicePartitionTableChanged"),
+      QStringLiteral("partitionTableAppliesDeviceGpt"),
       QStringLiteral("scanCompleted")};
   for (const QString &scenario : shutdownScenarios) {
     const int exitCode = QProcess::execute(
