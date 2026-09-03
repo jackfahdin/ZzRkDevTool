@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "GuiTestHarness.hpp"
+#include "GuiWindowShell.hpp"
 #include "MainWorkspaceController.hpp"
 
 #include <ZzFluentUI/ZzActivityBar.h>
@@ -9,15 +10,27 @@
 #include <ZzFluentUI/ZzSidePane.h>
 #include <ZzFluentUI/ZzTabBar.h>
 #include <ZzFluentUI/ZzTabWidget.h>
+#include <ZzPureTools/ZzApplicationBuilder.h>
 #include <ZzPureTools/ZzApplicationWindow.h>
+#include <ZzPureTools/ZzNavigationController.h>
+#include <ZzPureTools/ZzNavigationNode.h>
+#include <ZzPureTools/ZzPageHost.h>
+#include <ZzPureTools/ZzPageInstance.h>
+#include <ZzPureTools/ZzPageLifetimePolicy.h>
+#include <ZzPureTools/ZzPageRegistration.h>
 #include <ZzPureTools/ZzPureApplication.h>
+#include <ZzPureTools/ZzRouteId.h>
+#include <ZzWindowKit/ZzWindowKitBootstrap.h>
 
 #include <QApplication>
+#include <QEvent>
 #include <QEventLoop>
 #include <QFile>
 #include <QLabel>
+#include <QLayout>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPointer>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QStyle>
@@ -222,7 +235,145 @@ public:
 private:
 };
 
+namespace {
+
+ZzPureTools::ZzApplicationWindow *buildBareFrameworkWindow(
+    ZzPureTools::ZzPureApplication &application) {
+  const ZzPureTools::ZzRouteId route{QStringLiteral("rollback-test")};
+  QPointer<ZzPureTools::ZzApplicationWindow> window;
+
+  ZzPureTools::ZzApplicationBuilder builder;
+  ZzPureTools::ZzPageRegistration registration;
+  registration.routeId = route;
+  registration.lifetime = ZzPureTools::ZzPageLifetimePolicy::WhileActive;
+  registration.factory = [](QWidget *parent) {
+    return ZzPureTools::ZzPageInstance::create(
+        parent, new QWidget(parent), std::make_unique<QObject>(),
+        std::make_unique<QObject>());
+  };
+  if (!builder.addPage(std::move(registration)) ||
+      !builder.addNavigationNode(
+          {route, QStringLiteral("gui_framework_test"),
+           QStringLiteral("Rollback test"), {}}) ||
+      !builder.setInitialRoute(route) ||
+      !builder.setWindowSetupCallback(
+          [&window](ZzPureTools::ZzApplicationWindow &created) {
+            window = &created;
+            return ZzCore::ZzResult<void>::success();
+          }) ||
+      !builder.build(application)) {
+    return nullptr;
+  }
+  return window.data();
+}
+
+class WorkspaceCollapseFailureInjector final : public QObject {
+public:
+  explicit WorkspaceCollapseFailureInjector(
+      ZzPureTools::ZzApplicationWindow &window)
+      : window_(&window) {}
+
+  [[nodiscard]] bool connected() const noexcept { return connected_; }
+  [[nodiscard]] bool triggered() const noexcept { return triggered_; }
+
+protected:
+  bool eventFilter(QObject *watched, QEvent *event) override {
+    Q_UNUSED(watched);
+    Q_UNUSED(event);
+    connectToLeftPane();
+    return false;
+  }
+
+private:
+  void connectToLeftPane() {
+    if (connected_ || window_ == nullptr)
+      return;
+    const auto panes = window_->findChildren<ZzFluentUI::ZzSidePane *>();
+    for (auto *pane : panes) {
+      if (pane->edge() != ZzFluentUI::ZzSidePaneEdge::Left)
+        continue;
+      QObject::connect(
+          pane, &ZzFluentUI::ZzSidePane::collapsedChanged, this,
+          [this, pane](const bool collapsed) {
+            if (!collapsed || pane->pageCount() != 1)
+              return;
+            triggered_ = true;
+            pane->setCollapsed(false);
+          },
+          Qt::DirectConnection);
+      connected_ = true;
+      return;
+    }
+  }
+
+  QPointer<ZzPureTools::ZzApplicationWindow> window_;
+  bool connected_ = false;
+  bool triggered_ = false;
+};
+
+void expectWorkspaceAttachFailureRollsBack() {
+  static char applicationName[] = "gui_framework_rollback_test";
+  static char *applicationArguments[] = {applicationName, nullptr};
+  int argumentCount = 1;
+  ZzPureTools::ZzPureApplication application(argumentCount,
+                                               applicationArguments);
+  auto *window = buildBareFrameworkWindow(application);
+  expect(window != nullptr, "rollback fixture creates a framework window");
+  if (window == nullptr) {
+    application.beginShutdown();
+    return;
+  }
+
+  QPointer<QWidget> originalCentral(window->centralWidget());
+  QPointer<ZzFluentUI::ZzNavigationPane> navigation(window->navigationPane());
+  QPointer<ZzPureTools::ZzPageHost> pageHost(window->pageHost());
+  const ZzPureTools::ZzRouteId originalRoute = pageHost->currentRoute();
+  WorkspaceCollapseFailureInjector injector(*window);
+  application.installEventFilter(&injector);
+  const auto attached = zzrk::gui::GuiWindowShell::attach(
+      *window, std::make_shared<FrameworkFakeBackend>(), false);
+  application.removeEventFilter(&injector);
+
+  QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+  expect(injector.connected() && injector.triggered(),
+         "rollback fixture triggers a post-integration panel failure");
+  expect(!attached &&
+             attached.error().technicalMessage() ==
+                 QStringLiteral("Side panel state was interrupted") &&
+             attached.error().context() ==
+                 QStringLiteral("zzrk-internal-navigation"),
+         "workspace attach preserves the injected panel failure");
+  expect(originalCentral != nullptr &&
+             window->centralWidget() == originalCentral,
+         "failed workspace attach restores the original central widget");
+  expect(window->findChild<QWidget *>(QStringLiteral("zzWorkspaceRoot")) ==
+             nullptr,
+         "failed workspace attach removes the workspace root");
+  expect(navigation != nullptr && navigation->parentWidget() == originalCentral &&
+             originalCentral->isAncestorOf(navigation),
+         "failed workspace attach restores the navigation pane");
+  expect(pageHost != nullptr && pageHost->parentWidget() == originalCentral &&
+             originalCentral->isAncestorOf(pageHost) &&
+             originalCentral->layout() != nullptr &&
+             originalCentral->layout()->count() == 2 &&
+             pageHost->currentRoute() == originalRoute &&
+             window->navigationController()->currentRoute() == originalRoute,
+         "failed workspace attach restores the page host and body layout");
+  expect(zzrk::gui::GuiWindowShell::attachedTo(*window) == nullptr,
+         "failed workspace attach removes its shell object");
+  application.beginShutdown();
+}
+
+} // namespace
+
 int main() {
+  const auto bootstrap = ZzWindowKit::ZzWindowKitBootstrap::prepare();
+  expect(static_cast<bool>(bootstrap),
+         "WindowKit bootstrap supports rollback fixture");
+  if (!bootstrap)
+    return failures;
+  expectWorkspaceAttachFailureRollsBack();
+
   auto backend = std::make_shared<FrameworkFakeBackend>();
   auto harness = zzrk::gui::test::GuiTestHarness::create(backend);
   expect(harness != nullptr, "GUI test harness creates an application");

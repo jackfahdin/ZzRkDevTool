@@ -17,10 +17,14 @@
 #include <ZzFluentUI/ZzTabBar.h>
 #include <ZzFluentUI/ZzTabWidget.h>
 #include <ZzPureTools/ZzApplicationWindow.h>
+#include <ZzPureTools/ZzPageHost.h>
 #include <ZzPureTools/ZzWorkspacePanelId.h>
 #include <ZzPureTools/ZzWorkspaceShell.h>
 #include <ZzPureTools/ZzWorkspaceTitleMode.h>
 
+#include <QBoxLayout>
+#include <QCoreApplication>
+#include <QEvent>
 #include <QStatusBar>
 #include <QThread>
 #include <QWidget>
@@ -35,6 +39,103 @@ namespace {
 
 const ZzPureTools::ZzWorkspacePanelId kNavigationPanelId{
     QStringLiteral("zzrk-internal-navigation")};
+
+struct ApplicationBodySnapshot final {
+  QPointer<QWidget> body;
+  QPointer<QBoxLayout> layout;
+  QPointer<ZzFluentUI::ZzNavigationPane> navigation;
+  QPointer<ZzPureTools::ZzPageHost> pageHost;
+  int navigationIndex = -1;
+  int pageHostIndex = -1;
+  int navigationStretch = 0;
+  int pageHostStretch = 0;
+  Qt::Alignment navigationAlignment;
+  Qt::Alignment pageHostAlignment;
+
+  [[nodiscard]] bool isValid() const noexcept {
+    return body != nullptr && layout != nullptr && navigation != nullptr &&
+           pageHost != nullptr && navigationIndex >= 0 && pageHostIndex >= 0;
+  }
+};
+
+[[nodiscard]] ApplicationBodySnapshot
+captureApplicationBody(ZzPureTools::ZzApplicationWindow &window) {
+  ApplicationBodySnapshot snapshot;
+  snapshot.body = window.centralWidget();
+  snapshot.layout = snapshot.body != nullptr
+                        ? qobject_cast<QBoxLayout *>(snapshot.body->layout())
+                        : nullptr;
+  snapshot.navigation = window.navigationPane();
+  snapshot.pageHost = window.pageHost();
+  if (snapshot.layout == nullptr)
+    return snapshot;
+
+  snapshot.navigationIndex = snapshot.layout->indexOf(snapshot.navigation);
+  snapshot.pageHostIndex = snapshot.layout->indexOf(snapshot.pageHost);
+  if (snapshot.navigationIndex >= 0) {
+    snapshot.navigationStretch =
+        snapshot.layout->stretch(snapshot.navigationIndex);
+    snapshot.navigationAlignment =
+        snapshot.layout->itemAt(snapshot.navigationIndex)->alignment();
+  }
+  if (snapshot.pageHostIndex >= 0) {
+    snapshot.pageHostStretch = snapshot.layout->stretch(snapshot.pageHostIndex);
+    snapshot.pageHostAlignment =
+        snapshot.layout->itemAt(snapshot.pageHostIndex)->alignment();
+  }
+  return snapshot;
+}
+
+void rollbackApplicationNavigation(
+    ZzPureTools::ZzApplicationWindow &window,
+    ZzPureTools::ZzWorkspaceShell &workspace,
+    const ApplicationBodySnapshot &snapshot) noexcept {
+  if (!snapshot.isValid())
+    return;
+
+  QCoreApplication::removePostedEvents(snapshot.body, QEvent::DeferredDelete);
+
+  if (auto *tabs = workspace.tabWidget(); tabs != nullptr) {
+    const int pageIndex = tabs->indexOf(snapshot.pageHost);
+    if (pageIndex >= 0)
+      tabs->removeTab(pageIndex);
+  }
+  if (snapshot.pageHost->parent() != nullptr)
+    snapshot.pageHost->setParent(nullptr);
+
+  auto navigationResult = workspace.takePanel(kNavigationPanelId);
+  QWidget *const takenNavigation =
+      navigationResult ? navigationResult.value() : nullptr;
+  if (takenNavigation != nullptr && takenNavigation != snapshot.navigation)
+    takenNavigation->setParent(nullptr);
+  if (snapshot.navigation->parent() != nullptr)
+    snapshot.navigation->setParent(nullptr);
+
+  QWidget *const workspaceRoot = workspace.workspaceWidget();
+  if (window.centralWidget() == workspaceRoot)
+    static_cast<void>(window.takeCentralWidget());
+  if (workspaceRoot != nullptr && workspaceRoot->parent() != nullptr)
+    workspaceRoot->setParent(nullptr);
+
+  const auto restoreWidget = [&snapshot](const int index, QWidget *widget,
+                                         const int stretch,
+                                         const Qt::Alignment alignment) {
+    if (snapshot.layout->indexOf(widget) < 0)
+      snapshot.layout->insertWidget(index, widget, stretch, alignment);
+  };
+  if (snapshot.navigationIndex < snapshot.pageHostIndex) {
+    restoreWidget(snapshot.navigationIndex, snapshot.navigation,
+                  snapshot.navigationStretch, snapshot.navigationAlignment);
+    restoreWidget(snapshot.pageHostIndex, snapshot.pageHost,
+                  snapshot.pageHostStretch, snapshot.pageHostAlignment);
+  } else {
+    restoreWidget(snapshot.pageHostIndex, snapshot.pageHost,
+                  snapshot.pageHostStretch, snapshot.pageHostAlignment);
+    restoreWidget(snapshot.navigationIndex, snapshot.navigation,
+                  snapshot.navigationStretch, snapshot.navigationAlignment);
+  }
+  window.setCentralWidget(snapshot.body);
+}
 
 template <typename Value>
 [[nodiscard]] ZzCore::ZzResult<Value> shellFailure(
@@ -102,6 +203,14 @@ ZzCore::ZzResult<void> GuiWindowShell::initialize() {
                               QStringLiteral("GUI 窗口壳层必须在 GUI 线程装配"));
   }
 
+  const ApplicationBodySnapshot applicationBody =
+      captureApplicationBody(*window_);
+  if (!applicationBody.isValid()) {
+    return shellFailure<void>(
+        ZzCore::ZzErrorCode::InvalidState,
+        QStringLiteral("GUI 应用窗口中央导航结构不可用"));
+  }
+
   auto workspaceResult =
       ZzPureTools::ZzWorkspaceShell::create(window_, window_->titleBar());
   if (!workspaceResult) {
@@ -124,6 +233,7 @@ ZzCore::ZzResult<void> GuiWindowShell::initialize() {
 
   auto hidden = workspace->showPanel(kNavigationPanelId, false);
   if (!hidden) {
+    rollbackApplicationNavigation(*window_, *workspace, applicationBody);
     return hidden;
   }
   constexpr std::array edges{ZzFluentUI::ZzSidePaneEdge::Left,
@@ -132,6 +242,7 @@ ZzCore::ZzResult<void> GuiWindowShell::initialize() {
     auto *activityBar = workspace->activityBar(edge);
     auto *sidePane = workspace->sidePane(edge);
     if (activityBar == nullptr || sidePane == nullptr) {
+      rollbackApplicationNavigation(*window_, *workspace, applicationBody);
       return shellFailure<void>(
           ZzCore::ZzErrorCode::InvalidState,
           QStringLiteral("GUI 工作区侧栏表面不可用"));
@@ -140,6 +251,7 @@ ZzCore::ZzResult<void> GuiWindowShell::initialize() {
     sidePane->hide();
   }
   if (window_->navigationPane() == nullptr) {
+    rollbackApplicationNavigation(*window_, *workspace, applicationBody);
     return shellFailure<void>(ZzCore::ZzErrorCode::InvalidState,
                               QStringLiteral("GUI 导航面板不可用"));
   }
