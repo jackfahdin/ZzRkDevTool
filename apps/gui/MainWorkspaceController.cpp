@@ -7,7 +7,6 @@
 #include "pages/PartitionPage.hpp"
 
 #include <ZzFluentUI/ZzTabWidget.h>
-#include <ZzPureTools/ZzPageHost.h>
 #include <zzrk/qt/FirmwareUpgradeReportWriter.hpp>
 
 #include <QCheckBox>
@@ -45,11 +44,18 @@ namespace zzrk::gui {
 
 namespace {
 
+[[nodiscard]] ZzCore::ZzResult<void> workspaceFailure(QString message) {
+  return ZzCore::ZzResult<void>::failure(ZzCore::ZzError(
+      ZzCore::ZzErrorCode::InvalidArgument, std::move(message)));
+}
+
+template <typename Page>
 [[nodiscard]] ZzCore::ZzResult<std::unique_ptr<ZzPureTools::ZzPageInstance>>
-pageFailure(QString message) {
-  return ZzCore::ZzResult<std::unique_ptr<ZzPureTools::ZzPageInstance>>::
-      failure(ZzCore::ZzError(ZzCore::ZzErrorCode::InvalidArgument,
-                              std::move(message)));
+createFixedPage(QWidget *pageParent) {
+  auto *view = Page::buildUi(pageParent);
+  return ZzPureTools::ZzPageInstance::create(
+      pageParent, view, std::make_unique<QObject>(),
+      std::make_unique<QObject>());
 }
 
 std::filesystem::path filesystemPath(const QString &path) {
@@ -462,15 +468,19 @@ unexpectedFirmwareUpgradeError(const std::string &target) {
 } // namespace
 
 MainWorkspaceController::MainWorkspaceController(
-    std::shared_ptr<IGuiOperationBackend> backend, const bool showModalDialogs,
+    std::shared_ptr<IGuiOperationBackend> backend,
+    MainWorkspaceViewModel *viewModel, const bool showModalDialogs,
     QObject *parent)
     : QObject(parent), m_backend(std::move(backend)),
-      m_viewModelOwner(std::make_unique<MainWorkspaceViewModel>()),
-      m_viewModel(m_viewModelOwner.get()),
+      m_viewModel(viewModel),
       m_showModalDialogs(showModalDialogs) {
   if (!m_backend) {
     throw std::invalid_argument(
         "MainWorkspaceController requires a GUI backend");
+  }
+  if (m_viewModel == nullptr) {
+    throw std::invalid_argument(
+        "MainWorkspaceController requires a workspace view model");
   }
   m_viewModel->setUpgradeCancellation(
       std::make_shared<std::atomic_bool>(false));
@@ -524,33 +534,58 @@ void MainWorkspaceController::setShowModalDialogs(const bool show) {
   m_showModalDialogs = show;
 }
 
-void MainWorkspaceController::attachWorkspace(ZzFluentUI::ZzTabWidget *tabs,
-                                              QStatusBar *statusBar) {
+ZzCore::ZzResult<void> MainWorkspaceController::attachWorkspace(
+    ZzFluentUI::ZzTabWidget *tabs, QStatusBar *statusBar,
+    ImageDownloadPage *downloadPage) {
   if (m_shuttingDown) {
-    return;
+    return workspaceFailure(QStringLiteral("工作区控制器正在关闭"));
+  }
+  if (tabs == nullptr || statusBar == nullptr || downloadPage == nullptr) {
+    return workspaceFailure(
+        QStringLiteral("工作区标签、状态栏和下载页面不能为空"));
   }
   m_tabs = tabs;
-  if (m_tabs != nullptr) {
-    m_tabs->setObjectName(QStringLiteral("mainTabs"));
-  }
+  m_tabs->setObjectName(QStringLiteral("mainTabs"));
   m_statusBar = statusBar;
 
-  if (m_tabs != nullptr && m_devicePage == nullptr) {
-    auto *devicePage = DevicePage::buildUi(m_tabs);
-    m_tabs->addTab(devicePage, QStringLiteral("设备"));
-    attachPages(m_downloadPage, devicePage);
+  auto deviceResult = createFixedPage<DevicePage>(tabs);
+  if (!deviceResult) {
+    return ZzCore::ZzResult<void>::failure(deviceResult.error());
+  }
+  auto deviceInstance = std::move(deviceResult).value();
+  auto *devicePage = qobject_cast<DevicePage *>(deviceInstance->view());
+  if (tabs->addTab(devicePage, QStringLiteral("设备")) < 0) {
+    return workspaceFailure(QStringLiteral("无法加入设备页面标签"));
   }
 
-  QWidget *host =
-      tabs != nullptr && tabs->parentWidget() != nullptr
-          ? tabs->parentWidget()
-          : (statusBar != nullptr && statusBar->parentWidget() != nullptr
-                 ? statusBar->parentWidget()
-                 : (statusBar != nullptr ? statusBar
-                                         : static_cast<QWidget *>(tabs)));
-  if (host == nullptr) {
-    return;
+  auto upgradeResult = createFixedPage<FullUpgradePage>(tabs);
+  if (!upgradeResult) {
+    return ZzCore::ZzResult<void>::failure(upgradeResult.error());
   }
+  auto upgradeInstance = std::move(upgradeResult).value();
+  auto *upgradePage =
+      qobject_cast<FullUpgradePage *>(upgradeInstance->view());
+  if (tabs->addTab(upgradePage, QStringLiteral("完整升级")) < 0) {
+    return workspaceFailure(QStringLiteral("无法加入完整升级页面标签"));
+  }
+
+  auto partitionResult = createFixedPage<PartitionPage>(tabs);
+  if (!partitionResult) {
+    return ZzCore::ZzResult<void>::failure(partitionResult.error());
+  }
+  auto partitionInstance = std::move(partitionResult).value();
+  auto *partitionPage =
+      qobject_cast<PartitionPage *>(partitionInstance->view());
+  if (tabs->addTab(partitionPage, QStringLiteral("分区")) < 0) {
+    return workspaceFailure(QStringLiteral("无法加入分区页面标签"));
+  }
+
+  m_devicePageInstance = std::move(deviceInstance);
+  m_upgradePageInstance = std::move(upgradeInstance);
+  m_partitionPageInstance = std::move(partitionInstance);
+  attachPages(downloadPage, devicePage, upgradePage, partitionPage);
+
+  QWidget *const host = statusBar;
   m_connectionText =
       host->findChild<QLabel *>(QStringLiteral("connectionStatusText"));
   if (m_connectionText == nullptr) {
@@ -587,10 +622,14 @@ void MainWorkspaceController::attachWorkspace(ZzFluentUI::ZzTabWidget *tabs,
           &MainWorkspaceController::processPendingDeviceRefresh);
 
   if (m_statusBar != nullptr) {
+    m_statusBar->addWidget(m_connectionText, 1);
+    m_statusBar->addPermanentWidget(m_refreshButton);
     m_statusBar->addPermanentWidget(m_lastScanText);
+    m_statusBar->showMessage(QStringLiteral("准备就绪"));
   }
   startMonitoring();
   QTimer::singleShot(0, this, &MainWorkspaceController::refreshDevices);
+  return ZzCore::ZzResult<void>::success();
 }
 
 void MainWorkspaceController::setExternalBusyCallback(
@@ -680,39 +719,6 @@ void MainWorkspaceController::attachPages(ImageDownloadPage *downloadPage,
   }
   updateUpgradeControls();
   updatePartitionControls();
-}
-
-ZzCore::ZzResult<std::unique_ptr<ZzPureTools::ZzPageInstance>>
-MainWorkspaceController::createInitialDownloadPage(QWidget *pageParent) {
-  if (pageParent == nullptr) {
-    return pageFailure(QStringLiteral("下载镜像页面父对象不能为空"));
-  }
-  if (qobject_cast<ZzPureTools::ZzPageHost *>(pageParent) == nullptr) {
-    return pageFailure(QStringLiteral("下载镜像页面必须挂载到框架页面宿主"));
-  }
-
-  auto *view = ImageDownloadPage::buildUi(pageParent);
-  attachPages(view, m_devicePage);
-
-  if (m_viewModel == nullptr || !m_viewModelOwner) {
-    return pageFailure(QStringLiteral("共享工作区状态已被页面接管"));
-  }
-  std::unique_ptr<QObject> pageViewModel{m_viewModelOwner.release()};
-  auto presenter = std::make_unique<QObject>();
-  auto result = ZzPureTools::ZzPageInstance::create(
-      pageParent, view, std::move(pageViewModel), std::move(presenter));
-  if (!result) {
-    return pageFailure(QStringLiteral("无法创建下载镜像页面"));
-  }
-  QPointer<MainWorkspaceController> guard{this};
-  if (result) {
-    result.value()->addCancellation([guard] {
-      if (guard != nullptr) {
-        guard->shutdown();
-      }
-    });
-  }
-  return result;
 }
 
 void MainWorkspaceController::startMonitoring() {

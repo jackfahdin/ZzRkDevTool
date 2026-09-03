@@ -5,6 +5,7 @@
 #include "GuiOperationBackend.hpp"
 
 #include <ZzCore/ZzError.h>
+#include <ZzCore/ZzResult.h>
 #include <ZzPureTools/ZzPureApplication.h>
 
 #include <memory>
@@ -19,6 +20,10 @@ struct GuiApplicationOptions {
 
 void configureApplicationMetadata(
     ZzPureTools::ZzPureApplication &application);
+
+[[nodiscard]] ZzCore::ZzResult<ZzPureTools::ZzApplicationWindow *>
+buildGuiApplication(ZzPureTools::ZzPureApplication &application,
+                    GuiApplicationOptions options = {});
 
 void reportStartupFailure(const char *stage,
                           const ZzCore::ZzError &error);

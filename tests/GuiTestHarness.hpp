@@ -6,7 +6,18 @@
 
 #include <ZzPureTools/ZzPureApplication.h>
 
+#include <QPointer>
+#include <QString>
+
 #include <memory>
+
+namespace ZzPureTools {
+class ZzApplicationWindow;
+}
+
+namespace zzrk::gui {
+class MainWorkspaceController;
+}
 
 namespace zzrk::gui::test {
 
@@ -21,14 +32,22 @@ public:
   GuiTestHarness &operator=(const GuiTestHarness &) = delete;
 
   [[nodiscard]] ZzPureTools::ZzPureApplication *application() const noexcept;
+  [[nodiscard]] ZzPureTools::ZzApplicationWindow *window() const noexcept;
+  [[nodiscard]] MainWorkspaceController *controller() const noexcept;
   [[nodiscard]] const GuiApplicationOptions &options() const noexcept;
+
+  void loadFirmwareImage(const QString &path);
+  void loadDownloadParameter(const QString &path);
+  void loadDownloadDirectory(const QString &path);
 
 private:
   GuiTestHarness(std::unique_ptr<ZzPureTools::ZzPureApplication> application,
-                 GuiApplicationOptions options);
+                 GuiApplicationOptions options,
+                 ZzPureTools::ZzApplicationWindow *window);
 
   std::unique_ptr<ZzPureTools::ZzPureApplication> application_;
   GuiApplicationOptions options_;
+  QPointer<ZzPureTools::ZzApplicationWindow> window_;
 };
 
 } // namespace zzrk::gui::test

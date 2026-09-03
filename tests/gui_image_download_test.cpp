@@ -2,7 +2,9 @@
 
 #include "GuiOperationBackend.hpp"
 #include "GuiTestHarness.hpp"
-#include "MainWindow.hpp"
+#include "MainWorkspaceController.hpp"
+
+#include <ZzPureTools/ZzApplicationWindow.h>
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -289,10 +291,13 @@ int findTargetRow(const QTableWidget &table, const QString &target) {
 int main() {
   auto backend = std::make_shared<DownloadGuiBackend>();
   auto harness = zzrk::gui::test::GuiTestHarness::create(backend);
-  if (harness == nullptr || harness->application() == nullptr) {
+  if (harness == nullptr || harness->application() == nullptr ||
+      harness->window() == nullptr || harness->controller() == nullptr) {
     return EXIT_FAILURE;
   }
   auto &application = *harness->application();
+  auto *window = harness->window();
+  auto *controller = harness->controller();
   QTemporaryDir directory;
   if (!directory.isValid()) {
     return EXIT_FAILURE;
@@ -310,8 +315,7 @@ int main() {
     return EXIT_FAILURE;
   }
 
-  MainWindow window{backend, false};
-  window.show();
+  window->show();
   bool started = false;
   bool completed = false;
   bool failed = false;
@@ -324,17 +328,19 @@ int main() {
     }
   };
 
-  QObject::connect(&window, &MainWindow::scanCompleted, &application, [&] {
+  QObject::connect(controller,
+                   &zzrk::gui::MainWorkspaceController::scanCompleted,
+                   &application, [&] {
     if (started) {
       finishWhenRefreshed();
       return;
     }
     started = true;
-    auto *tabs = window.findChild<QTabWidget *>(QStringLiteral("mainTabs"));
+    auto *tabs = window->findChild<QTabWidget *>(QStringLiteral("mainTabs"));
     auto *table =
-        window.findChild<QTableWidget *>(QStringLiteral("downloadImageTable"));
+        window->findChild<QTableWidget *>(QStringLiteral("downloadImageTable"));
     auto *device =
-        window.findChild<QComboBox *>(QStringLiteral("downloadDeviceCombo"));
+        window->findChild<QComboBox *>(QStringLiteral("downloadDeviceCombo"));
     if (tabs == nullptr || tabs->tabText(0) != QStringLiteral("下载镜像") ||
         table == nullptr || device == nullptr ||
         device->currentData().toString() != QStringLiteral("1-5")) {
@@ -343,8 +349,8 @@ int main() {
       return;
     }
 
-    window.loadDownloadParameter(parameterPath);
-    window.loadDownloadDirectory(directory.path());
+    harness->loadDownloadParameter(parameterPath);
+    harness->loadDownloadDirectory(directory.path());
     const int bootA = findTargetRow(*table, QStringLiteral("boot_a"));
     const int bootB = findTargetRow(*table, QStringLiteral("boot_b"));
     const int userdata = findTargetRow(*table, QStringLiteral("userdata"));
@@ -366,7 +372,7 @@ int main() {
     }
     table->item(bootA, 0)->setCheckState(Qt::Unchecked);
     table->selectRow(userdata);
-    auto *clear = window.findChild<QPushButton *>(
+    auto *clear = window->findChild<QPushButton *>(
         QStringLiteral("clearDownloadImageButton"));
     if (clear == nullptr) {
       failed = true;
@@ -385,7 +391,7 @@ int main() {
     table->item(rebuiltBootA, 7)->setCheckState(Qt::Unchecked);
     const int rebuiltBootB = findTargetRow(*table, QStringLiteral("boot_b"));
     table->selectRow(rebuiltBootB);
-    auto *choose = window.findChild<QPushButton *>(
+    auto *choose = window->findChild<QPushButton *>(
         QStringLiteral("chooseDownloadImageButton"));
     QTimer::singleShot(0, &application, [&] {
       auto *dialog =
@@ -416,7 +422,7 @@ int main() {
       return;
     }
     table->item(preservedBootB, 7)->setCheckState(Qt::Unchecked);
-    auto *start = window.findChild<QPushButton *>(
+    auto *start = window->findChild<QPushButton *>(
         QStringLiteral("startImageDownloadButton"));
     if (start == nullptr || !start->isEnabled()) {
       failed = true;
@@ -427,27 +433,30 @@ int main() {
   });
 
   QObject::connect(
-      &window, &MainWindow::imageDownloadProgressChanged, &application,
+      controller,
+      &zzrk::gui::MainWorkspaceController::imageDownloadProgressChanged,
+      &application,
       [&](const int overall, const int operation) {
         observedIndependentProgress =
             observedIndependentProgress || overall != operation;
-        const auto *device = window.findChild<QComboBox *>(
+        const auto *device = window->findChild<QComboBox *>(
             QStringLiteral("downloadDeviceCombo"));
         const auto *refresh =
-            window.findChild<QToolButton *>(QStringLiteral("refreshButton"));
+            window->findChild<QToolButton *>(QStringLiteral("refreshButton"));
         observedUsbBusy =
             observedUsbBusy || (device != nullptr && !device->isEnabled() &&
                                 refresh != nullptr && !refresh->isEnabled());
       });
 
   QObject::connect(
-      &window, &MainWindow::imageDownloadCompleted, &application,
+      controller, &zzrk::gui::MainWorkspaceController::imageDownloadCompleted,
+      &application,
       [&](const bool success) {
-        auto *table = window.findChild<QTableWidget *>(
+        auto *table = window->findChild<QTableWidget *>(
             QStringLiteral("downloadImageTable"));
-        const auto *overall = window.findChild<QProgressBar *>(
+        const auto *overall = window->findChild<QProgressBar *>(
             QStringLiteral("overallImageDownloadProgress"));
-        const auto *operation = window.findChild<QProgressBar *>(
+        const auto *operation = window->findChild<QProgressBar *>(
             QStringLiteral("operationImageDownloadProgress"));
         const int bootA = findTargetRow(*table, QStringLiteral("boot_a"));
         const int bootB = findTargetRow(*table, QStringLiteral("boot_b"));

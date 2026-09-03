@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 
 #include "GuiTestHarness.hpp"
+#include "GuiWindowShell.hpp"
+#include "MainWorkspaceController.hpp"
 
+#include <ZzPureTools/ZzApplicationWindow.h>
 #include <ZzWindowKit/ZzWindowKitBootstrap.h>
 
 #include <QCoreApplication>
@@ -28,15 +31,23 @@ std::unique_ptr<GuiTestHarness> GuiTestHarness::create(
 
   GuiApplicationOptions options;
   options.backend = std::move(backend);
+  options.showModalDialogs = false;
   configureApplicationMetadata(*application);
+  auto buildResult = buildGuiApplication(*application, options);
+  if (!buildResult) {
+    application->beginShutdown();
+    return nullptr;
+  }
   return std::unique_ptr<GuiTestHarness>(
-      new GuiTestHarness(std::move(application), std::move(options)));
+      new GuiTestHarness(std::move(application), std::move(options),
+                         buildResult.value()));
 }
 
 GuiTestHarness::GuiTestHarness(
     std::unique_ptr<ZzPureTools::ZzPureApplication> application,
-    GuiApplicationOptions options)
-    : application_(std::move(application)), options_(std::move(options))
+    GuiApplicationOptions options, ZzPureTools::ZzApplicationWindow *window)
+    : application_(std::move(application)), options_(std::move(options)),
+      window_(window)
 {
 }
 
@@ -53,9 +64,39 @@ ZzPureTools::ZzPureApplication *GuiTestHarness::application() const noexcept
   return application_.get();
 }
 
+ZzPureTools::ZzApplicationWindow *GuiTestHarness::window() const noexcept
+{
+  return window_.data();
+}
+
+MainWorkspaceController *GuiTestHarness::controller() const noexcept
+{
+  auto *shell = window_ != nullptr ? GuiWindowShell::attachedTo(*window_)
+                                   : nullptr;
+  return shell != nullptr ? shell->controller() : nullptr;
+}
+
 const GuiApplicationOptions &GuiTestHarness::options() const noexcept
 {
   return options_;
+}
+
+void GuiTestHarness::loadFirmwareImage(const QString &path)
+{
+  if (auto *workspaceController = controller(); workspaceController != nullptr)
+    workspaceController->loadFirmwareImage(path);
+}
+
+void GuiTestHarness::loadDownloadParameter(const QString &path)
+{
+  if (auto *workspaceController = controller(); workspaceController != nullptr)
+    workspaceController->loadDownloadParameter(path);
+}
+
+void GuiTestHarness::loadDownloadDirectory(const QString &path)
+{
+  if (auto *workspaceController = controller(); workspaceController != nullptr)
+    workspaceController->loadDownloadDirectory(path);
 }
 
 } // namespace zzrk::gui::test

@@ -51,7 +51,8 @@ class MainWorkspaceController final : public QObject {
 public:
   explicit MainWorkspaceController(
       std::shared_ptr<IGuiOperationBackend> backend,
-      bool showModalDialogs = true, QObject *parent = nullptr);
+      MainWorkspaceViewModel *viewModel, bool showModalDialogs = true,
+      QObject *parent = nullptr);
   ~MainWorkspaceController() override;
 
   MainWorkspaceController(const MainWorkspaceController &) = delete;
@@ -62,14 +63,13 @@ public:
   [[nodiscard]] bool showModalDialogs() const noexcept;
   void setShowModalDialogs(bool show);
 
-  void attachWorkspace(ZzFluentUI::ZzTabWidget *tabs, QStatusBar *statusBar);
+  [[nodiscard]] ZzCore::ZzResult<void>
+  attachWorkspace(ZzFluentUI::ZzTabWidget *tabs, QStatusBar *statusBar,
+                  ImageDownloadPage *downloadPage);
   void setExternalBusyCallback(std::function<bool()> callback);
   void attachPages(ImageDownloadPage *downloadPage, DevicePage *devicePage,
                    FullUpgradePage *upgradePage = nullptr,
                    PartitionPage *partitionPage = nullptr);
-
-  [[nodiscard]] ZzCore::ZzResult<std::unique_ptr<ZzPureTools::ZzPageInstance>>
-  createInitialDownloadPage(QWidget *pageParent);
 
   void refreshDevices();
   void handleDeviceChange();
@@ -172,7 +172,6 @@ private:
   void updateReportExportControls();
 
   std::shared_ptr<IGuiOperationBackend> m_backend;
-  std::unique_ptr<MainWorkspaceViewModel> m_viewModelOwner;
   QPointer<MainWorkspaceViewModel> m_viewModel;
   QFutureWatcher<zzrk::transport::ScanResult> m_scanWatcher;
   QFutureWatcher<zzrk::workflow::PreparedImageDownloadResult>
@@ -190,6 +189,9 @@ private:
   QPointer<DevicePage> m_devicePage;
   QPointer<FullUpgradePage> m_upgradePage;
   QPointer<PartitionPage> m_partitionPage;
+  std::unique_ptr<ZzPureTools::ZzPageInstance> m_devicePageInstance;
+  std::unique_ptr<ZzPureTools::ZzPageInstance> m_upgradePageInstance;
+  std::unique_ptr<ZzPureTools::ZzPageInstance> m_partitionPageInstance;
   ZzFluentUI::ZzTabWidget *m_tabs = nullptr;
   QStatusBar *m_statusBar = nullptr;
   QLabel *m_connectionText = nullptr;
