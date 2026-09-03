@@ -27,6 +27,7 @@
 
 #include <QApplication>
 #include <QAbstractButton>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QEventLoop>
@@ -76,6 +77,44 @@ bool waitFor(const std::function<bool()> &condition,
     QThread::msleep(1);
   }
   return condition();
+}
+
+bool saveVisualEvidence(ZzPureTools::ZzPureApplication &application,
+                        ZzPureTools::ZzApplicationWindow &window) {
+  const QString outputDirectory =
+      qEnvironmentVariable("ZZRK_GUI_SCREENSHOT_DIR");
+  if (outputDirectory.isEmpty())
+    return true;
+  if (!QDir{}.mkpath(outputDirectory))
+    return false;
+
+  auto *themeController = application.themeController();
+  if (themeController == nullptr)
+    return false;
+  const auto originalMode = themeController->mode();
+  const QSize originalSize = window.size();
+  const auto capture = [&](const QSize size,
+                           const ZzFluentUI::ZzThemeMode mode,
+                           const QString &fileName) {
+    themeController->setMode(mode);
+    window.resize(size);
+    QApplication::processEvents();
+    const QPixmap image = window.grab();
+    return image.size() == size &&
+           image.save(QDir(outputDirectory).filePath(fileName), "PNG");
+  };
+
+  const bool saved =
+      capture(QSize(980, 820), ZzFluentUI::ZzThemeMode::Light,
+              QStringLiteral("zzrk-gui-980x820-light.png")) &&
+      capture(window.minimumSize(), ZzFluentUI::ZzThemeMode::Light,
+              QStringLiteral("zzrk-gui-minimum-800x700-light.png")) &&
+      capture(QSize(980, 820), ZzFluentUI::ZzThemeMode::Dark,
+              QStringLiteral("zzrk-gui-980x820-dark.png"));
+  themeController->setMode(originalMode);
+  window.resize(originalSize);
+  QApplication::processEvents();
+  return saved;
 }
 
 } // namespace
@@ -811,6 +850,8 @@ int main() {
       controller->viewModel()->downloadCancellation();
   const auto partitionCancellation =
       controller->viewModel()->partitionCancellation();
+  expect(saveVisualEvidence(*application, *window),
+         "visual smoke saves light, minimum, and dark screenshots");
   auto *titleBar = window->titleBar();
   auto *closeButton = titleBar != nullptr
                           ? qobject_cast<QAbstractButton *>(
@@ -842,5 +883,36 @@ int main() {
          "window close records stopped device monitoring");
   expect(lifecycle != nullptr && lifecycle->allWatchersStopped(),
          "window close waits for every controller watcher");
+
+  harness.reset();
+  auto shutdownBackend = std::make_shared<FrameworkFakeBackend>();
+  auto shutdownHarness =
+      zzrk::gui::test::GuiTestHarness::create(shutdownBackend);
+  expect(shutdownHarness != nullptr,
+         "shutdown reentrancy fixture creates an application");
+  if (shutdownHarness != nullptr) {
+    auto *shutdownApplication = shutdownHarness->application();
+    auto *shutdownController = shutdownHarness->controller();
+    QPointer<ZzPureTools::ZzApplicationWindow> shutdownWindow{
+        shutdownHarness->window()};
+    QPointer<zzrk::gui::MainWorkspaceController> controllerGuard{
+        shutdownController};
+    expect(shutdownApplication != nullptr && shutdownController != nullptr &&
+               shutdownWindow != nullptr,
+           "shutdown reentrancy fixture exposes framework objects");
+    if (shutdownApplication != nullptr && shutdownController != nullptr) {
+      QObject::connect(
+          shutdownController,
+          &zzrk::gui::MainWorkspaceController::scanCompleted,
+          shutdownApplication,
+          [shutdownApplication] { shutdownApplication->beginShutdown(); },
+          Qt::DirectConnection);
+      shutdownController->refreshDevices();
+      expect(waitFor([&] { return controllerGuard == nullptr; }),
+             "scan completion can synchronously destroy its controller");
+      expect(shutdownWindow == nullptr,
+             "scan completion shutdown destroys the framework window");
+    }
+  }
   return failures;
 }
