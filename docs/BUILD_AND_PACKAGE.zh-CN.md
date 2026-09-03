@@ -2,7 +2,7 @@
 
 本文说明如何从源码编译、测试和打包 ZzRkDevTool。当前发布基线为 Qt 6.11.1、C++20、CMake 3.25 或更高版本、Ninja 和 libusb 1.0.30 或更高版本。
 
-libusb 1.0.30 是硬性最低版本，不兼容旧版本。运行库还必须通过 `libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG)` 报告当前平台具备热插拔能力；能力缺失时 GUI 启动检查会失败并显示明确错误，不会退回定时轮询。Windows 的 libusb 必须在编译时启用 `LIBUSB_WINDOWS_HOTPLUG`。
+libusb 1.0.30 是硬性最低版本，不兼容旧版本。运行库还必须通过 `libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG)` 报告当前平台具备热插拔能力；能力缺失时 GUI 会继续启动，显示明确错误并允许手动刷新，不会退回定时轮询。Windows 的 libusb 必须在编译时启用 `LIBUSB_WINDOWS_HOTPLUG`。
 
 当前状态：
 
@@ -264,24 +264,54 @@ ZIP 不安装 USB 驱动。RockUSB 真机访问要求设备绑定兼容 WinUSB �
 
 ### 3.4 Windows MinGW 验证
 
-Qt 的 MinGW 套件必须与本机 MinGW-w64 编译器完全匹配，不能和 `msvc2022_64` 混用。仓库的 vcpkg overlay 调用 MSBuild，仅适用于上面的 MSVC 流程；MinGW 应提供单独构建的动态 libusb 1.0.30（必须启用 Windows hotplug），并确认根目录含 MinGW import library、DLL、头文件和 pkg-config 元数据。使用同一 Qt 6.11.1 套件执行无硬件构建：
+Qt 的 MinGW 套件必须与本机 MinGW-w64 编译器完全匹配，不能和 `msvc2022_64` 混用。仓库的 vcpkg overlay 调用 MSBuild，仅适用于上面的 MSVC 流程；MinGW 流程应使用 Qt 6.11.1 的 `win64_mingw` 套件和 `tools_mingw1310`，并从官方 libusb 1.0.30 tarball 本地构建动态库（必须启用 Windows hotplug）。下面的命令在 Git Bash 中执行，会把 libusb 安装到 `build/libusb-mingw`：
 
-```powershell
-$qtRoot = "C:/Qt/6.11.1/mingw_64"
-$libusbRoot = "C:/deps/libusb-mingw"
-cmake -S . -B build/windows-mingw-release -G Ninja `
-  -DCMAKE_BUILD_TYPE=Release `
-  -DCMAKE_PREFIX_PATH="$qtRoot" `
-  -DZZRK_BUILD_GUI=ON `
-  -DZZRK_LIBUSB_ROOT="$libusbRoot" `
-  -DZZRK_BUNDLE_RUNTIME=ON `
+```bash
+set -euo pipefail
+
+qtRoot="/c/Qt/6.11.1/mingw_64"
+mingwBin="/c/Qt/Tools/mingw1310_64/bin"
+export PATH="$mingwBin:$PATH"
+if command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
+  export CC=x86_64-w64-mingw32-gcc
+  export CXX=x86_64-w64-mingw32-g++
+else
+  export CC=gcc
+  export CXX=g++
+fi
+
+mkdir -p build
+curl --fail --location --retry 3 \
+  --output build/libusb-1.0.30.tar.bz2 \
+  https://github.com/libusb/libusb/releases/download/v1.0.30/libusb-1.0.30.tar.bz2
+tar -xjf build/libusb-1.0.30.tar.bz2 -C build
+pushd build/libusb-1.0.30
+./configure \
+  --host=x86_64-w64-mingw32 \
+  --enable-windows-hotplug \
+  --enable-shared \
+  --disable-static \
+  --prefix="$PWD/../libusb-mingw"
+mingw32-make -j"$(nproc)"
+mingw32-make install
+popd
+
+export PATH="$PWD/build/libusb-mingw/bin:$PATH"
+cmake -S . -B build/windows-mingw-release -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH="$qtRoot" \
+  -DZZRK_BUILD_GUI=ON \
+  -DZZRK_BUILD_CLI=ON \
+  -DZZRK_BUILD_TESTS=ON \
+  -DZZRK_LIBUSB_ROOT="$(cygpath -m "$PWD/build/libusb-mingw")" \
+  -DZZRK_BUNDLE_RUNTIME=OFF \
   -DZZRK_WARNINGS_AS_ERRORS=ON
 cmake --build build/windows-mingw-release --parallel
-ctest --test-dir build/windows-mingw-release --output-on-failure `
+ctest --test-dir build/windows-mingw-release --output-on-failure \
   -R "^(gui_framework|gui_smoke)$"
 ```
 
-在 Windows 桌面会话中还要手工检查无边框窗口拖动区、最小化/最大化/关闭系统按钮、125%/150% DPI 缩放以及最大化后工作区边界；这些项目无法由 Linux runner 的 offscreen 测试替代。
+CI 中的 MinGW job 使用同一自举流程，不依赖仓库 secret 或预设 `MINGW_INSTALL_ROOT`。当前 Linux 主机未实际运行 Windows MinGW、MSVC 或 macOS 构建；这些平台仍需在 GitHub Actions runner 或对应系统上确认。在 Windows 桌面会话中还要手工检查无边框窗口拖动区、最小化/最大化/关闭系统按钮、125%/150% DPI 缩放以及最大化后工作区边界；这些项目无法由 Linux runner 的 offscreen 测试替代。
 
 ## 4. macOS
 

@@ -133,20 +133,64 @@ jobs:
         with:
           version: 6.11.1
           arch: win64_mingw
+          tools: tools_mingw1310
           cache: true
       - name: Build and test MinGW GUI
-        shell: pwsh
+        shell: bash
         run: |
-          if (-not $env:MINGW_INSTALL_ROOT) {
-            throw "MINGW_INSTALL_ROOT must point to the matching Qt MinGW toolchain and libusb 1.0.30 root"
-          }
-          cmake -S . -B build/windows-mingw-release -G Ninja `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DZZRK_BUILD_GUI=ON `
-            -DZZRK_BUILD_CLI=ON `
-            -DZZRK_BUILD_TESTS=ON `
-            -DZZRK_LIBUSB_ROOT="$env:MINGW_INSTALL_ROOT/libusb" `
-            -DZZRK_BUNDLE_RUNTIME=OFF `
+          set -euo pipefail
+
+          if [ -n "${Qt6_DIR:-}" ]; then
+            qt_cmake_dir="$(cygpath -u "${Qt6_DIR}")"
+            qt_root="$(dirname "$(dirname "$(dirname "${qt_cmake_dir}")")")"
+          elif [ -n "${QT_ROOT_DIR:-}" ]; then
+            qt_root="$(cygpath -u "${QT_ROOT_DIR}")"
+          else
+            echo "install-qt-action did not expose Qt6_DIR or QT_ROOT_DIR" >&2
+            exit 1
+          fi
+          tools_root="$(dirname "$(dirname "${qt_root}")")/Tools"
+          mingw_bin="$(find "${tools_root}" -path '*/mingw1310_64/bin/gcc.exe' -print -quit)"
+          if [ -z "${mingw_bin}" ]; then
+            echo "Qt MinGW 13.1.0 toolchain was not installed under ${tools_root}" >&2
+            exit 1
+          fi
+          mingw_bin="$(dirname "${mingw_bin}")"
+          export PATH="${mingw_bin}:${PATH}"
+          if command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
+            export CC=x86_64-w64-mingw32-gcc
+            export CXX=x86_64-w64-mingw32-g++
+          else
+            export CC=gcc
+            export CXX=g++
+          fi
+
+          libusb_root="${PWD}/build/libusb-mingw"
+          mkdir -p build
+          curl --fail --location --retry 3 \
+            --output build/libusb-1.0.30.tar.bz2 \
+            https://github.com/libusb/libusb/releases/download/v1.0.30/libusb-1.0.30.tar.bz2
+          tar -xjf build/libusb-1.0.30.tar.bz2 -C build
+          pushd build/libusb-1.0.30
+          ./configure \
+            --host=x86_64-w64-mingw32 \
+            --enable-windows-hotplug \
+            --enable-shared \
+            --disable-static \
+            --prefix="${libusb_root}"
+          mingw32-make -j"$(nproc)"
+          mingw32-make install
+          popd
+
+          export PATH="${libusb_root}/bin:${PATH}"
+          cmake -S . -B build/windows-mingw-release -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${qt_root}" \
+            -DZZRK_BUILD_GUI=ON \
+            -DZZRK_BUILD_CLI=ON \
+            -DZZRK_BUILD_TESTS=ON \
+            -DZZRK_LIBUSB_ROOT="$(cygpath -m "${libusb_root}")" \
+            -DZZRK_BUNDLE_RUNTIME=OFF \
             -DZZRK_WARNINGS_AS_ERRORS=ON
           cmake --build build/windows-mingw-release --parallel
-          ctest --test-dir build/windows-mingw-release --output-on-failure -R "gui_framework|gui_smoke"
+          ctest --test-dir build/windows-mingw-release --output-on-failure -R "^(gui_framework|gui_smoke)$"
