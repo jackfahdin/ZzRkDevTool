@@ -78,3 +78,20 @@ git diff --check
 - 裸完整 CTest 的 24 项中有 23 项通过。唯一失败的 `linux_install_smoke` 使用既有 `INSTALL_CONFIG=$<CONFIG>`，该值在单配置 Ninja 构建中为空。
 - `build-zzpuretools` 仍含任务 1 修复前的 stale `thirdParty/ZzPureTools/cmake_install.cmake`，因此不能作为当前源码回归的判断依据。
 - 两项均属于任务 8 的安装 smoke/CMake 接入范围，本任务不越界修改；任务 7 的 GUI、生命周期和 sanitizer 验证以上述 `build-task2` 证据为准。
+
+## 第 1 轮修复：Controller 析构契约
+
+- 代码审查指出关闭测试此前只证明 `shutdown()` 的副作用，未直接证明 `MainWorkspaceController` 已析构。
+- 测试在点击关闭按钮前保存 `QPointer<MainWorkspaceController>`，在等待 `windowCount() == 0` 后断言该指针为 null。该断言会捕获 `ZzPageInstance` 不再拥有 controller、导致 controller 在窗口关闭后泄漏或脱离所有权的破坏；lifecycle 断言继续验证析构前已完成取消和 watcher 收敛。
+
+本轮验证：
+
+```bash
+cmake --build build-task2 --target gui_framework_test -j2
+QT_QPA_PLATFORM=offscreen ctest --test-dir build-task2 -R '^gui_framework$' --output-on-failure
+cmake --build build-task7-asan --target gui_framework_test -j2
+ASAN_OPTIONS=detect_leaks=0 QT_QPA_PLATFORM=offscreen ctest --test-dir build-task7-asan -R '^gui_framework$' --output-on-failure
+git diff --check
+```
+
+结果：两个目标构建均退出码为 `0`；普通和 ASan/UBSan `gui_framework` 均为 1/1 通过；`git diff --check` 退出码为 `0`。LSan 仍因 ptrace 环境不可用而关闭 leak 检测。

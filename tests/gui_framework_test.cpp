@@ -819,12 +819,15 @@ int main() {
   expect(closeButton != nullptr,
          "framework title bar exposes a close intent button");
   QPointer<ZzPureTools::ZzApplicationWindow> closedWindow{window};
+  QPointer<zzrk::gui::MainWorkspaceController> closedController{controller};
   if (closeButton != nullptr)
     closeButton->click();
   expect(waitFor([application] { return application->windowCount() == 0; }),
          "title-bar close removes the framework window from application ownership");
   expect(closedWindow == nullptr,
          "title-bar close destroys the unique framework window");
+  expect(closedController == nullptr,
+         "title-bar close destroys the workspace controller");
   expect(backend->stopCalls == 1 && !backend->monitoring,
          "window close stops device monitoring exactly once");
   expect(upgradeCancellation != nullptr && upgradeCancellation->load(),
