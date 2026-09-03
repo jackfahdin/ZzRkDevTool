@@ -229,10 +229,14 @@ if(TARGET zzrk_gui_support)
     add_test(NAME upgrade_progress_tracker
              COMMAND upgrade_progress_tracker_test)
 
-    add_executable(gui_upgrade_test gui_upgrade_test.cpp)
+    add_executable(gui_upgrade_test
+                   gui_upgrade_test.cpp
+                   GuiTestHarness.cpp
+                   GuiTestHarness.hpp)
+    target_include_directories(gui_upgrade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     target_link_libraries(
         gui_upgrade_test
-        PRIVATE zzrk::gui zzrk_project_warnings
+        PRIVATE Zz::WindowKit zzrk::gui zzrk_project_warnings
     )
     add_test(NAME gui_upgrade COMMAND gui_upgrade_test)
     set_tests_properties(
@@ -240,10 +244,14 @@ if(TARGET zzrk_gui_support)
         PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     )
 
-    add_executable(gui_image_download_test gui_image_download_test.cpp)
+    add_executable(gui_image_download_test
+                   gui_image_download_test.cpp
+                   GuiTestHarness.cpp
+                   GuiTestHarness.hpp)
+    target_include_directories(gui_image_download_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     target_link_libraries(
         gui_image_download_test
-        PRIVATE zzrk::gui zzrk_project_warnings
+        PRIVATE Zz::WindowKit zzrk::gui zzrk_project_warnings
     )
     add_test(NAME gui_image_download COMMAND gui_image_download_test)
     set_tests_properties(

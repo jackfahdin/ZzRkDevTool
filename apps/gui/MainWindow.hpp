@@ -70,10 +70,6 @@ private:
         const zzrk::transport::UsbHotplugError &error);
     void processPendingDeviceRefresh();
     void handleScanFinished();
-    void applyScanResult(const zzrk::transport::ScanResult &result);
-    void handleDeviceSelectionChanged();
-    void inspectSelectedDevice();
-    void handleInspectionFinished();
     void readSelectedDevicePartitions();
     void handlePartitionTableFinished();
     void backupSelectedPartition();
@@ -83,21 +79,6 @@ private:
     void handlePartitionOperationProgress(
         const zzrk::workflow::PartitionOperationProgress &progress);
     void handlePartitionOperationFinished();
-    void handleDownloadDeviceChanged();
-    void handleDownloadLayoutChanged();
-    void chooseDownloadParameter();
-    void chooseDownloadDirectory();
-    void chooseSelectedDownloadImage();
-    void clearSelectedDownloadImage();
-    void rebuildDownloadTable();
-    void matchDownloadDirectory();
-    void startImageDownload();
-    void cancelImageDownload();
-    void handleDownloadPrepareFinished();
-    void handleImageDownloadProgress(
-        const zzrk::workflow::ImageDownloadEvent &event);
-    void handleImageDownloadFinished();
-    void updateDownloadControls();
     void chooseFirmwareImage();
     void handlePrepareFinished();
     void startUpgrade();
@@ -108,7 +89,6 @@ private:
         const zzrk::workflow::FirmwareUpgradeEvent &event);
     void handleUpgradeFinished();
     void updateUpgradeControls();
-    void clearDeviceInspection();
     void clearPartitionTable();
     void startPartitionOperation(
         zzrk::workflow::PartitionOperationPhase phase,
@@ -119,15 +99,6 @@ private:
         zzrk::workflow::FirmwareUpgradeReport report);
     [[nodiscard]] QString selectedPortPath() const;
     [[nodiscard]] QString selectedPartitionName() const;
-    [[nodiscard]] QString downloadPortPath() const;
-    [[nodiscard]] std::optional<zzrk::workflow::ImageDownloadPrepareRequest>
-    imageDownloadPrepareRequest() const;
-    void assignDownloadImage(const std::string &target,
-                             const std::filesystem::path &path,
-                             bool applySlotPair = true,
-                             bool rebuild = true);
-    void syncDownloadDeviceFromTable();
-    void syncDeviceTableFromDownload();
     [[nodiscard]] bool usbOperationRunning() const;
 
     std::shared_ptr<zzrk::gui::IGuiOperationBackend> m_backend;
@@ -136,44 +107,15 @@ private:
     QFutureWatcher<zzrk::workflow::PreparedFirmwareUpgradeResult>
         m_prepareWatcher;
     QFutureWatcher<zzrk::workflow::FirmwareUpgradeResult> m_upgradeWatcher;
-    QFutureWatcher<zzrk::workflow::PreparedImageDownloadResult>
-        m_downloadPrepareWatcher;
-    QFutureWatcher<zzrk::workflow::ImageDownloadResult> m_imageDownloadWatcher;
-    QFutureWatcher<zzrk::workflow::DeviceInspectionResult> m_inspectionWatcher;
     QFutureWatcher<zzrk::workflow::DevicePartitionTableResult>
         m_partitionTableWatcher;
     QFutureWatcher<zzrk::workflow::PartitionOperationResult>
         m_partitionOperationWatcher;
     QTabWidget *m_tabs = nullptr;
-    QTableWidget *m_deviceTable = nullptr;
     QLabel *m_connectionIcon = nullptr;
     QLabel *m_connectionText = nullptr;
     QLabel *m_lastScanText = nullptr;
     QToolButton *m_refreshButton = nullptr;
-    QComboBox *m_downloadDeviceCombo = nullptr;
-    QComboBox *m_downloadLayoutCombo = nullptr;
-    QLineEdit *m_downloadLayoutPathEdit = nullptr;
-    QToolButton *m_chooseDownloadParameterButton = nullptr;
-    QToolButton *m_readDownloadGptButton = nullptr;
-    QLineEdit *m_downloadDirectoryEdit = nullptr;
-    QToolButton *m_chooseDownloadDirectoryButton = nullptr;
-    QTableWidget *m_downloadTable = nullptr;
-    QPushButton *m_chooseDownloadImageButton = nullptr;
-    QPushButton *m_clearDownloadImageButton = nullptr;
-    QCheckBox *m_downloadRebootCheckBox = nullptr;
-    QPushButton *m_startDownloadButton = nullptr;
-    QPushButton *m_cancelDownloadButton = nullptr;
-    QProgressBar *m_downloadOverallProgress = nullptr;
-    QProgressBar *m_downloadOperationProgress = nullptr;
-    QLabel *m_downloadStatus = nullptr;
-    QPushButton *m_inspectDeviceButton = nullptr;
-    QLabel *m_deviceDetailStatus = nullptr;
-    QLabel *m_chipInfoValue = nullptr;
-    QLabel *m_capabilityValue = nullptr;
-    QLabel *m_flashIdValue = nullptr;
-    QLabel *m_capacityValue = nullptr;
-    QLabel *m_flashInfoValue = nullptr;
-    QLabel *m_usbInterfaceValue = nullptr;
     QLineEdit *m_imagePathEdit = nullptr;
     QToolButton *m_chooseImageButton = nullptr;
     QPlainTextEdit *m_planPreview = nullptr;
@@ -196,10 +138,7 @@ private:
     QProgressBar *m_partitionProgress = nullptr;
     QLabel *m_partitionStatus = nullptr;
     std::optional<zzrk::workflow::PreparedFirmwareUpgrade> m_preparedUpgrade;
-    std::optional<zzrk::workflow::PreparedImageDownloadPlan>
-        m_preparedDownload;
     std::optional<zzrk::workflow::DevicePartitionTable> m_partitions;
-    std::optional<zzrk::image::RockchipParameterLayout> m_downloadLayout;
     std::optional<zzrk::gui::UpgradeProgressTracker> m_progressTracker;
     std::shared_ptr<zzrk::workflow::FirmwareUpgradeReportBuilder>
         m_activeReportBuilder;
@@ -208,17 +147,7 @@ private:
         m_historyReports;
     std::uint64_t m_nextReportId{1U};
     int m_activeHistoryRow = -1;
-    QString m_selectedPortCache;
-    QString m_inspectedPort;
     QString m_partitionPort;
-    QString m_downloadLayoutPort;
-    std::filesystem::path m_downloadParameterPath;
-    std::filesystem::path m_downloadDirectoryPath;
-    std::unordered_map<std::string, std::filesystem::path> m_downloadImages;
-    std::unordered_map<std::string, bool> m_downloadSelections;
-    std::unordered_map<std::string, bool> m_downloadVerifications;
-    std::unordered_set<std::string> m_validDownloadImages;
-    zzrk::workflow::ImageDownloadRequest m_pendingDownloadRequest;
     QString m_deviceMonitoringError;
     zzrk::workflow::PartitionOperationPhase m_partitionOperationPhase{
         zzrk::workflow::PartitionOperationPhase::read};
