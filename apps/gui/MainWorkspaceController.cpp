@@ -472,6 +472,7 @@ MainWorkspaceController::MainWorkspaceController(
     MainWorkspaceViewModel *viewModel, const bool showModalDialogs,
     QObject *parent)
     : QObject(parent), m_backend(std::move(backend)),
+      m_lifecycle(std::make_shared<MainWorkspaceLifecycle>()),
       m_viewModel(viewModel),
       m_showModalDialogs(showModalDialogs) {
   if (!m_backend) {
@@ -532,6 +533,11 @@ bool MainWorkspaceController::showModalDialogs() const noexcept {
 
 void MainWorkspaceController::setShowModalDialogs(const bool show) {
   m_showModalDialogs = show;
+}
+
+std::shared_ptr<const MainWorkspaceLifecycle>
+MainWorkspaceController::lifecycle() const noexcept {
+  return m_lifecycle;
 }
 
 ZzCore::ZzResult<void> MainWorkspaceController::attachWorkspace(
@@ -2401,6 +2407,11 @@ void MainWorkspaceController::shutdown() noexcept {
   m_partitionOperationWatcher.waitForFinished();
   m_prepareWatcher.waitForFinished();
   m_upgradeWatcher.waitForFinished();
+  if (m_lifecycle != nullptr) {
+    m_lifecycle->m_monitoringStopped.store(true);
+    m_lifecycle->m_allWatchersStopped.store(true);
+    m_lifecycle->m_shutdownComplete.store(true);
+  }
 }
 
 bool MainWorkspaceController::usbOperationRunning() const noexcept {
