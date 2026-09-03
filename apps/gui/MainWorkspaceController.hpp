@@ -40,6 +40,31 @@ class ImageDownloadPage;
 class PartitionPage;
 
 /**
+ * @brief 控制器销毁后仍可读取的关闭生命周期状态。
+ *
+ * GUI 壳层和宿主可持有此观察值，以确认后台任务已收敛；状态只由控制器写入。
+ */
+class MainWorkspaceLifecycle final {
+public:
+  [[nodiscard]] bool shutdownComplete() const noexcept {
+    return m_shutdownComplete.load();
+  }
+  [[nodiscard]] bool monitoringStopped() const noexcept {
+    return m_monitoringStopped.load();
+  }
+  [[nodiscard]] bool allWatchersStopped() const noexcept {
+    return m_allWatchersStopped.load();
+  }
+
+private:
+  friend class MainWorkspaceController;
+
+  std::atomic_bool m_shutdownComplete{false};
+  std::atomic_bool m_monitoringStopped{false};
+  std::atomic_bool m_allWatchersStopped{false};
+};
+
+/**
  * @brief 工作区级设备协调器。
  *
  * Controller 负责设备扫描、热插拔去抖和跨页面的取消/忙碌协调。页面只观察
@@ -62,6 +87,8 @@ public:
   [[nodiscard]] MainWorkspaceViewModel *viewModel() const noexcept;
   [[nodiscard]] bool showModalDialogs() const noexcept;
   void setShowModalDialogs(bool show);
+  [[nodiscard]] std::shared_ptr<const MainWorkspaceLifecycle>
+  lifecycle() const noexcept;
 
   [[nodiscard]] ZzCore::ZzResult<void>
   attachWorkspace(ZzFluentUI::ZzTabWidget *tabs, QStatusBar *statusBar,
@@ -172,6 +199,7 @@ private:
   void updateReportExportControls();
 
   std::shared_ptr<IGuiOperationBackend> m_backend;
+  std::shared_ptr<MainWorkspaceLifecycle> m_lifecycle;
   QPointer<MainWorkspaceViewModel> m_viewModel;
   QFutureWatcher<zzrk::transport::ScanResult> m_scanWatcher;
   QFutureWatcher<zzrk::workflow::PreparedImageDownloadResult>

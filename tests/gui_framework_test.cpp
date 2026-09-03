@@ -10,6 +10,9 @@
 #include <ZzFluentUI/ZzSidePane.h>
 #include <ZzFluentUI/ZzTabBar.h>
 #include <ZzFluentUI/ZzTabWidget.h>
+#include <ZzFluentUI/ZzThemeController.h>
+#include <ZzFluentUI/ZzThemeMode.h>
+#include <ZzFluentUI/ZzTitleBarThemeInteractionMode.h>
 #include <ZzPureTools/ZzApplicationBuilder.h>
 #include <ZzPureTools/ZzApplicationWindow.h>
 #include <ZzPureTools/ZzNavigationController.h>
@@ -23,18 +26,23 @@
 #include <ZzWindowKit/ZzWindowKitBootstrap.h>
 
 #include <QApplication>
+#include <QAbstractButton>
+#include <QElapsedTimer>
 #include <QEvent>
 #include <QEventLoop>
 #include <QFile>
 #include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPointer>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QStyle>
+#include <QStatusBar>
 #include <QTableWidget>
+#include <QThread>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QToolButton>
@@ -42,6 +50,7 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <thread>
@@ -56,6 +65,17 @@ void expect(const bool condition, const char *description) {
     std::cerr << "FAIL: " << description << '\n';
     ++failures;
   }
+}
+
+bool waitFor(const std::function<bool()> &condition,
+             const int timeoutMilliseconds = 2000) {
+  QElapsedTimer timer;
+  timer.start();
+  while (!condition() && timer.elapsed() < timeoutMilliseconds) {
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QThread::msleep(1);
+  }
+  return condition();
 }
 
 } // namespace
@@ -273,41 +293,37 @@ public:
       ZzPureTools::ZzApplicationWindow &window)
       : window_(&window) {}
 
-  [[nodiscard]] bool connected() const noexcept { return connected_; }
+  [[nodiscard]] bool connected() const noexcept {
+    return !connectedPanes_.isEmpty();
+  }
   [[nodiscard]] bool triggered() const noexcept { return triggered_; }
 
 protected:
   bool eventFilter(QObject *watched, QEvent *event) override {
-    Q_UNUSED(watched);
     Q_UNUSED(event);
-    connectToLeftPane();
+    if (auto *pane = qobject_cast<ZzFluentUI::ZzSidePane *>(watched))
+      connectToPane(pane);
     return false;
   }
 
 private:
-  void connectToLeftPane() {
-    if (connected_ || window_ == nullptr)
+  void connectToPane(ZzFluentUI::ZzSidePane *pane) {
+    if (pane == nullptr || connectedPanes_.contains(pane))
       return;
-    const auto panes = window_->findChildren<ZzFluentUI::ZzSidePane *>();
-    for (auto *pane : panes) {
-      if (pane->edge() != ZzFluentUI::ZzSidePaneEdge::Left)
-        continue;
-      QObject::connect(
-          pane, &ZzFluentUI::ZzSidePane::collapsedChanged, this,
-          [this, pane](const bool collapsed) {
-            if (!collapsed || pane->pageCount() != 1)
-              return;
-            triggered_ = true;
-            pane->setCollapsed(false);
-          },
-          Qt::DirectConnection);
-      connected_ = true;
-      return;
-    }
+    QObject::connect(
+        pane, &ZzFluentUI::ZzSidePane::collapsedChanged, this,
+        [this, pane](const bool collapsed) {
+          if (!collapsed || pane->pageCount() != 1)
+            return;
+          triggered_ = true;
+          pane->setCollapsed(false);
+        },
+        Qt::DirectConnection);
+    connectedPanes_.append(pane);
   }
 
   QPointer<ZzPureTools::ZzApplicationWindow> window_;
-  bool connected_ = false;
+  QList<QPointer<ZzFluentUI::ZzSidePane>> connectedPanes_;
   bool triggered_ = false;
 };
 
@@ -390,6 +406,27 @@ int main() {
          "application exposes a theme controller");
   expect(QApplication::style() != nullptr, "Fluent application style is set");
 
+  auto *controller = harness->controller();
+  expect(controller != nullptr, "harness exposes the workspace controller");
+  if (controller == nullptr) {
+    return 1;
+  }
+  expect(controller->backend() == backend.get(),
+         "controller accepts an injectable backend");
+  expect(!controller->showModalDialogs(),
+         "controller preserves modal dialog configuration");
+  const auto lifecycle = controller->lifecycle();
+  expect(lifecycle != nullptr,
+         "controller exposes a persistent shutdown lifecycle observer");
+  int selectedDeviceChanges = 0;
+  int scanCompletions = 0;
+  QObject::connect(controller,
+                   &zzrk::gui::MainWorkspaceController::selectedDeviceChanged,
+                   [&] { ++selectedDeviceChanges; });
+  QObject::connect(controller,
+                   &zzrk::gui::MainWorkspaceController::scanCompleted,
+                   [&] { ++scanCompletions; });
+
   auto *window = harness->window();
   int applicationWindowCount = 0;
   for (QWidget *topLevel : QApplication::topLevelWidgets()) {
@@ -438,27 +475,42 @@ int main() {
         actualTabs.append(mainTabs->tabText(index));
       expect(actualTabs == expectedTabs,
              "main tabs preserve the required fixed order");
-      expect(!mainTabs->tabsClosable() && !mainTabs->isMovable(),
-             "main tabs cannot be closed or reordered");
+      expect(!mainTabs->tabsClosable(), "main tabs cannot be closed");
+      expect(!mainTabs->isMovable(), "main tabs cannot be reordered");
       auto *bar = mainTabs->fluentTabBar();
-      expect(bar != nullptr && !bar->isTearOffEnabled() &&
-                 !bar->isTabTransferEnabled(),
-             "main tabs cannot be detached or transferred");
-      expect(bar != nullptr && bar->newTabButton() != nullptr &&
-                 bar->newTabButton()->isHidden(),
-             "main tabs hide the new-tab action");
+      expect(bar != nullptr, "main tabs expose a Fluent tab bar");
+      if (bar != nullptr) {
+        expect(!bar->isTearOffEnabled(), "main tabs cannot be detached");
+        expect(!bar->isTabTransferEnabled(),
+               "main tabs cannot be transferred");
+        expect(bar->newTabButton() != nullptr,
+               "main tabs expose the new-tab control for policy enforcement");
+        if (bar->newTabButton() != nullptr) {
+          expect(!bar->newTabButton()->isVisible(),
+                 "main tabs hide the new-tab action");
+        }
+      }
+
+      const int selectedTab = mainTabs->currentIndex();
+      mainTabs->setTabPinned(0, true);
+      expect(mainTabs->count() == expectedTabs.size() &&
+                 mainTabs->currentIndex() == selectedTab,
+             "pin decoration does not create, remove, or navigate business tabs");
+      mainTabs->setTabModified(1, true);
+      expect(mainTabs->count() == expectedTabs.size() &&
+                 mainTabs->currentIndex() == selectedTab,
+             "modified decoration does not create, remove, or navigate business tabs");
+      mainTabs->setTabAttention(2, true);
+      expect(mainTabs->count() == expectedTabs.size() &&
+                 mainTabs->currentIndex() == selectedTab,
+             "attention decoration does not create, remove, or navigate business tabs");
+
     }
   }
 
-  auto *controller = harness->controller();
-  expect(controller != nullptr, "harness exposes the workspace controller");
-  if (controller == nullptr || window == nullptr) {
+  if (window == nullptr) {
     return 1;
   }
-  expect(controller->backend() == backend.get(),
-         "controller accepts an injectable backend");
-  expect(!controller->showModalDialogs(),
-         "controller preserves modal dialog configuration");
   auto *tabs = window->findChild<ZzFluentUI::ZzTabWidget *>(
       QStringLiteral("mainTabs"));
   auto *downloadView =
@@ -471,14 +523,6 @@ int main() {
          "controller creates shared refresh button");
   expect(controller->lastScanText() != nullptr,
          "controller creates shared last scan status");
-  int selectedDeviceChanges = 0;
-  int scanCompletions = 0;
-  QObject::connect(controller,
-                   &zzrk::gui::MainWorkspaceController::selectedDeviceChanged,
-                   [&] { ++selectedDeviceChanges; });
-  QObject::connect(controller,
-                   &zzrk::gui::MainWorkspaceController::scanCompleted,
-                   [&] { ++scanCompletions; });
   expect(downloadView != nullptr,
          "initial route creates the download page in the framework host");
   if (downloadView != nullptr && tabs != nullptr) {
@@ -514,6 +558,110 @@ int main() {
                               Qt::DirectConnection);
     expect(selectedDeviceChanges == 1,
            "unchanged device selection does not emit another change");
+
+    auto *themeController = application->themeController();
+    auto *titleBar = window->titleBar();
+    expect(themeController != nullptr && titleBar != nullptr,
+           "framework window exposes theme controller and title bar");
+    if (themeController != nullptr && titleBar != nullptr) {
+      const auto originalThemeMode = themeController->mode();
+      expect(originalThemeMode == ZzFluentUI::ZzThemeMode::System ||
+                 originalThemeMode == ZzFluentUI::ZzThemeMode::Light ||
+                 originalThemeMode == ZzFluentUI::ZzThemeMode::Dark ||
+                 originalThemeMode == ZzFluentUI::ZzThemeMode::HighContrast,
+             "theme controller exposes a readable initial mode");
+      const auto originalThemeInteraction = titleBar->themeInteractionMode();
+      auto *const originalStyle = QApplication::style();
+      int snapshotChanges = 0;
+      QObject::connect(themeController,
+                       &ZzFluentUI::ZzThemeController::snapshotChanged,
+                       [&] { ++snapshotChanges; });
+
+      themeController->setMode(ZzFluentUI::ZzThemeMode::Light);
+      expect(waitFor([themeController] {
+               return themeController->mode() == ZzFluentUI::ZzThemeMode::Light;
+             }),
+             "theme controller accepts the light baseline");
+      const QColor lightTitleSurface = titleBar->palette().color(QPalette::Window);
+      const QColor lightTabsSurface = tabs->palette().color(QPalette::Window);
+      const QColor lightStatusSurface =
+          window->statusBar()->palette().color(QPalette::Window);
+
+      const int snapshotsBeforeDark = snapshotChanges;
+      themeController->setMode(ZzFluentUI::ZzThemeMode::Dark);
+      expect(waitFor([&] { return snapshotChanges > snapshotsBeforeDark; }),
+             "dark theme publishes a new snapshot");
+      const QColor darkSurface = QApplication::palette().color(QPalette::Window);
+      expect(titleBar->themeMode() == ZzFluentUI::ZzThemeMode::Dark,
+             "dark snapshot refreshes the title-bar theme state");
+      expect(titleBar->palette().color(QPalette::Window) == darkSurface &&
+                 titleBar->palette().color(QPalette::Window) !=
+                     lightTitleSurface,
+             "dark snapshot refreshes the title-bar palette");
+      expect(tabs->palette().color(QPalette::Window) == darkSurface &&
+                 tabs->palette().color(QPalette::Window) != lightTabsSurface,
+             "dark snapshot refreshes the main-tabs palette");
+      expect(window->statusBar()->palette().color(QPalette::Window) ==
+                     darkSurface &&
+                 window->statusBar()->palette().color(QPalette::Window) !=
+                     lightStatusSurface,
+             "dark snapshot refreshes the status-bar palette");
+
+      titleBar->setThemeInteractionMode(
+          ZzFluentUI::ZzTitleBarThemeInteractionMode::Toggle);
+      auto *themeButton = qobject_cast<QAbstractButton *>(
+          titleBar->themeMenu()->parentWidget());
+      expect(themeButton != nullptr,
+             "title bar exposes a clickable theme intent button");
+      if (themeButton != nullptr)
+        themeButton->click();
+      expect(waitFor([themeController] {
+               return themeController->mode() == ZzFluentUI::ZzThemeMode::Light;
+             }),
+             "title-bar theme toggle changes the application theme");
+
+      themeController->setMode(originalThemeMode);
+      expect(waitFor([&] {
+               return themeController->mode() == originalThemeMode;
+             }),
+             "theme controller restores the original mode");
+      titleBar->setThemeInteractionMode(originalThemeInteraction);
+      expect(QApplication::style() == originalStyle,
+             "theme switching preserves the application style object");
+    }
+
+    auto *buttonTitleBar = window->titleBar();
+    auto *minimizeButton = buttonTitleBar != nullptr
+                               ? qobject_cast<QAbstractButton *>(
+                                     buttonTitleBar->minimizeButton())
+                               : nullptr;
+    auto *maximizeButton = buttonTitleBar != nullptr
+                               ? qobject_cast<QAbstractButton *>(
+                                     buttonTitleBar->maximizeButton())
+                               : nullptr;
+    expect(minimizeButton != nullptr,
+           "framework title bar exposes a minimize intent button");
+    expect(maximizeButton != nullptr,
+           "framework title bar exposes a maximize intent button");
+    if (minimizeButton != nullptr)
+      minimizeButton->click();
+    expect(waitFor([window] { return window->isMinimized(); }),
+           "title-bar minimize intent minimizes the framework window");
+    window->showNormal();
+    expect(waitFor([window] {
+             return !window->isMinimized() && !window->isMaximized();
+           }),
+           "framework window returns to normal state for maximize testing");
+    if (maximizeButton != nullptr)
+      maximizeButton->click();
+    expect(waitFor([window] { return window->isMaximized(); }),
+           "title-bar maximize intent maximizes the framework window");
+    if (maximizeButton != nullptr)
+      maximizeButton->click();
+    expect(waitFor([window] {
+             return !window->isMinimized() && !window->isMaximized();
+           }),
+           "title-bar restore intent returns the framework window to normal");
 
     auto *readGptButton =
         downloadView->findChild<QToolButton *>(
@@ -658,19 +806,38 @@ int main() {
                bootStatus == QStringLiteral("失败"),
            "failed image execution marks the matching plan row");
   }
-  controller->shutdown();
-  expect(!backend->monitoring && backend->stopCalls == 1,
-         "controller shutdown stops device monitoring");
-  expect(controller->viewModel()->upgradeCancellation()->load(),
-         "shutdown cancels upgrade operation");
-  expect(controller->viewModel()->downloadCancellation()->load(),
-         "shutdown cancels image download operation");
-  expect(controller->viewModel()->partitionCancellation()->load(),
-         "shutdown cancels partition operation");
-  controller->shutdown();
-  expect(backend->stopCalls == 1, "controller shutdown is idempotent");
-
-  application->beginShutdown();
-  application->beginShutdown();
+  const auto upgradeCancellation = controller->viewModel()->upgradeCancellation();
+  const auto downloadCancellation =
+      controller->viewModel()->downloadCancellation();
+  const auto partitionCancellation =
+      controller->viewModel()->partitionCancellation();
+  auto *titleBar = window->titleBar();
+  auto *closeButton = titleBar != nullptr
+                          ? qobject_cast<QAbstractButton *>(
+                                titleBar->closeButton())
+                          : nullptr;
+  expect(closeButton != nullptr,
+         "framework title bar exposes a close intent button");
+  QPointer<ZzPureTools::ZzApplicationWindow> closedWindow{window};
+  if (closeButton != nullptr)
+    closeButton->click();
+  expect(waitFor([application] { return application->windowCount() == 0; }),
+         "title-bar close removes the framework window from application ownership");
+  expect(closedWindow == nullptr,
+         "title-bar close destroys the unique framework window");
+  expect(backend->stopCalls == 1 && !backend->monitoring,
+         "window close stops device monitoring exactly once");
+  expect(upgradeCancellation != nullptr && upgradeCancellation->load(),
+         "window close cancels upgrade work");
+  expect(downloadCancellation != nullptr && downloadCancellation->load(),
+         "window close cancels image download work");
+  expect(partitionCancellation != nullptr && partitionCancellation->load(),
+         "window close cancels partition work");
+  expect(lifecycle != nullptr && lifecycle->shutdownComplete(),
+         "window close completes controller shutdown before destruction");
+  expect(lifecycle != nullptr && lifecycle->monitoringStopped(),
+         "window close records stopped device monitoring");
+  expect(lifecycle != nullptr && lifecycle->allWatchersStopped(),
+         "window close waits for every controller watcher");
   return failures;
 }
