@@ -76,6 +76,18 @@ install(
     FILES "${PROJECT_SOURCE_DIR}/thirdParty/spdlog/LICENSE"
     DESTINATION "${ZZRK_INSTALL_DOCDIR}/licenses/spdlog"
 )
+install(
+    FILES "${PROJECT_SOURCE_DIR}/packaging/licenses/ZzPureTools-MIT.txt"
+    DESTINATION "${ZZRK_INSTALL_DOCDIR}/licenses/ZzPureTools"
+)
+install(
+    FILES "${PROJECT_SOURCE_DIR}/thirdParty/ZzPureTools/ZzThirdParty/ZzLog/LICENSE"
+    DESTINATION "${ZZRK_INSTALL_DOCDIR}/licenses/ZzLog"
+)
+install(
+    FILES "${PROJECT_SOURCE_DIR}/packaging/licenses/QWindowKit-Apache-2.0.txt"
+    DESTINATION "${ZZRK_INSTALL_DOCDIR}/licenses/QWindowKit"
+)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     install(
@@ -227,10 +239,7 @@ if(ZZRK_BUNDLE_RUNTIME AND (WIN32 OR APPLE))
     endif()
 
     set(_zzrk_deploy_tool_options)
-    set(_zzrk_cross_plugin_options)
-    if(WIN32)
-        set(_zzrk_cross_plugin_options "INCLUDE_PLUGINS qoffscreen")
-    endif()
+    set(_zzrk_cross_plugin_options "INCLUDE_PLUGINS qoffscreen")
     if(APPLE AND ZZRK_MACOS_CODESIGN_IDENTITY)
         set(
             _zzrk_deploy_tool_options
