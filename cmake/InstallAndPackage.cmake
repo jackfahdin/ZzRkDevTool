@@ -76,18 +76,20 @@ install(
     FILES "${PROJECT_SOURCE_DIR}/thirdParty/spdlog/LICENSE"
     DESTINATION "${ZZRK_INSTALL_DOCDIR}/licenses/spdlog"
 )
-install(
-    FILES "${PROJECT_SOURCE_DIR}/packaging/licenses/ZzPureTools-MIT.txt"
-    DESTINATION "${ZZRK_INSTALL_DOCDIR}/licenses/ZzPureTools"
-)
-install(
-    FILES "${PROJECT_SOURCE_DIR}/thirdParty/ZzPureTools/ZzThirdParty/ZzLog/LICENSE"
-    DESTINATION "${ZZRK_INSTALL_DOCDIR}/licenses/ZzLog"
-)
-install(
-    FILES "${PROJECT_SOURCE_DIR}/packaging/licenses/QWindowKit-Apache-2.0.txt"
-    DESTINATION "${ZZRK_INSTALL_DOCDIR}/licenses/QWindowKit"
-)
+if(ZZRK_BUILD_GUI AND TARGET ZzRkDevTool)
+    install(
+        FILES "${PROJECT_SOURCE_DIR}/packaging/licenses/ZzPureTools-MIT.txt"
+        DESTINATION "${ZZRK_INSTALL_DOCDIR}/licenses/ZzPureTools"
+    )
+    install(
+        FILES "${PROJECT_SOURCE_DIR}/thirdParty/ZzPureTools/ZzThirdParty/ZzLog/LICENSE"
+        DESTINATION "${ZZRK_INSTALL_DOCDIR}/licenses/ZzLog"
+    )
+    install(
+        FILES "${PROJECT_SOURCE_DIR}/packaging/licenses/QWindowKit-Apache-2.0.txt"
+        DESTINATION "${ZZRK_INSTALL_DOCDIR}/licenses/QWindowKit"
+    )
+endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     install(

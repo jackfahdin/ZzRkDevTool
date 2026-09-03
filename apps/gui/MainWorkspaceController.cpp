@@ -731,7 +731,6 @@ void MainWorkspaceController::startMonitoring() {
   if (m_monitoringStarted || m_shuttingDown || !m_backend) {
     return;
   }
-  m_monitoringStarted = true;
   const auto monitoringError = m_backend->startDeviceMonitoring(
       [this](zzrk::transport::UsbHotplugEvent) {
         QMetaObject::invokeMethod(
@@ -744,7 +743,9 @@ void MainWorkspaceController::startMonitoring() {
       });
   if (monitoringError.has_value()) {
     handleDeviceMonitoringError(*monitoringError);
+    return;
   }
+  m_monitoringStarted = true;
 }
 
 void MainWorkspaceController::refreshDevices() {
@@ -825,10 +826,12 @@ void MainWorkspaceController::handleScanFinished() {
   if (m_shuttingDown) {
     return;
   }
+  QPointer<MainWorkspaceController> guard{this};
   if (m_viewModel != nullptr) {
     m_viewModel->setBusy(false);
+    if (guard == nullptr)
+      return;
   }
-  QPointer<MainWorkspaceController> guard{this};
   applyScanResult(m_scanWatcher.result());
   if (guard == nullptr)
     return;
@@ -902,9 +905,12 @@ void MainWorkspaceController::handleDeviceSelectionChanged() {
   const QString port = m_devicePage->selectedPortPath();
   const bool changed =
       m_viewModel != nullptr && m_viewModel->selectedPortPath() != port;
-  if (m_viewModel != nullptr)
-    m_viewModel->setSelectedPortPath(port);
   QPointer<MainWorkspaceController> guard{this};
+  if (m_viewModel != nullptr) {
+    m_viewModel->setSelectedPortPath(port);
+    if (guard == nullptr)
+      return;
+  }
   if (changed) {
     clearDeviceInspection();
     setDevicePartitionTable(nullptr);
@@ -980,8 +986,12 @@ void MainWorkspaceController::handleInspectionFinished() {
   }
   const auto &inspection = std::get<zzrk::workflow::DeviceInspection>(result);
   const QString port = QString::fromStdString(inspection.device.portPath);
-  if (m_viewModel != nullptr)
+  QPointer<MainWorkspaceController> guard{this};
+  if (m_viewModel != nullptr) {
     m_viewModel->setInspectedPort(port);
+    if (guard == nullptr)
+      return;
+  }
   const auto sectors = inspection.flashInfo.legacy.sectorCount;
   const auto &usb = inspection.interfaceInfo;
   m_devicePage->setInspection(
@@ -1071,9 +1081,13 @@ void MainWorkspaceController::handlePartitionTableFinished() {
   const auto partitions =
       std::get<zzrk::workflow::DevicePartitionTable>(std::move(result));
   setDevicePartitionTable(&partitions);
-  if (m_viewModel != nullptr)
+  QPointer<MainWorkspaceController> guard{this};
+  if (m_viewModel != nullptr) {
     m_viewModel->setPartitionPort(
         QString::fromStdString(partitions.device.portPath));
+    if (guard == nullptr)
+      return;
+  }
   const auto backup = zzrk::storage::toString(partitions.table.backupStatus);
   m_partitionTableStatus =
       QStringLiteral("端口 %1：%2 个分区，eMMC %3，备份 GPT %4")
@@ -1099,7 +1113,6 @@ void MainWorkspaceController::handlePartitionTableFinished() {
     m_statusBar->showMessage(QStringLiteral("GPT 分区表已更新"));
   setPagesBusy(false);
   processPendingDeviceRefresh();
-  QPointer<MainWorkspaceController> guard{this};
   emit devicePartitionTableChanged();
   if (guard != nullptr)
     emit partitionTableCompleted(true);
@@ -1460,7 +1473,10 @@ void MainWorkspaceController::startUpgrade() {
   if (!cancellation)
     return;
   cancellation->store(false);
+  QPointer<MainWorkspaceController> guard{this};
   m_viewModel->setProgress(0, 0);
+  if (guard == nullptr)
+    return;
   m_upgradePage->setOverallProgress(0);
   m_upgradePage->setOperationProgress(0, true);
   m_upgradePage->setStatus(QStringLiteral("正在启动完整升级..."));
@@ -1481,7 +1497,6 @@ void MainWorkspaceController::startUpgrade() {
   m_activeReportBuilder->setPrepared(prepared);
   const auto reportBuilder = m_activeReportBuilder;
   const auto backend = m_backend;
-  QPointer<MainWorkspaceController> guard{this};
   m_upgradeWatcher.setFuture(QtConcurrent::run(
       [guard, backend, request, prepared, cancellation,
        reportBuilder]() mutable {
@@ -1531,9 +1546,13 @@ void MainWorkspaceController::handleUpgradeProgress(
   m_upgradePage->setOverallProgress(snapshot.overallPercent);
   m_upgradePage->setOperationProgress(snapshot.operationPercent,
                                       !snapshot.operationDeterminate);
-  if (m_viewModel != nullptr)
+  QPointer<MainWorkspaceController> guard{this};
+  if (m_viewModel != nullptr) {
     m_viewModel->setProgress(snapshot.overallPercent,
                              snapshot.operationPercent);
+    if (guard == nullptr)
+      return;
+  }
   const auto stageText = zzrk::workflow::toString(event.stage);
   const QString stage = QString::fromLatin1(
       stageText.data(), static_cast<qsizetype>(stageText.size()));
@@ -1579,9 +1598,13 @@ void MainWorkspaceController::handleUpgradeFinished() {
                               : UpgradeProgressSnapshot{100, 100, true};
     m_upgradePage->setOverallProgress(snapshot.overallPercent);
     m_upgradePage->setOperationProgress(snapshot.operationPercent);
-    if (m_viewModel != nullptr)
+    QPointer<MainWorkspaceController> guard{this};
+    if (m_viewModel != nullptr) {
       m_viewModel->setProgress(snapshot.overallPercent,
                                snapshot.operationPercent);
+      if (guard == nullptr)
+        return;
+    }
     const QString message =
         QStringLiteral("升级完成：%1 字节，已校验 %2 个分区")
             .arg(success.partitionBytesWritten)
@@ -1625,7 +1648,10 @@ void MainWorkspaceController::finishHistoryEntry(
       m_viewModel == nullptr)
     return;
   const auto reportId = m_nextReportId++;
+  QPointer<MainWorkspaceController> guard{this};
   m_viewModel->setHistoryReport(reportId, std::move(report));
+  if (guard == nullptr)
+    return;
   m_upgradePage->updateHistoryResult(m_activeHistoryRow, result, detail,
                                      reportId);
   m_upgradePage->selectHistoryRow(m_activeHistoryRow);
@@ -2318,8 +2344,12 @@ void MainWorkspaceController::updateDownloadControls() {
   const bool preparing = m_downloadPrepareWatcher.isRunning();
   const bool running = m_imageDownloadWatcher.isRunning();
   const bool busy = usbOperationRunning() || preparing;
-  if (m_viewModel != nullptr)
+  QPointer<MainWorkspaceController> guard{this};
+  if (m_viewModel != nullptr) {
     m_viewModel->setBusy(busy);
+    if (guard == nullptr)
+      return;
+  }
   if (m_downloadPage == nullptr)
     return;
   const auto request = imageDownloadPrepareRequest();
@@ -2367,8 +2397,12 @@ void MainWorkspaceController::setDevicePartitionTable(
                                  .grow = false});
   }
   m_downloadLayout = std::move(layout);
-  if (m_viewModel != nullptr)
+  QPointer<MainWorkspaceController> guard{this};
+  if (m_viewModel != nullptr) {
     m_viewModel->setDownloadLayoutPort(port);
+    if (guard == nullptr)
+      return;
+  }
   m_downloadPage->layoutPathEdit()->setText(
       QStringLiteral("%1 / 设备 GPT").arg(port));
   rebuildDownloadTable();

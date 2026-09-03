@@ -260,3 +260,21 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND TARGET ZzRkDevTool
             TIMEOUT 60
     )
 endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND TARGET zzrkdevtool-cli)
+    add_test(
+        NAME cli_only_install_smoke
+        COMMAND
+            "${CMAKE_COMMAND}"
+            "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}"
+            "-DBINARY_ROOT=${CMAKE_BINARY_DIR}/cli-only-install-smoke"
+            "-DQT_PREFIX=${Qt6_DIR}/../../.."
+            "-DLIBUSB_ROOT=${ZZRK_LIBUSB_ROOT}"
+            "-DFMT_SOURCE=${CMAKE_BINARY_DIR}/_deps/fmt-src"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cli_only_install_smoke.cmake"
+    )
+    set_tests_properties(
+        cli_only_install_smoke
+        PROPERTIES LABELS packaging RUN_SERIAL TRUE TIMEOUT 180
+    )
+endif()
