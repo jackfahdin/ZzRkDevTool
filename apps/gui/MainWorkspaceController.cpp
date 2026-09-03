@@ -765,7 +765,10 @@ void MainWorkspaceController::refreshDevices() {
   if (m_viewModel == nullptr) {
     return;
   }
+  QPointer<MainWorkspaceController> guard{this};
   m_viewModel->setBusy(true);
+  if (guard == nullptr)
+    return;
   const auto backend = m_backend;
   m_scanWatcher.setFuture(QtConcurrent::run([backend] {
     try {
@@ -938,8 +941,12 @@ void MainWorkspaceController::handleDeviceSelectionChanged() {
 }
 
 void MainWorkspaceController::clearDeviceInspection() {
-  if (m_viewModel != nullptr)
+  QPointer<MainWorkspaceController> guard{this};
+  if (m_viewModel != nullptr) {
     m_viewModel->setInspectedPort({});
+    if (guard == nullptr)
+      return;
+  }
   if (m_devicePage != nullptr) {
     m_devicePage->setInspection(QStringLiteral("尚未读取详情"));
   }
@@ -1119,8 +1126,12 @@ void MainWorkspaceController::handlePartitionTableFinished() {
 }
 
 void MainWorkspaceController::clearPartitionTable() {
-  if (m_viewModel != nullptr)
+  QPointer<MainWorkspaceController> guard{this};
+  if (m_viewModel != nullptr) {
     m_viewModel->setPartitionPort({});
+    if (guard == nullptr)
+      return;
+  }
   if (m_partitionPage != nullptr) {
     m_partitionPage->clearPartitions();
     m_partitionPage->setProgress(0);
@@ -1635,8 +1646,12 @@ void MainWorkspaceController::beginHistoryEntry(const QString &portPath) {
   constexpr int maximumHistoryRows = 50;
   while (m_upgradePage->historyCount() > maximumHistoryRows) {
     const auto removed = m_upgradePage->removeLastHistoryEntry();
-    if (removed.has_value() && m_viewModel != nullptr)
+    QPointer<MainWorkspaceController> guard{this};
+    if (removed.has_value() && m_viewModel != nullptr) {
       m_viewModel->removeHistoryReport(*removed);
+      if (guard == nullptr)
+        return;
+    }
   }
   updateReportExportControls();
 }
@@ -1746,7 +1761,10 @@ void MainWorkspaceController::handleDownloadDeviceChanged() {
       m_viewModel != nullptr &&
       m_viewModel->downloadLayoutPort() != downloadPortPath()) {
     m_downloadLayout.reset();
+    QPointer<MainWorkspaceController> guard{this};
     m_viewModel->setDownloadLayoutPort({});
+    if (guard == nullptr)
+      return;
     m_downloadPage->layoutPathEdit()->clear();
     rebuildDownloadTable();
   }
@@ -1762,8 +1780,12 @@ void MainWorkspaceController::handleDownloadLayoutChanged() {
       return;
     }
     m_downloadLayout.reset();
-    if (m_viewModel != nullptr)
+    QPointer<MainWorkspaceController> guard{this};
+    if (m_viewModel != nullptr) {
       m_viewModel->setDownloadLayoutPort({});
+      if (guard == nullptr)
+        return;
+    }
     m_downloadPage->layoutPathEdit()->clear();
   } else if (m_devicePartitions.has_value() &&
              QString::fromStdString(m_devicePartitions->device.portPath) ==
@@ -1772,8 +1794,12 @@ void MainWorkspaceController::handleDownloadLayoutChanged() {
     return;
   } else {
     m_downloadLayout.reset();
-    if (m_viewModel != nullptr)
+    QPointer<MainWorkspaceController> guard{this};
+    if (m_viewModel != nullptr) {
       m_viewModel->setDownloadLayoutPort({});
+      if (guard == nullptr)
+        return;
+    }
     m_downloadPage->layoutPathEdit()->clear();
   }
   rebuildDownloadTable();
@@ -1822,8 +1848,12 @@ void MainWorkspaceController::loadDownloadParameter(const QString &path) {
   m_downloadParameterPath = parameterPath;
   m_downloadLayout =
       std::get<zzrk::image::RockchipParameterLayout>(std::move(parsed));
-  if (m_viewModel != nullptr)
+  QPointer<MainWorkspaceController> guard{this};
+  if (m_viewModel != nullptr) {
     m_viewModel->setDownloadLayoutPort({});
+    if (guard == nullptr)
+      return;
+  }
   m_downloadPage->layoutPathEdit()->setText(path);
   if (m_downloadDirectoryPath.empty()) {
     m_downloadDirectoryPath = parameterPath.parent_path();
@@ -2287,8 +2317,12 @@ void MainWorkspaceController::handleDownloadProgress(
                     ? stage
                     : QStringLiteral("%1 %2%").arg(stage).arg(operation));
   }
-  if (m_viewModel != nullptr)
+  QPointer<MainWorkspaceController> guard{this};
+  if (m_viewModel != nullptr) {
     m_viewModel->setProgress(overall, operation);
+    if (guard == nullptr)
+      return;
+  }
   emit imageDownloadProgressChanged(overall, operation);
 }
 
@@ -2375,8 +2409,12 @@ void MainWorkspaceController::setDevicePartitionTable(
     if (m_downloadPage != nullptr &&
         m_downloadPage->layoutCombo()->currentIndex() == 0) {
       m_downloadLayout.reset();
-      if (m_viewModel != nullptr)
+      QPointer<MainWorkspaceController> guard{this};
+      if (m_viewModel != nullptr) {
         m_viewModel->setDownloadLayoutPort({});
+        if (guard == nullptr)
+          return;
+      }
       m_downloadPage->layoutPathEdit()->clear();
       rebuildDownloadTable();
     }
@@ -2444,7 +2482,10 @@ void MainWorkspaceController::shutdown() noexcept {
     if (const auto token = m_viewModel->partitionCancellation()) {
       token->store(true);
     }
+    QPointer<MainWorkspaceController> guard{this};
     m_viewModel->setBusy(false);
+    if (guard == nullptr)
+      return;
   }
   disconnect(&m_scanWatcher, nullptr, this, nullptr);
   disconnect(&m_downloadPrepareWatcher, nullptr, this, nullptr);

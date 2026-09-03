@@ -465,6 +465,36 @@ int runSynchronousShutdownScenario(const QString &scenario) {
         application, [application] { application->beginShutdown(); },
         Qt::DirectConnection);
     controller->viewModel()->setHistoryReports({});
+  } else if (scenario == QStringLiteral("refreshDevicesBusyChanged")) {
+    QObject::connect(
+        controller->viewModel(), &zzrk::gui::MainWorkspaceViewModel::busyChanged,
+        application, [application](bool) { application->beginShutdown(); },
+        Qt::DirectConnection);
+    controller->refreshDevices();
+  } else if (scenario == QStringLiteral("shutdownBusyChanged")) {
+    controller->viewModel()->setBusy(true);
+    QObject::connect(
+        controller->viewModel(), &zzrk::gui::MainWorkspaceViewModel::busyChanged,
+        application, [application](bool) { application->beginShutdown(); },
+        Qt::DirectConnection);
+    controller->shutdown();
+  } else if (scenario == QStringLiteral("loadDownloadParameterLayoutChanged")) {
+    QTemporaryDir directory;
+    const QString parameterPath = directory.filePath("parameter.txt");
+    expect(directory.isValid() &&
+               writeFile(parameterPath,
+                         QByteArray{"MACHINE_MODEL: gui-rk3588\n"
+                                    "TYPE: GPT\n"
+                                    "CMDLINE:mtdparts=rk29xxnand:"
+                                    "0x100@0x8000(boot_a)\n"}),
+           "download layout shutdown fixture creates parameter.txt");
+    controller->viewModel()->setDownloadLayoutPort(QStringLiteral("1-5"));
+    QObject::connect(
+        controller->viewModel(),
+        &zzrk::gui::MainWorkspaceViewModel::deviceSelectionChanged,
+        application, [application] { application->beginShutdown(); },
+        Qt::DirectConnection);
+    controller->loadDownloadParameter(parameterPath);
   } else if (scenario == QStringLiteral("devicesChanged")) {
     QObject::connect(
         controller, &zzrk::gui::MainWorkspaceController::devicesChanged,
@@ -1000,6 +1030,9 @@ int main(int argc, char **argv) {
       QStringLiteral("viewModelBusyChanged"),
       QStringLiteral("viewModelProgressChanged"),
       QStringLiteral("viewModelHistoryChanged"),
+      QStringLiteral("refreshDevicesBusyChanged"),
+      QStringLiteral("shutdownBusyChanged"),
+      QStringLiteral("loadDownloadParameterLayoutChanged"),
       QStringLiteral("devicesChanged"),
       QStringLiteral("selectedDeviceChanged"),
       QStringLiteral("devicePartitionTableChanged"),
