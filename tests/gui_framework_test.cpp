@@ -439,7 +439,33 @@ int runSynchronousShutdownScenario(const QString &scenario) {
     return failures;
 
   int partitionTableCompletions = 0;
-  if (scenario == QStringLiteral("devicesChanged")) {
+  if (scenario == QStringLiteral("viewModelDeviceSelectionChanged")) {
+    QObject::connect(
+        controller->viewModel(),
+        &zzrk::gui::MainWorkspaceViewModel::deviceSelectionChanged,
+        application, [application] { application->beginShutdown(); },
+        Qt::DirectConnection);
+    controller->viewModel()->setSelectedPortPath(QStringLiteral("1-5"));
+  } else if (scenario == QStringLiteral("viewModelBusyChanged")) {
+    QObject::connect(
+        controller->viewModel(), &zzrk::gui::MainWorkspaceViewModel::busyChanged,
+        application, [application](bool) { application->beginShutdown(); },
+        Qt::DirectConnection);
+    controller->viewModel()->setBusy(true);
+  } else if (scenario == QStringLiteral("viewModelProgressChanged")) {
+    QObject::connect(
+        controller->viewModel(),
+        &zzrk::gui::MainWorkspaceViewModel::progressChanged,
+        application, [application](int, int) { application->beginShutdown(); },
+        Qt::DirectConnection);
+    controller->viewModel()->setProgress(1, 1);
+  } else if (scenario == QStringLiteral("viewModelHistoryChanged")) {
+    QObject::connect(
+        controller->viewModel(), &zzrk::gui::MainWorkspaceViewModel::historyChanged,
+        application, [application] { application->beginShutdown(); },
+        Qt::DirectConnection);
+    controller->viewModel()->setHistoryReports({});
+  } else if (scenario == QStringLiteral("devicesChanged")) {
     QObject::connect(
         controller, &zzrk::gui::MainWorkspaceController::devicesChanged,
         application,
@@ -970,6 +996,10 @@ int main(int argc, char **argv) {
 
   harness.reset();
   const QStringList shutdownScenarios{
+      QStringLiteral("viewModelDeviceSelectionChanged"),
+      QStringLiteral("viewModelBusyChanged"),
+      QStringLiteral("viewModelProgressChanged"),
+      QStringLiteral("viewModelHistoryChanged"),
       QStringLiteral("devicesChanged"),
       QStringLiteral("selectedDeviceChanged"),
       QStringLiteral("devicePartitionTableChanged"),

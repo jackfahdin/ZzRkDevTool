@@ -104,10 +104,15 @@ jobs:
           trap 'hdiutil detach "$mount_point"' EXIT
           test -x "$mount_point/ZzRkDevTool.app/Contents/MacOS/ZzRkDevTool"
           test -x "$mount_point/ZzRkDevTool.app/Contents/MacOS/zzrkdevtool-cli"
+          test -f "$mount_point/ZzRkDevTool.app/Contents/PlugIns/platforms/libqcocoa.dylib"
           find "$mount_point/ZzRkDevTool.app/Contents/Frameworks" \
             -maxdepth 1 -name 'libusb*.dylib' -print -quit | grep -q .
           otool -L "$mount_point/ZzRkDevTool.app/Contents/MacOS/zzrkdevtool-cli" \
             | grep -q '@rpath/libusb'
+          otool -L "$mount_point/ZzRkDevTool.app/Contents/MacOS/ZzRkDevTool" \
+            | grep -q '@rpath/'
+          QT_QPA_PLATFORM=offscreen \
+            "$mount_point/ZzRkDevTool.app/Contents/MacOS/ZzRkDevTool" --smoke-test
           "$mount_point/ZzRkDevTool.app/Contents/MacOS/zzrkdevtool-cli" --help
           codesign --verify --deep --strict "$mount_point/ZzRkDevTool.app"
 
@@ -116,3 +121,32 @@ jobs:
           name: zzrkdevtool-macos-ad-hoc-signed
           path: build/macos-release/*.dmg
           if-no-files-found: error
+
+  windows-mingw:
+    name: Windows MinGW GUI application
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.11.1
+          arch: win64_mingw
+          cache: true
+      - name: Build and test MinGW GUI
+        shell: pwsh
+        run: |
+          if (-not $env:MINGW_INSTALL_ROOT) {
+            throw "MINGW_INSTALL_ROOT must point to the matching Qt MinGW toolchain and libusb 1.0.30 root"
+          }
+          cmake -S . -B build/windows-mingw-release -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DZZRK_BUILD_GUI=ON `
+            -DZZRK_BUILD_CLI=ON `
+            -DZZRK_BUILD_TESTS=ON `
+            -DZZRK_LIBUSB_ROOT="$env:MINGW_INSTALL_ROOT/libusb" `
+            -DZZRK_BUNDLE_RUNTIME=OFF `
+            -DZZRK_WARNINGS_AS_ERRORS=ON
+          cmake --build build/windows-mingw-release --parallel
+          ctest --test-dir build/windows-mingw-release --output-on-failure -R "gui_framework|gui_smoke"
