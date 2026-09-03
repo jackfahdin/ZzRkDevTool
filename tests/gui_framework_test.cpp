@@ -3,8 +3,13 @@
 #include "GuiTestHarness.hpp"
 #include "MainWorkspaceController.hpp"
 
+#include <ZzFluentUI/ZzActivityBar.h>
+#include <ZzFluentUI/ZzFluentTitleBar.h>
+#include <ZzFluentUI/ZzNavigationPane.h>
+#include <ZzFluentUI/ZzSidePane.h>
+#include <ZzFluentUI/ZzTabBar.h>
 #include <ZzFluentUI/ZzTabWidget.h>
-#include <ZzPureTools/ZzPageHost.h>
+#include <ZzPureTools/ZzApplicationWindow.h>
 #include <ZzPureTools/ZzPureApplication.h>
 
 #include <QApplication>
@@ -15,7 +20,6 @@
 #include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
-#include <QStatusBar>
 #include <QStyle>
 #include <QTableWidget>
 #include <QTemporaryDir>
@@ -219,7 +223,8 @@ private:
 };
 
 int main() {
-  auto harness = zzrk::gui::test::GuiTestHarness::create();
+  auto backend = std::make_shared<FrameworkFakeBackend>();
+  auto harness = zzrk::gui::test::GuiTestHarness::create(backend);
   expect(harness != nullptr, "GUI test harness creates an application");
   if (harness == nullptr) {
     return 1;
@@ -234,53 +239,116 @@ int main() {
          "application exposes a theme controller");
   expect(QApplication::style() != nullptr, "Fluent application style is set");
 
-  auto backend = std::make_shared<FrameworkFakeBackend>();
-  zzrk::gui::MainWorkspaceController controller{backend, false};
-  expect(controller.backend() == backend.get(),
+  auto *window = harness->window();
+  int applicationWindowCount = 0;
+  for (QWidget *topLevel : QApplication::topLevelWidgets()) {
+    if (auto *candidate =
+            qobject_cast<ZzPureTools::ZzApplicationWindow *>(topLevel)) {
+      ++applicationWindowCount;
+      expect(candidate == window,
+             "harness exposes the unique framework application window");
+    }
+  }
+  expect(application->windowCount() == 1 && applicationWindowCount == 1,
+         "builder creates exactly one framework application window");
+  if (window != nullptr) {
+    window->show();
+    QApplication::processEvents();
+    expect(window->isWindow(), "framework application window is top-level");
+    expect(window->windowTitle() == QStringLiteral("ZzRkDevTool"),
+           "framework window preserves its application title");
+    expect(!window->windowIcon().isNull(),
+           "framework window preserves its application icon");
+    expect(window->minimumSize() == QSize(800, 700) &&
+               window->size() == QSize(980, 820),
+           "framework window uses the required minimum and initial sizes");
+    expect(qobject_cast<ZzFluentUI::ZzFluentTitleBar *>(window->menuWidget()) ==
+               window->titleBar(),
+           "framework window installs a Fluent title bar");
+    expect(window->windowAgent() != nullptr,
+           "framework window exposes its WindowKit agent");
+    expect(window->navigationPane() != nullptr &&
+               !window->navigationPane()->isVisible(),
+           "framework navigation pane is hidden");
+    for (auto *activityBar : window->findChildren<ZzFluentUI::ZzActivityBar *>())
+      expect(activityBar->isHidden(), "workspace activity bars are hidden");
+    for (auto *sidePane : window->findChildren<ZzFluentUI::ZzSidePane *>())
+      expect(sidePane->isHidden(), "workspace side panes are hidden");
+    auto *mainTabs = window->findChild<ZzFluentUI::ZzTabWidget *>(
+        QStringLiteral("mainTabs"));
+    expect(mainTabs != nullptr, "window exposes Fluent main tabs");
+    if (mainTabs != nullptr) {
+      const QStringList expectedTabs{QStringLiteral("下载镜像"),
+                                     QStringLiteral("设备"),
+                                     QStringLiteral("完整升级"),
+                                     QStringLiteral("分区")};
+      QStringList actualTabs;
+      for (int index = 0; index < mainTabs->count(); ++index)
+        actualTabs.append(mainTabs->tabText(index));
+      expect(actualTabs == expectedTabs,
+             "main tabs preserve the required fixed order");
+      expect(!mainTabs->tabsClosable() && !mainTabs->isMovable(),
+             "main tabs cannot be closed or reordered");
+      auto *bar = mainTabs->fluentTabBar();
+      expect(bar != nullptr && !bar->isTearOffEnabled() &&
+                 !bar->isTabTransferEnabled(),
+             "main tabs cannot be detached or transferred");
+      expect(bar != nullptr && bar->newTabButton() != nullptr &&
+                 bar->newTabButton()->isHidden(),
+             "main tabs hide the new-tab action");
+    }
+  }
+
+  auto *controller = harness->controller();
+  expect(controller != nullptr, "harness exposes the workspace controller");
+  if (controller == nullptr || window == nullptr) {
+    return 1;
+  }
+  expect(controller->backend() == backend.get(),
          "controller accepts an injectable backend");
-  expect(!controller.showModalDialogs(),
+  expect(!controller->showModalDialogs(),
          "controller preserves modal dialog configuration");
-  ZzFluentUI::ZzTabWidget tabs;
-  QStatusBar statusBar;
-  controller.attachWorkspace(&tabs, &statusBar);
-  expect(controller.mainTabs() == &tabs, "controller stores main tabs");
-  expect(controller.connectionStatusText() != nullptr,
+  auto *tabs = window->findChild<ZzFluentUI::ZzTabWidget *>(
+      QStringLiteral("mainTabs"));
+  auto *downloadView =
+      window->findChild<QWidget *>(QStringLiteral("downloadImagePage"));
+  expect(tabs != nullptr && controller->mainTabs() == tabs,
+         "controller stores the framework main tabs");
+  expect(controller->connectionStatusText() != nullptr,
          "controller creates shared connection status");
-  expect(controller.refreshButton() != nullptr,
+  expect(controller->refreshButton() != nullptr,
          "controller creates shared refresh button");
-  expect(controller.lastScanText() != nullptr,
+  expect(controller->lastScanText() != nullptr,
          "controller creates shared last scan status");
-  ZzPureTools::ZzPageHost pageHost;
   int selectedDeviceChanges = 0;
   int scanCompletions = 0;
-  QObject::connect(&controller,
+  QObject::connect(controller,
                    &zzrk::gui::MainWorkspaceController::selectedDeviceChanged,
                    [&] { ++selectedDeviceChanges; });
-  QObject::connect(&controller,
+  QObject::connect(controller,
                    &zzrk::gui::MainWorkspaceController::scanCompleted,
                    [&] { ++scanCompletions; });
-  auto downloadPage = controller.createInitialDownloadPage(&pageHost);
-  expect(downloadPage.hasValue(),
-         "controller creates the initial download page");
-  if (downloadPage) {
+  expect(downloadView != nullptr,
+         "initial route creates the download page in the framework host");
+  if (downloadView != nullptr && tabs != nullptr) {
     auto *downloadTable =
-        downloadPage.value()->view()->findChild<QTableWidget *>(
+        downloadView->findChild<QTableWidget *>(
             QStringLiteral("downloadImageTable"));
     expect(downloadTable != nullptr && downloadTable->columnCount() == 9,
            "initial page exposes the nine-column download plan");
-    expect(downloadPage.value()->view()->findChild<QProgressBar *>(
+    expect(downloadView->findChild<QProgressBar *>(
                QStringLiteral("overallImageDownloadProgress")) != nullptr,
            "initial page exposes overall download progress");
-    expect(downloadPage.value()->view()->findChild<QProgressBar *>(
+    expect(downloadView->findChild<QProgressBar *>(
                QStringLiteral("operationImageDownloadProgress")) != nullptr,
            "initial page exposes operation download progress");
-    expect(tabs.findChild<QTableWidget *>(QStringLiteral("deviceTable")) !=
+    expect(tabs->findChild<QTableWidget *>(QStringLiteral("deviceTable")) !=
                nullptr,
            "controller adds the device page to the workspace tabs");
 
     bool scanFinished = false;
     QEventLoop scanLoop;
-    QObject::connect(&controller,
+    QObject::connect(controller,
                      &zzrk::gui::MainWorkspaceController::scanCompleted,
                      &scanLoop, [&] {
                        scanFinished = true;
@@ -291,13 +359,13 @@ int main() {
     expect(scanFinished, "controller completes the initial device scan");
     expect(selectedDeviceChanges == 1,
            "initial device selection emits one change");
-    QMetaObject::invokeMethod(&controller, "handleDeviceSelectionChanged",
+    QMetaObject::invokeMethod(controller, "handleDeviceSelectionChanged",
                               Qt::DirectConnection);
     expect(selectedDeviceChanges == 1,
            "unchanged device selection does not emit another change");
 
     auto *readGptButton =
-        downloadPage.value()->view()->findChild<QToolButton *>(
+        downloadView->findChild<QToolButton *>(
             QStringLiteral("readDownloadGptButton"));
     expect(readGptButton != nullptr && readGptButton->isEnabled(),
            "selected Loader device can read its GPT");
@@ -307,40 +375,40 @@ int main() {
     QTimer::singleShot(100, &gptLoop, &QEventLoop::quit);
     gptLoop.exec();
     const auto *layoutPath =
-        downloadPage.value()->view()->findChild<QLineEdit *>(
+        downloadView->findChild<QLineEdit *>(
             QStringLiteral("downloadParameterPath"));
     expect(backend->partitionReads.load() == 1 && layoutPath != nullptr &&
                layoutPath->text() == QStringLiteral("1-5 / 设备 GPT") &&
                downloadTable->rowCount() == 3,
-           "controller reads and applies device GPT without MainWindow");
+           "controller reads and applies device GPT in the framework window");
 
     bool inspectionFinished = false;
     QEventLoop inspectionLoop;
     QObject::connect(
-        &controller,
+        controller,
         &zzrk::gui::MainWorkspaceController::deviceInspectionCompleted,
         &inspectionLoop, [&](bool) {
           inspectionFinished = true;
           inspectionLoop.quit();
         });
     auto *inspectButton =
-        tabs.findChild<QPushButton *>(QStringLiteral("inspectDeviceButton"));
+        tabs->findChild<QPushButton *>(QStringLiteral("inspectDeviceButton"));
     expect(inspectButton != nullptr && inspectButton->isEnabled(),
            "selected Loader device can be inspected");
     if (inspectButton != nullptr)
       inspectButton->click();
-    controller.handleDeviceChange();
+    controller->handleDeviceChange();
     QTimer::singleShot(2000, &inspectionLoop, &QEventLoop::quit);
     inspectionLoop.exec();
     const auto *inspectionStatus =
-        tabs.findChild<QLabel *>(QStringLiteral("deviceDetailStatus"));
+        tabs->findChild<QLabel *>(QStringLiteral("deviceDetailStatus"));
     expect(inspectionFinished && inspectionStatus != nullptr &&
                inspectionStatus->text() ==
                    QStringLiteral("读取 ChipInfo 失败（1-5）"),
            "device inspection preserves the specific error message");
     if (scanCompletions < 2) {
       QEventLoop pendingScanLoop;
-      QObject::connect(&controller,
+      QObject::connect(controller,
                        &zzrk::gui::MainWorkspaceController::scanCompleted,
                        &pendingScanLoop, &QEventLoop::quit);
       QTimer::singleShot(2000, &pendingScanLoop, &QEventLoop::quit);
@@ -359,23 +427,23 @@ int main() {
                                                 "0x100@0x8000(boot_a)\n"}) &&
             writeFile(directory.filePath("boot_a.img"), QByteArray{"raw"}),
         "download error fixture is created");
-    controller.loadDownloadParameter(parameterPath);
-    controller.loadDownloadDirectory(directory.path());
+    harness->loadDownloadParameter(parameterPath);
+    harness->loadDownloadDirectory(directory.path());
     bool downloadFinished = false;
     QEventLoop downloadLoop;
     QObject::connect(
-        &controller,
+        controller,
         &zzrk::gui::MainWorkspaceController::imageDownloadCompleted,
         &downloadLoop, [&](bool) {
           downloadFinished = true;
           downloadLoop.quit();
         });
-    auto *startButton = downloadPage.value()->view()->findChild<QPushButton *>(
+    auto *startButton = downloadView->findChild<QPushButton *>(
         QStringLiteral("startImageDownloadButton"));
     expect(startButton != nullptr && startButton->isEnabled(),
            "valid download inputs enable image preparation");
     QString confirmationText;
-    controller.setShowModalDialogs(true);
+    controller->setShowModalDialogs(true);
     QTimer::singleShot(0, application, [&] {
       auto *confirmation =
           qobject_cast<QMessageBox *>(application->activeModalWidget());
@@ -393,13 +461,13 @@ int main() {
                    QStringLiteral("目标：主/备 GPT、boot_a")) &&
                confirmationText.contains(QStringLiteral("完成后重启：是")),
            "image confirmation summarizes the destructive request");
-    controller.setShowModalDialogs(false);
+    controller->setShowModalDialogs(false);
     if (startButton != nullptr)
       startButton->click();
     QTimer::singleShot(2000, &downloadLoop, &QEventLoop::quit);
     downloadLoop.exec();
     const auto *downloadStatus =
-        downloadPage.value()->view()->findChild<QLabel *>(
+        downloadView->findChild<QLabel *>(
             QStringLiteral("imageDownloadStatus"));
     expect(downloadFinished && downloadStatus != nullptr &&
                downloadStatus->text() ==
@@ -413,10 +481,10 @@ int main() {
     QTimer::singleShot(2000, &downloadLoop, &QEventLoop::quit);
     downloadLoop.exec();
     const auto *overallProgress =
-        downloadPage.value()->view()->findChild<QProgressBar *>(
+        downloadView->findChild<QProgressBar *>(
             QStringLiteral("overallImageDownloadProgress"));
     const auto *operationProgress =
-        downloadPage.value()->view()->findChild<QProgressBar *>(
+        downloadView->findChild<QProgressBar *>(
             QStringLiteral("operationImageDownloadProgress"));
     QString bootStatus;
     if (downloadTable != nullptr) {
@@ -439,21 +507,16 @@ int main() {
                bootStatus == QStringLiteral("失败"),
            "failed image execution marks the matching plan row");
   }
-  controller.shutdown();
+  controller->shutdown();
   expect(!backend->monitoring && backend->stopCalls == 1,
          "controller shutdown stops device monitoring");
-  expect(controller.viewModel()->upgradeCancellation()->load(),
+  expect(controller->viewModel()->upgradeCancellation()->load(),
          "shutdown cancels upgrade operation");
-  expect(controller.viewModel()->downloadCancellation()->load(),
+  expect(controller->viewModel()->downloadCancellation()->load(),
          "shutdown cancels image download operation");
-  expect(controller.viewModel()->partitionCancellation()->load(),
+  expect(controller->viewModel()->partitionCancellation()->load(),
          "shutdown cancels partition operation");
-  if (downloadPage) {
-    downloadPage.value().reset();
-    expect(controller.viewModel() == nullptr,
-           "controller observes page-owned view model destruction");
-  }
-  controller.shutdown();
+  controller->shutdown();
   expect(backend->stopCalls == 1, "controller shutdown is idempotent");
 
   application->beginShutdown();

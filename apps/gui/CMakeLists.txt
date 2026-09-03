@@ -8,6 +8,8 @@ qt_add_library(
     GuiOperationBackend.hpp
     GuiApplicationBootstrap.cpp
     GuiApplicationBootstrap.hpp
+    GuiWindowShell.cpp
+    GuiWindowShell.hpp
     MainWorkspaceController.cpp
     MainWorkspaceController.hpp
     MainWorkspaceViewModel.cpp
@@ -20,8 +22,6 @@ qt_add_library(
     pages/FullUpgradePage.hpp
     pages/PartitionPage.cpp
     pages/PartitionPage.hpp
-    MainWindow.cpp
-    MainWindow.hpp
     UpgradeProgressTracker.cpp
     UpgradeProgressTracker.hpp
 )
@@ -57,6 +57,7 @@ qt_add_executable(
 target_link_libraries(
     ZzRkDevTool
     PRIVATE
+        Zz::WindowKit
         zzrk::gui
         zzrk::logging
         zzrk_project_warnings

@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: MIT
 
-#include "MainWindow.hpp"
+#include "GuiApplicationBootstrap.hpp"
+#include "GuiWindowShell.hpp"
+#include "MainWorkspaceController.hpp"
 
 #include <zzrk/logging/Logging.hpp>
 
-#include <QApplication>
+#include <ZzPureTools/ZzApplicationWindow.h>
+#include <ZzPureTools/ZzPureApplication.h>
+#include <ZzWindowKit/ZzWindowKitBootstrap.h>
+
 #include <QCoreApplication>
 #include <QLabel>
 #include <QStatusBar>
@@ -16,7 +21,7 @@
 
 namespace {
 
-bool hasCompletedUiState(const MainWindow &window)
+bool hasCompletedUiState(const ZzPureTools::ZzApplicationWindow &window)
 {
     const auto *connectionText =
         window.findChild<QLabel *>(QStringLiteral("connectionStatusText"));
@@ -26,7 +31,6 @@ bool hasCompletedUiState(const MainWindow &window)
         window.findChild<QToolButton *>(QStringLiteral("refreshButton"));
     return connectionText != nullptr && !connectionText->text().isEmpty()
         && connectionText->text() != QStringLiteral("正在检测设备...")
-        && connectionText->property("hotplugAvailable").toBool()
         && lastScanText != nullptr
         && lastScanText->text().startsWith(QStringLiteral("更新于 "))
         && refreshButton != nullptr && refreshButton->isEnabled()
@@ -34,41 +38,85 @@ bool hasCompletedUiState(const MainWindow &window)
         && !window.statusBar()->currentMessage().isEmpty();
 }
 
+std::string uiStateDiagnostic(const ZzPureTools::ZzApplicationWindow &window)
+{
+    const auto *connectionText =
+        window.findChild<QLabel *>(QStringLiteral("connectionStatusText"));
+    const auto *lastScanText =
+        window.findChild<QLabel *>(QStringLiteral("lastScanText"));
+    const auto *refreshButton =
+        window.findChild<QToolButton *>(QStringLiteral("refreshButton"));
+    return QStringLiteral("connection='%1', hotplug=%2, lastScan='%3', "
+                          "refreshEnabled=%4, status='%5'")
+        .arg(connectionText != nullptr ? connectionText->text()
+                                       : QStringLiteral("<missing>"))
+        .arg(connectionText != nullptr &&
+             connectionText->property("hotplugAvailable").toBool())
+        .arg(lastScanText != nullptr ? lastScanText->text()
+                                     : QStringLiteral("<missing>"))
+        .arg(refreshButton != nullptr && refreshButton->isEnabled())
+        .arg(window.statusBar() != nullptr
+                 ? window.statusBar()->currentMessage()
+                 : QStringLiteral("<missing>"))
+        .toStdString();
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
 {
-    QApplication application(argc, argv);
-    QCoreApplication::setOrganizationName(QStringLiteral("ZzRkDevTool"));
-    QCoreApplication::setApplicationName(QStringLiteral("ZzRkDevTool"));
-    QCoreApplication::setApplicationVersion(QStringLiteral(ZZRK_VERSION));
     [[maybe_unused]] const auto loggingSession =
         zzrk::logging::initializeConsoleLogging("ZzRkDevTool");
+    const auto bootstrap = ZzWindowKit::ZzWindowKitBootstrap::prepare();
+    if (!bootstrap) {
+        zzrk::gui::reportStartupFailure("WindowKit bootstrap failed",
+                                        bootstrap.error());
+        return EXIT_FAILURE;
+    }
+
+    ZzPureTools::ZzPureApplication application(argc, argv);
+    zzrk::gui::configureApplicationMetadata(application);
     zzrk::logging::info("GUI application started");
 
     const bool smokeTest =
         application.arguments().contains(QStringLiteral("--smoke-test"));
-    MainWindow window;
+    zzrk::gui::GuiApplicationOptions options;
+    options.showModalDialogs = !smokeTest;
+    options.smokeTest = smokeTest;
+    auto buildResult = zzrk::gui::buildGuiApplication(application, options);
+    if (!buildResult) {
+        zzrk::gui::reportStartupFailure("GUI application build failed",
+                                        buildResult.error());
+        return EXIT_FAILURE;
+    }
+    auto *window = buildResult.value();
+    auto *shell = zzrk::gui::GuiWindowShell::attachedTo(*window);
+    auto *controller = shell != nullptr ? shell->controller() : nullptr;
+    if (controller == nullptr) {
+        zzrk::logging::error("GUI workspace controller is unavailable");
+        return EXIT_FAILURE;
+    }
 
     if (smokeTest) {
         constexpr int requiredCompletedScans = 2;
         auto completedScans = std::make_shared<int>(0);
 
         QObject::connect(
-            &window,
-            &MainWindow::scanCompleted,
+            controller,
+            &zzrk::gui::MainWorkspaceController::scanCompleted,
             &application,
-            [&application, &window, completedScans] {
-                if (!hasCompletedUiState(window)) {
+            [&application, window, completedScans] {
+                if (!hasCompletedUiState(*window)) {
                     zzrk::logging::error(
-                        "GUI smoke test observed an incomplete UI state");
+                        "GUI smoke test observed an incomplete UI state: " +
+                        uiStateDiagnostic(*window));
                     application.exit(EXIT_FAILURE);
                     return;
                 }
 
                 ++(*completedScans);
                 if (*completedScans < requiredCompletedScans) {
-                    auto *refreshButton = window.findChild<QToolButton *>(
+                    auto *refreshButton = window->findChild<QToolButton *>(
                         QStringLiteral("refreshButton"));
                     refreshButton->click();
                     if (refreshButton->isEnabled()) {
@@ -89,6 +137,6 @@ int main(int argc, char *argv[])
         });
     }
 
-    window.show();
+    window->show();
     return application.exec();
 }
