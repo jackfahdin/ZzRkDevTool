@@ -3,6 +3,10 @@
 #include "GuiTestHarness.hpp"
 #include "GuiWindowShell.hpp"
 #include "MainWorkspaceController.hpp"
+#include "pages/DevicePage.hpp"
+#include "pages/FullUpgradePage.hpp"
+#include "pages/ImageDownloadPage.hpp"
+#include "pages/PartitionPage.hpp"
 
 #include <ZzFluentUI/ZzActivityBar.h>
 #include <ZzFluentUI/ZzFluentTitleBar.h>
@@ -155,11 +159,15 @@ public:
   bool monitoring = false;
   int stopCalls = 0;
   std::atomic_int scans = 0;
+  std::atomic_int completedScans = 0;
+  std::atomic_int scanDelayMilliseconds = 0;
   std::atomic_int partitionReads = 0;
   std::atomic_bool preparationFails = true;
 
   [[nodiscard]] zzrk::transport::ScanResult scanDevices() override {
     ++scans;
+    if (const int delay = scanDelayMilliseconds.load(); delay > 0)
+      std::this_thread::sleep_for(std::chrono::milliseconds{delay});
     zzrk::transport::ScanResult result;
     result.devices.push_back(zzrk::transport::UsbDeviceInfo{
         .vendorId = 0x2207U,
@@ -172,6 +180,7 @@ public:
         .mode = zzrk::transport::DeviceMode::Loader,
         .deviceAddress = 7U,
     });
+    ++completedScans;
     return result;
   }
 
@@ -440,6 +449,8 @@ int runSynchronousShutdownScenario(const QString &scenario) {
     return failures;
 
   int partitionTableCompletions = 0;
+  int expectedCompletedScans = 0;
+  std::shared_ptr<const zzrk::gui::MainWorkspaceLifecycle> shutdownLifecycle;
   const auto waitForInitialSelection = [&] {
     controller->refreshDevices();
     return waitFor([&] {
@@ -483,12 +494,81 @@ int runSynchronousShutdownScenario(const QString &scenario) {
     controller->refreshDevices();
   } else if (scenario == QStringLiteral("shutdownBusyChanged")) {
     controller->viewModel()->setBusy(true);
+    backend->scanDelayMilliseconds.store(250);
+    expectedCompletedScans = backend->scans.load() + 1;
+    controller->refreshDevices();
+    expect(waitFor(
+               [&] { return backend->scans.load() >= expectedCompletedScans; }),
+           "shutdown fixture starts a controlled scan watcher");
+    shutdownLifecycle = controller->lifecycle();
     QObject::connect(
         controller->viewModel(),
         &zzrk::gui::MainWorkspaceViewModel::busyChanged, application,
         [application](bool) { application->beginShutdown(); },
         Qt::DirectConnection);
     controller->shutdown();
+  } else if (scenario == QStringLiteral("pendingRefreshAfterInspection")) {
+    expect(waitForInitialSelection(),
+           "pending refresh fixture completes its initial scan");
+    QMetaObject::invokeMethod(controller, "inspectSelectedDevice",
+                              Qt::DirectConnection);
+    expect(controllerGuard != nullptr && controller->usbOperationRunning(),
+           "pending refresh fixture starts device inspection");
+    controller->handleDeviceChange();
+    QObject::connect(
+        controller->viewModel(),
+        &zzrk::gui::MainWorkspaceViewModel::busyChanged, application,
+        [application](const bool busy) {
+          if (busy)
+            application->beginShutdown();
+        },
+        Qt::DirectConnection);
+  } else if (scenario == QStringLiteral("attachPagesRebuildBusyChanged")) {
+    auto *downloadPage = window->findChild<zzrk::gui::ImageDownloadPage *>(
+        QStringLiteral("downloadImagePage"));
+    auto *devicePage = window->findChild<zzrk::gui::DevicePage *>(
+        QStringLiteral("devicePage"));
+    auto *upgradePage = window->findChild<zzrk::gui::FullUpgradePage *>(
+        QStringLiteral("fullUpgradePage"));
+    auto *partitionPage = window->findChild<zzrk::gui::PartitionPage *>(
+        QStringLiteral("partitionPage"));
+    expect(downloadPage != nullptr && devicePage != nullptr &&
+               upgradePage != nullptr && partitionPage != nullptr,
+           "page attachment fixture finds all workspace pages");
+    controller->attachPages(nullptr, nullptr, nullptr, nullptr);
+    controller->viewModel()->setBusy(true);
+    QObject::connect(
+        controller->viewModel(),
+        &zzrk::gui::MainWorkspaceViewModel::busyChanged, application,
+        [application](bool) { application->beginShutdown(); },
+        Qt::DirectConnection);
+    controller->attachPages(downloadPage, devicePage, upgradePage,
+                            partitionPage);
+  } else if (scenario == QStringLiteral("clearImagePlanBusyChanged")) {
+    QTemporaryDir directory;
+    const QString parameterPath = directory.filePath("parameter.txt");
+    expect(
+        directory.isValid() &&
+            writeFile(parameterPath, QByteArray{"MACHINE_MODEL: gui-rk3588\n"
+                                                "TYPE: GPT\n"
+                                                "CMDLINE:mtdparts=rk29xxnand:"
+                                                "0x100@0x8000(boot_a)\n"}),
+        "clear image fixture creates parameter.txt");
+    controller->loadDownloadParameter(parameterPath);
+    auto *table =
+        window->findChild<QTableWidget *>(QStringLiteral("downloadImageTable"));
+    expect(table != nullptr && table->rowCount() > 0,
+           "clear image fixture creates a selectable plan row");
+    if (table != nullptr && table->rowCount() > 0)
+      table->setCurrentCell(0, 0);
+    controller->viewModel()->setBusy(true);
+    QObject::connect(
+        controller->viewModel(),
+        &zzrk::gui::MainWorkspaceViewModel::busyChanged, application,
+        [application](bool) { application->beginShutdown(); },
+        Qt::DirectConnection);
+    QMetaObject::invokeMethod(controller, "clearSelectedDownloadImage",
+                              Qt::DirectConnection);
   } else if (scenario == QStringLiteral("loadDownloadParameterLayoutChanged")) {
     QTemporaryDir directory;
     const QString parameterPath = directory.filePath("parameter.txt");
@@ -617,6 +697,14 @@ int runSynchronousShutdownScenario(const QString &scenario) {
   if (scenario == QStringLiteral("devicePartitionTableChanged")) {
     expect(partitionTableCompletions == 0,
            "partition table shutdown suppresses the second terminal signal");
+  } else if (scenario == QStringLiteral("shutdownBusyChanged")) {
+    expect(backend->completedScans.load() >= expectedCompletedScans,
+           "reentrant shutdown waits for the controlled scan watcher");
+    expect(shutdownLifecycle != nullptr &&
+               shutdownLifecycle->monitoringStopped() &&
+               shutdownLifecycle->allWatchersStopped() &&
+               shutdownLifecycle->shutdownComplete(),
+           "reentrant shutdown commits all lifecycle completion flags");
   }
   return failures;
 }
@@ -1097,6 +1185,9 @@ int main(int argc, char **argv) {
       QStringLiteral("viewModelHistoryChanged"),
       QStringLiteral("refreshDevicesBusyChanged"),
       QStringLiteral("shutdownBusyChanged"),
+      QStringLiteral("pendingRefreshAfterInspection"),
+      QStringLiteral("attachPagesRebuildBusyChanged"),
+      QStringLiteral("clearImagePlanBusyChanged"),
       QStringLiteral("loadDownloadParameterLayoutChanged"),
       QStringLiteral("selectionClearsInspection"),
       QStringLiteral("selectionClearsDeviceGpt"),
