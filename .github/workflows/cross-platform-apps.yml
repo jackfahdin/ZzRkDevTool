@@ -110,7 +110,7 @@ jobs:
           otool -L "$mount_point/ZzRkDevTool.app/Contents/MacOS/zzrkdevtool-cli" \
             | grep -q '@rpath/libusb'
           otool -L "$mount_point/ZzRkDevTool.app/Contents/MacOS/ZzRkDevTool" \
-            | grep -q '@rpath/'
+            | grep -q '@rpath/libusb'
           QT_QPA_PLATFORM=offscreen \
             "$mount_point/ZzRkDevTool.app/Contents/MacOS/ZzRkDevTool" --smoke-test
           "$mount_point/ZzRkDevTool.app/Contents/MacOS/zzrkdevtool-cli" --help

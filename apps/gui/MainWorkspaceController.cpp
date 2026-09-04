@@ -606,7 +606,11 @@ MainWorkspaceController::attachWorkspace(ZzFluentUI::ZzTabWidget *tabs,
   m_devicePageInstance = std::move(deviceInstance);
   m_upgradePageInstance = std::move(upgradeInstance);
   m_partitionPageInstance = std::move(partitionInstance);
+  QPointer<MainWorkspaceController> guard{this};
   attachPages(downloadPage, devicePage, upgradePage, partitionPage);
+  if (guard == nullptr) {
+    return workspaceFailure(QStringLiteral("工作区控制器在页面装配期间被销毁"));
+  }
 
   QWidget *const host = statusBar;
   m_connectionText =
@@ -664,6 +668,7 @@ void MainWorkspaceController::attachPages(ImageDownloadPage *downloadPage,
                                           DevicePage *devicePage,
                                           FullUpgradePage *upgradePage,
                                           PartitionPage *partitionPage) {
+  QPointer<MainWorkspaceController> guard{this};
   if (m_downloadPage != downloadPage) {
     if (m_downloadPage != nullptr)
       disconnect(m_downloadPage, nullptr, this, nullptr);
@@ -690,6 +695,8 @@ void MainWorkspaceController::attachPages(ImageDownloadPage *downloadPage,
       connect(m_downloadPage, &ImageDownloadPage::cancelRequested, this,
               &MainWorkspaceController::cancelImageDownload);
       rebuildDownloadTable();
+      if (guard == nullptr)
+        return;
     }
   }
   if (m_devicePage != devicePage) {
@@ -741,6 +748,8 @@ void MainWorkspaceController::attachPages(ImageDownloadPage *downloadPage,
     }
   }
   updateUpgradeControls();
+  if (guard == nullptr)
+    return;
   updatePartitionControls();
 }
 
@@ -859,6 +868,8 @@ void MainWorkspaceController::handleScanFinished() {
     m_refreshButton->setEnabled(true);
   }
   processPendingDeviceRefresh();
+  if (guard == nullptr)
+    return;
   emit scanCompleted();
 }
 
@@ -1022,6 +1033,8 @@ void MainWorkspaceController::handleInspectionFinished() {
     if (guard == nullptr)
       return;
     processPendingDeviceRefresh();
+    if (guard == nullptr)
+      return;
     emit deviceInspectionCompleted(false);
     return;
   }
@@ -1063,6 +1076,8 @@ void MainWorkspaceController::handleInspectionFinished() {
   if (guard == nullptr)
     return;
   processPendingDeviceRefresh();
+  if (guard == nullptr)
+    return;
   emit deviceInspectionCompleted(true);
 }
 
@@ -1121,6 +1136,8 @@ void MainWorkspaceController::handlePartitionTableFinished() {
     if (guard == nullptr)
       return;
     processPendingDeviceRefresh();
+    if (guard == nullptr)
+      return;
     emit devicePartitionTableChanged();
     if (guard != nullptr)
       emit partitionTableCompleted(false);
@@ -1166,6 +1183,8 @@ void MainWorkspaceController::handlePartitionTableFinished() {
   if (guard == nullptr)
     return;
   processPendingDeviceRefresh();
+  if (guard == nullptr)
+    return;
   emit devicePartitionTableChanged();
   if (guard != nullptr)
     emit partitionTableCompleted(true);
@@ -1421,6 +1440,8 @@ void MainWorkspaceController::handlePartitionOperationFinished() {
   if (guard == nullptr)
     return;
   processPendingDeviceRefresh();
+  if (guard == nullptr)
+    return;
   emit partitionOperationCompleted(successValue);
 }
 
@@ -1498,6 +1519,8 @@ void MainWorkspaceController::handlePrepareFinished() {
     if (guard == nullptr)
       return;
     processPendingDeviceRefresh();
+    if (guard == nullptr)
+      return;
     emit firmwarePreparationCompleted(false);
     return;
   }
@@ -1534,6 +1557,8 @@ void MainWorkspaceController::handlePrepareFinished() {
   if (guard == nullptr)
     return;
   processPendingDeviceRefresh();
+  if (guard == nullptr)
+    return;
   emit firmwarePreparationCompleted(true);
 }
 
@@ -1721,6 +1746,8 @@ void MainWorkspaceController::handleUpgradeFinished() {
   if (guard == nullptr)
     return;
   processPendingDeviceRefresh();
+  if (guard == nullptr)
+    return;
   emit upgradeCompleted();
 }
 
@@ -2213,7 +2240,10 @@ void MainWorkspaceController::chooseSelectedDownloadImage() {
 void MainWorkspaceController::clearSelectedDownloadImage() {
   if (m_downloadPage == nullptr)
     return;
+  QPointer<MainWorkspaceController> guard{this};
   handleDownloadPlanChanged();
+  if (guard == nullptr)
+    return;
   const auto selected = m_downloadPage->currentTarget();
   if (!selected.has_value() ||
       selected->kind == ImageDownloadPage::RowKind::partitionTable)
@@ -2224,6 +2254,8 @@ void MainWorkspaceController::clearSelectedDownloadImage() {
   m_downloadVerifications.erase(target);
   m_validDownloadImages.erase(target);
   rebuildDownloadTable();
+  if (guard == nullptr)
+    return;
 }
 
 std::optional<zzrk::workflow::ImageDownloadPrepareRequest>
@@ -2345,6 +2377,8 @@ void MainWorkspaceController::handleDownloadPrepareFinished() {
     if (guard == nullptr)
       return;
     processPendingDeviceRefresh();
+    if (guard == nullptr)
+      return;
     emit imageDownloadCompleted(false);
     return;
   }
@@ -2497,6 +2531,8 @@ void MainWorkspaceController::handleImageDownloadFinished() {
   if (guard == nullptr)
     return;
   processPendingDeviceRefresh();
+  if (guard == nullptr)
+    return;
   emit imageDownloadCompleted(succeeded);
 }
 
@@ -2612,10 +2648,6 @@ void MainWorkspaceController::shutdown() noexcept {
     if (const auto token = m_viewModel->partitionCancellation()) {
       token->store(true);
     }
-    QPointer<MainWorkspaceController> guard{this};
-    m_viewModel->setBusy(false);
-    if (guard == nullptr)
-      return;
   }
   disconnect(&m_scanWatcher, nullptr, this, nullptr);
   disconnect(&m_downloadPrepareWatcher, nullptr, this, nullptr);
@@ -2637,6 +2669,10 @@ void MainWorkspaceController::shutdown() noexcept {
     m_lifecycle->m_monitoringStopped.store(true);
     m_lifecycle->m_allWatchersStopped.store(true);
     m_lifecycle->m_shutdownComplete.store(true);
+  }
+  if (m_viewModel != nullptr) {
+    m_viewModel->setBusy(false);
+    return;
   }
 }
 
