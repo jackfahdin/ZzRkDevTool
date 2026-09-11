@@ -7,9 +7,11 @@ publish = false
 
 [dependencies]
 zzrk-sys = { path = "../zzrk-sys" }
-gpui = "0.2.2"
+gpui-kit = "0.6"
 # Already in the dependency tree via gpui; reused for the progress channel.
 futures = "0.3"
+# Already in the dependency tree; used for local HH:mm:ss timestamps.
+chrono = "0.4"
 
 [[bin]]
 name = "gui_gpui"
