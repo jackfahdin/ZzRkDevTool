@@ -8,6 +8,8 @@ publish = false
 [dependencies]
 zzrk-sys = { path = "../zzrk-sys" }
 gpui = "0.2.2"
+# Already in the dependency tree via gpui; reused for the progress channel.
+futures = "0.3"
 
 [[bin]]
 name = "gui_gpui"

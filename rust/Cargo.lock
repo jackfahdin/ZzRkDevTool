@@ -2352,6 +2352,7 @@ checksum = "12101ecc8225ea6d675bc70263074eab6169079621c2186fe0c66590b2df9681"
 name = "gui_gpui"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "gpui",
  "zzrk-sys",
 ]
