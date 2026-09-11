@@ -3,6 +3,7 @@
 
 # CMake and IDE build output
 /build/
+/rust/target/
 /build-*/
 /cmake-build-*/
 /.worktrees/

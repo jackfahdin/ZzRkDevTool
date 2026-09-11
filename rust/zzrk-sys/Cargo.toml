@@ -1,0 +1,14 @@
+[package]
+name = "zzrk-sys"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+links = "zzrk_ffi"
+description = "Rust bindings for the ZzRkDevTool C ABI (zzrk_ffi)"
+license = "MIT"
+publish = false
+
+[build-dependencies]
+bindgen = "0.72"
+
+[dependencies]
