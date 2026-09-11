@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 
-foreach(_required_variable IN ITEMS SOURCE_DIR BINARY_ROOT QT_PREFIX LIBUSB_ROOT)
+foreach(_required_variable IN ITEMS SOURCE_DIR BINARY_ROOT LIBUSB_ROOT)
     if(NOT DEFINED ${_required_variable} OR "${${_required_variable}}" STREQUAL "")
         message(FATAL_ERROR "${_required_variable} is required")
     endif()
@@ -37,7 +37,6 @@ execute_process(
     COMMAND
         "${CMAKE_COMMAND}" -S "${_source_dir}" -B "${_build_dir}" -G Ninja
         -DCMAKE_BUILD_TYPE=Release
-        "-DCMAKE_PREFIX_PATH=${QT_PREFIX}"
         -DZZRK_BUILD_GUI=OFF
         -DZZRK_BUILD_CLI=ON
         -DZZRK_BUILD_TRANSPORT=ON

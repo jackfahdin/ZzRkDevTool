@@ -33,7 +33,6 @@ target_link_libraries(
         Zz::WindowKit
         Zz::FluentUI
         zzrk::logging
-        zzrk::qt_support
         zzrk_project_warnings
     PUBLIC
         Qt6::Core

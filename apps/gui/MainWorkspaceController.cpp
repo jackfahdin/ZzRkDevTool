@@ -7,7 +7,7 @@
 #include "pages/PartitionPage.hpp"
 
 #include <ZzFluentUI/ZzTabWidget.h>
-#include <zzrk/qt/FirmwareUpgradeReportWriter.hpp>
+#include <zzrk/workflow/FirmwareUpgradeReportWriter.hpp>
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -1816,7 +1816,7 @@ void MainWorkspaceController::exportSelectedReport() {
       QStringLiteral("JSON 报告 (*.json)"));
   if (path.isEmpty())
     return;
-  const auto error = zzrk::qt::writeFirmwareUpgradeReport(
+  const auto error = zzrk::workflow::writeFirmwareUpgradeReport(
       found->second, filesystemPath(path),
       {.includeFirmwarePath = false, .applicationVersion = ZZRK_VERSION});
   if (error.has_value()) {

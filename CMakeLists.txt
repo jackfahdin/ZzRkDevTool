@@ -19,7 +19,7 @@ option(ZZRK_WARNINGS_AS_ERRORS "Treat project warnings as errors" OFF)
 option(ZZRK_ENABLE_SANITIZERS "Enable address and undefined sanitizers" OFF)
 set(_zzrk_bundle_runtime_default OFF)
 if((CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32 OR APPLE) AND
-   (ZZRK_BUILD_CLI OR ZZRK_BUILD_GUI))
+   ZZRK_BUILD_GUI)
     set(_zzrk_bundle_runtime_default ON)
 endif()
 option(
@@ -157,11 +157,6 @@ if(ZZRK_BUILD_TRANSPORT)
 endif()
 
 add_subdirectory(src)
-
-if(ZZRK_BUILD_CLI OR ZZRK_BUILD_GUI)
-    find_package(Qt6 6.11 REQUIRED COMPONENTS Core)
-    add_subdirectory(src/qt_support)
-endif()
 
 if(ZZRK_BUILD_CLI)
     add_subdirectory(apps/cli)

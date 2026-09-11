@@ -11,7 +11,7 @@ add_library(
 target_include_directories(zzrk_cli_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(
     zzrk_cli_support
-    PUBLIC zzrk::image zzrk::qt_support zzrk::storage zzrk::transport zzrk::workflow Qt6::Core
+    PUBLIC zzrk::image zzrk::storage zzrk::transport zzrk::workflow
     PRIVATE zzrk_project_warnings
 )
 

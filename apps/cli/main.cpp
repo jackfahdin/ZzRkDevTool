@@ -9,8 +9,6 @@
 #include <zzrk/image/RkFirmwareImage.hpp>
 #include <zzrk/logging/Logging.hpp>
 #include <zzrk/platform/PlatformServices.hpp>
-#include <zzrk/qt/FirmwareMd5Verifier.hpp>
-#include <zzrk/qt/FirmwareUpgradeReportWriter.hpp>
 #include <zzrk/session/ReadCapability.hpp>
 #include <zzrk/session/ReadChipInfo.hpp>
 #include <zzrk/session/ReadFlashId.hpp>
@@ -24,8 +22,10 @@
 #include <zzrk/storage/GptPartitionTable.hpp>
 #include <zzrk/transport/LibusbBulkTransport.hpp>
 #include <zzrk/transport/UsbDeviceScanner.hpp>
-#include <zzrk/workflow/FirmwareUpgradeWorkflow.hpp>
+#include <zzrk/workflow/FirmwareMd5Verifier.hpp>
 #include <zzrk/workflow/FirmwareUpgradeReport.hpp>
+#include <zzrk/workflow/FirmwareUpgradeReportWriter.hpp>
+#include <zzrk/workflow/FirmwareUpgradeWorkflow.hpp>
 
 #include <algorithm>
 #include <charconv>
@@ -1281,14 +1281,14 @@ int inspectImage(const std::string_view path, const bool json) {
     return EXIT_FAILURE;
   }
   auto image = std::get<zzrk::image::RkFirmwareImage>(std::move(parsed));
-  zzrk::logging::info("Verifying firmware MD5 with Qt 6");
-  zzrk::qt::FirmwareMd5Verifier verifier;
+  zzrk::logging::info("Verifying firmware MD5");
+  zzrk::workflow::FirmwareMd5Verifier verifier;
   const auto verified = verifier.verify(image);
   if (const auto *error =
           std::get_if<zzrk::workflow::FirmwareDigestError>(&verified)) {
     std::ostringstream message;
     message << "Image inspection failed: "
-            << zzrk::qt::describeFirmwareDigestError(error->code);
+            << zzrk::workflow::describeFirmwareDigestError(error->code);
     if (error->code ==
         zzrk::workflow::FirmwareDigestErrorCode::mismatch) {
       message << " (expected " << image.trailingMd5.data() << ", actual "
@@ -1326,14 +1326,14 @@ int planImage(const std::string_view path, const bool json) {
     return EXIT_FAILURE;
   }
   auto image = std::get<zzrk::image::RkFirmwareImage>(std::move(parsed));
-  zzrk::logging::info("Verifying firmware MD5 with Qt 6");
-  zzrk::qt::FirmwareMd5Verifier verifier;
+  zzrk::logging::info("Verifying firmware MD5");
+  zzrk::workflow::FirmwareMd5Verifier verifier;
   const auto verified = verifier.verify(image);
   if (const auto *error =
           std::get_if<zzrk::workflow::FirmwareDigestError>(&verified)) {
     std::ostringstream message;
     message << "Image planning failed: "
-            << zzrk::qt::describeFirmwareDigestError(error->code);
+            << zzrk::workflow::describeFirmwareDigestError(error->code);
     if (error->code ==
         zzrk::workflow::FirmwareDigestErrorCode::mismatch) {
       message << " (expected " << image.trailingMd5.data() << ", actual "
@@ -1583,7 +1583,7 @@ int flashImage(const std::string_view portPath,
   }
   const InterruptHandlerGuard interruptHandler;
   auto backend = zzrk::workflow::createLibusbFirmwareUpgradeBackend();
-  zzrk::qt::FirmwareMd5Verifier verifier;
+  zzrk::workflow::FirmwareMd5Verifier verifier;
   zzrk::workflow::FirmwareUpgradeWorkflow workflow{*backend, verifier};
 
   std::string lastProgressKey;
@@ -1638,9 +1638,9 @@ int flashImage(const std::string_view portPath,
   auto execution = zzrk::workflow::runFirmwareUpgradeWithReport(
       workflow, request, progress, cancellation);
   const auto reportError = options.reportPath.has_value()
-                               ? zzrk::qt::writeFirmwareUpgradeReport(
+                               ? zzrk::workflow::writeFirmwareUpgradeReport(
                                      execution.report, *options.reportPath,
-                                     zzrk::qt::FirmwareUpgradeReportWriteOptions{
+                                     zzrk::workflow::FirmwareUpgradeReportWriteOptions{
                                          .includeFirmwarePath =
                                              options.reportIncludeFirmwarePath,
                                          .applicationVersion = ZZRK_VERSION,

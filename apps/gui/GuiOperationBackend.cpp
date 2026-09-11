@@ -2,7 +2,7 @@
 
 #include "GuiOperationBackend.hpp"
 
-#include <zzrk/qt/FirmwareMd5Verifier.hpp>
+#include <zzrk/workflow/FirmwareMd5Verifier.hpp>
 
 #include <exception>
 #include <utility>
@@ -42,7 +42,7 @@ public:
   [[nodiscard]] workflow::PreparedFirmwareUpgradeResult
   prepareFirmware(const std::filesystem::path &imagePath) override {
     auto backend = workflow::createLibusbFirmwareUpgradeBackend();
-    qt::FirmwareMd5Verifier verifier;
+    workflow::FirmwareMd5Verifier verifier;
     workflow::FirmwareUpgradeWorkflow workflow{*backend, verifier};
     return workflow.prepare(imagePath);
   }
@@ -54,7 +54,7 @@ public:
                  const workflow::FirmwareUpgradeCancellationCallback
                      &cancellation) override {
     auto backend = workflow::createLibusbFirmwareUpgradeBackend();
-    qt::FirmwareMd5Verifier verifier;
+    workflow::FirmwareMd5Verifier verifier;
     workflow::FirmwareUpgradeWorkflow workflow{*backend, verifier};
     return workflow.execute(request, std::move(prepared), progress,
                             cancellation);
@@ -63,7 +63,7 @@ public:
   [[nodiscard]] workflow::PreparedImageDownloadResult prepareImageDownload(
       const workflow::ImageDownloadPrepareRequest &request) override {
     auto backend = workflow::createLibusbFirmwareUpgradeBackend();
-    qt::FirmwareMd5Verifier verifier;
+    workflow::FirmwareMd5Verifier verifier;
     workflow::ImageDownloadWorkflow workflow{*backend, verifier};
     return workflow.prepare(request);
   }
@@ -75,7 +75,7 @@ public:
       const workflow::ImageDownloadCancellationCallback &cancellation)
       override {
     auto backend = workflow::createLibusbFirmwareUpgradeBackend();
-    qt::FirmwareMd5Verifier verifier;
+    workflow::FirmwareMd5Verifier verifier;
     workflow::ImageDownloadWorkflow workflow{*backend, verifier};
     return workflow.execute(request, std::move(prepared), progress,
                             cancellation);

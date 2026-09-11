@@ -714,15 +714,15 @@ RK3566/3568、RK3576、RK3399、旧 RK32xx、SPI NOR、SPI NAND、NAND 和 UFS �
 - target-private `RockusbSession` executor 内部生成 tag，严格执行 CBW、DATA、CSW，短传输或失步错误后进入 Faulted；写入、擦除和复位均通过 typed API 暴露，CLI 和 GUI 不接受 raw CDB。
 - 应用日志通过 `zzrk_logging` 封装 spdlog v2；协议与 session 保持无日志副作用，CLI 的结构化结果继续使用 stdout。
 
-RKFW/RKAF、parameter、Raw 和 Android Sparse 已实现有界流式解析。Qt 6 `QCryptographicHash::Md5` 在任何计划或写盘前校验固件尾部 MD5；完整升级在任何 eMMC 写入前解析并下载 `MiniLoaderAll.bin` 的 `0x471` DDR 与 `0x472` usbplug 段，按物理端口等待重枚举，通过 typed `TestUnitReady` 和 RK3588 ChipInfo 检查后，再把同一 Loader 转换为 New IDBlock 写入 LBA 64，随后写入主/备 GPT 和固件实际携带的全部分区 payload。
+RKFW/RKAF、parameter、Raw 和 Android Sparse 已实现有界流式解析。workflow 内建的 RFC 1321 MD5 实现在任何计划或写盘前校验固件尾部 MD5；完整升级在任何 eMMC 写入前解析并下载 `MiniLoaderAll.bin` 的 `0x471` DDR 与 `0x472` usbplug 段，按物理端口等待重枚举，通过 typed `TestUnitReady` 和 RK3588 ChipInfo 检查后，再把同一 Loader 转换为 New IDBlock 写入 LBA 64，随后写入主/备 GPT 和固件实际携带的全部分区 payload。
 
 Ubuntu 26.04 真机已跑通 `pudu_rk3588s` 的完整镜像解析、冷 Loader 与冷 Maskrom `--prepare-only`、活动 RAM usbplug 重入、RAM Loader 下载与重枚举、MiniLoaderAll.bin IDBlock、主/备 GPT、全部镜像 payload 写入、`info`/`partitions` 只读检查以及 `--verify critical`、`--verify all` 回读；完整升级接受 typed reset 并正常启动 Android。Loader 0x0223 对盘尾备份 GPT 返回不透明数据，因此当前严格验证主 GPT，备份 GPT 写入只报告已提交，读取时允许明确报告 `unavailable`。
 
 CLI 默认 `--verify critical`，支持 `all` 和 `none`；完整成功后默认 typed reset，`--no-reboot` 可保留 Loader。SIGINT 在 RockUSB 分块边界停止新命令、禁止自动复位并返回 130。当前仍不触碰 eMMC boot0、boot1 或 RPMB。
 
-Qt GUI 已通过可注入的操作 backend 与生产 workflow 解耦，并增加不接触 USB/eMMC 的离屏自动化测试。下载镜像、设备、完整升级和分区四个标签页共用精确物理端口选择与 USB 操作锁。“下载镜像”位于首标签，既可读取设备现有 GPT，也可从文本 `parameter.txt` 重建主/备 GPT；表格只允许按布局中的 Loader、GPT 和分区名选择目标，不接受任意 LBA。镜像目录优先匹配 `boot_a.img`、`boot_b.img` 等精确名称，没有精确文件时用 `boot.img` 同时匹配 A/B；支持独立 `MiniLoaderAll.bin`、Raw 和 Android Sparse，匹配项及逐行回读校验默认开启。所有来源文件用 Qt 6 MD5 固化并在打开 USB 前复核，写入阶段同时展示当前目标和完整计划累计进度，支持分块取消与默认完成后复位。首版明确不兼容二进制 `config.cfg`。
+Qt GUI 已通过可注入的操作 backend 与生产 workflow 解耦，并增加不接触 USB/eMMC 的离屏自动化测试。下载镜像、设备、完整升级和分区四个标签页共用精确物理端口选择与 USB 操作锁。“下载镜像”位于首标签，既可读取设备现有 GPT，也可从文本 `parameter.txt` 重建主/备 GPT；表格只允许按布局中的 Loader、GPT 和分区名选择目标，不接受任意 LBA。镜像目录优先匹配 `boot_a.img`、`boot_b.img` 等精确名称，没有精确文件时用 `boot.img` 同时匹配 A/B；支持独立 `MiniLoaderAll.bin`、Raw 和 Android Sparse，匹配项及逐行回读校验默认开启。所有来源文件用内建 MD5 固化并在打开 USB 前复核，写入阶段同时展示当前目标和完整计划累计进度，支持分块取消与默认完成后复位。首版明确不兼容二进制 `config.cfg`。
 
-设备页展示 ChipInfo、Capability、FlashInfo、FlashID、容量和接口信息；分区页严格读取 GPT，并提供不覆盖输出的备份、容量受限写入、默认逐块回读、擦除、进度和安全取消。写入与擦除均使用显示端口、分区、LBA 和容量的独立确认。完整升级界面同时保留当前操作百分比和完整烧录计划的累计百分比，并记录最近 50 条本次会话升级任务及其成功、失败或取消结果。GUI 设备发现使用 libusb 1.0.30 事件式热插拔，不保留周期轮询；突发事件先去抖，USB 忙碌期间只记录待刷新状态，操作释放设备后再扫描。CLI 和 GUI 共用升级报告模型；报告包含设备身份、固件 MD5、不可变计划、校验策略、逐步骤耗时和 typed 终态，通过 `QSaveFile` 原子导出 JSON，默认不保存固件完整路径。
+设备页展示 ChipInfo、Capability、FlashInfo、FlashID、容量和接口信息；分区页严格读取 GPT，并提供不覆盖输出的备份、容量受限写入、默认逐块回读、擦除、进度和安全取消。写入与擦除均使用显示端口、分区、LBA 和容量的独立确认。完整升级界面同时保留当前操作百分比和完整烧录计划的累计百分比，并记录最近 50 条本次会话升级任务及其成功、失败或取消结果。GUI 设备发现使用 libusb 1.0.30 事件式热插拔，不保留周期轮询；突发事件先去抖，USB 忙碌期间只记录待刷新状态，操作释放设备后再扫描。CLI 和 GUI 共用升级报告模型；报告包含设备身份、固件 MD5、不可变计划、校验策略、逐步骤耗时和 typed 终态，通过同目录临时文件加原子重命名导出 JSON，默认不保存固件完整路径。
 
 下一批开发按以下顺序推进：
 

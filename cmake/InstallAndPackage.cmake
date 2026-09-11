@@ -117,6 +117,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 "ZZRK_BUNDLE_RUNTIME requires at least one Qt application target"
             )
         endif()
+        find_package(Qt6 6.11 REQUIRED COMPONENTS Core)
 
         set(_zzrk_primary_deploy_target)
         set(_zzrk_additional_deploy_executables)
@@ -198,6 +199,7 @@ if(ZZRK_BUNDLE_RUNTIME AND (WIN32 OR APPLE))
             "ZZRK_BUNDLE_RUNTIME requires at least one Qt application target"
         )
     endif()
+    find_package(Qt6 6.11 REQUIRED COMPONENTS Core)
 
     set(_zzrk_cross_deploy_target)
     set(_zzrk_cross_deploy_executable)
