@@ -8,7 +8,7 @@
 #include <optional>
 #include <string>
 
-namespace zzrk::qt {
+namespace zzrk::workflow {
 
 enum class FirmwareUpgradeReportWriteErrorCode {
     openFailed,
@@ -28,8 +28,8 @@ struct FirmwareUpgradeReportWriteOptions {
 
 [[nodiscard]] std::optional<FirmwareUpgradeReportWriteError>
 writeFirmwareUpgradeReport(
-    const workflow::FirmwareUpgradeReport& report,
+    const FirmwareUpgradeReport& report,
     const std::filesystem::path& outputPath,
     const FirmwareUpgradeReportWriteOptions& options = {});
 
-} // namespace zzrk::qt
+} // namespace zzrk::workflow

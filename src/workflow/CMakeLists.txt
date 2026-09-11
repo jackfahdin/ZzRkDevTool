@@ -3,10 +3,13 @@
 add_library(
     zzrk_workflow STATIC
     src/DeviceManagementWorkflow.cpp
+    src/FirmwareMd5Verifier.cpp
     src/FirmwareUpgradeReport.cpp
+    src/FirmwareUpgradeReportWriter.cpp
     src/FirmwareUpgradeWorkflow.cpp
     src/ImageDownloadWorkflow.cpp
     src/LibusbFirmwareUpgradeBackend.cpp
+    src/Md5.cpp
 )
 add_library(zzrk::workflow ALIAS zzrk_workflow)
 

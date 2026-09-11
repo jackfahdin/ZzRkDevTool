@@ -70,6 +70,8 @@ if(TARGET zzrk_logging)
 endif()
 
 if(TARGET zzrk_transport)
+    find_package(Threads REQUIRED)
+
     add_executable(
         usb_device_scanner_test
         usb_device_scanner_test.cpp
@@ -178,15 +180,22 @@ if(TARGET zzrk_cli_support)
     add_test(NAME cli_output COMMAND cli_output_test)
 endif()
 
-if(TARGET zzrk_qt_support)
+if(TARGET zzrk_workflow)
     add_executable(firmware_upgrade_report_test
                    firmware_upgrade_report_test.cpp)
     target_link_libraries(
         firmware_upgrade_report_test
-        PRIVATE zzrk::qt_support zzrk_project_warnings
+        PRIVATE zzrk::workflow zzrk_project_warnings
     )
     add_test(NAME firmware_upgrade_report
              COMMAND firmware_upgrade_report_test)
+
+    add_executable(firmware_md5_verifier_test firmware_md5_verifier_test.cpp)
+    target_link_libraries(
+        firmware_md5_verifier_test
+        PRIVATE zzrk::workflow zzrk_project_warnings
+    )
+    add_test(NAME firmware_md5_verifier COMMAND firmware_md5_verifier_test)
 endif()
 
 if(TARGET ZzRkDevTool)
@@ -268,7 +277,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND TARGET zzrkdevtool-cli)
             "${CMAKE_COMMAND}"
             "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}"
             "-DBINARY_ROOT=${CMAKE_BINARY_DIR}/cli-only-install-smoke"
-            "-DQT_PREFIX=${Qt6_DIR}/../../.."
             "-DLIBUSB_ROOT=${ZZRK_LIBUSB_ROOT}"
             "-DFMT_SOURCE=${CMAKE_BINARY_DIR}/_deps/fmt-src"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cli_only_install_smoke.cmake"

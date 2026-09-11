@@ -105,7 +105,8 @@ error. Reports contain only the firmware file name by default. The explicit
 needed for local diagnostics.
 
 `inspect-image`, `plan-image`, and `flash-image` calculate the RKFW trailing
-MD5 with Qt 6 before accepting the image. Before any eMMC write, `flash-image`
+MD5 with the built-in C++ implementation before accepting the image. Before
+any eMMC write, `flash-image`
 enters Maskrom when necessary, downloads the embedded `MiniLoaderAll.bin`
 `0x471` DDR and `0x472` usbplug stages to RAM, waits for the same physical USB
 port to re-enumerate, and requires typed readiness and RK3588 chip checks. It
