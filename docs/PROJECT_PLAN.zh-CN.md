@@ -428,7 +428,7 @@ ZzRkDevTool/
   CMakePresets.json
   cmake/
   apps/
-    gui/
+    gui_qt/
     cli/
   src/
     core/

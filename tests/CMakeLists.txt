@@ -217,7 +217,7 @@ if(TARGET zzrk_gui_support)
         target_include_directories(
             "${test_name}_test"
             PRIVATE
-                "${PROJECT_SOURCE_DIR}/apps/gui"
+                "${PROJECT_SOURCE_DIR}/apps/gui_qt"
                 "${CMAKE_CURRENT_SOURCE_DIR}"
         )
         target_link_libraries(

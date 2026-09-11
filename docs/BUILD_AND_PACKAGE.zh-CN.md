@@ -93,7 +93,7 @@ ctest --preset linux-debug
 构建产物：
 
 ```text
-build/linux-debug/apps/gui/ZzRkDevTool
+build/linux-debug/apps/gui_qt/ZzRkDevTool
 build/linux-debug/apps/cli/zzrkdevtool-cli
 ```
 
@@ -151,7 +151,7 @@ QT_QPA_PLATFORM=offscreen ZzRkDevTool --smoke-test
 
 ```bash
 QT_QPA_PLATFORM=offscreen \
-  build/linux-release/apps/gui/ZzRkDevTool --smoke-test
+  build/linux-release/apps/gui_qt/ZzRkDevTool --smoke-test
 ```
 
 offscreen smoke 验证启动、异步扫描和确定性关闭，不用于视觉结论。视觉验收必须使用 Xvfb 的真实 xcb 路径，并把截图放到构建产物目录：
