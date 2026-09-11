@@ -169,7 +169,7 @@ if(ZZRK_BUILD_GUI)
     include("${PROJECT_SOURCE_DIR}/tests/zzpuretools_cmake_scope.cmake")
     zzrk_clear_puretools_scope_snapshot(_zzrk_puretools_scope)
 
-    add_subdirectory(apps/gui)
+    add_subdirectory(apps/gui_qt)
 endif()
 
 if(ZZRK_BUILD_TESTS)

@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "../apps/gui/GuiApplicationBootstrap.hpp"
+#include "../apps/gui_qt/GuiApplicationBootstrap.hpp"
 
 #include <ZzPureTools/ZzPureApplication.h>
 

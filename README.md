@@ -71,7 +71,7 @@ Run the CLI from the selected preset's build directory:
 ./build/linux-debug/apps/cli/zzrkdevtool-cli \
     flash-image 1-5 update.img --yes --report upgrade-report.json
 ./build/linux-debug/apps/cli/zzrkdevtool-cli reset 1-5
-./build/linux-debug/apps/gui/ZzRkDevTool
+./build/linux-debug/apps/gui_qt/ZzRkDevTool
 ```
 
 Use the stable port path printed by `list` for all device commands. Read-only
