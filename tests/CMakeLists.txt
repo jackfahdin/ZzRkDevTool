@@ -198,6 +198,15 @@ if(TARGET zzrk_workflow)
     add_test(NAME firmware_md5_verifier COMMAND firmware_md5_verifier_test)
 endif()
 
+if(TARGET zzrk_ffi)
+    add_executable(ffi_smoke_test ffi_smoke_test.cpp)
+    target_link_libraries(
+        ffi_smoke_test
+        PRIVATE zzrk::ffi zzrk_project_warnings
+    )
+    add_test(NAME ffi_smoke COMMAND ffi_smoke_test)
+endif()
+
 if(TARGET ZzRkDevTool)
     add_test(NAME gui_smoke COMMAND ZzRkDevTool --smoke-test)
     set_tests_properties(
