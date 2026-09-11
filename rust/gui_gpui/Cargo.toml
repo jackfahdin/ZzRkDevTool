@@ -1,0 +1,14 @@
+[package]
+name = "gui_gpui"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+zzrk-sys = { path = "../zzrk-sys" }
+gpui = "0.2.2"
+
+[[bin]]
+name = "gui_gpui"
+path = "src/main.rs"
