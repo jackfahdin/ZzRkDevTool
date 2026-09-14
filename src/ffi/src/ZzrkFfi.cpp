@@ -285,6 +285,23 @@ static_assert(static_cast<int>(workflow::ImageDownloadStage::verify) ==
 static_assert(static_cast<int>(workflow::ImageDownloadStage::reset) ==
               ZZRK_DOWNLOAD_STAGE_RESET);
 
+static_assert(static_cast<int>(workflow::ImageDownloadItemKind::loader) ==
+              ZZRK_DOWNLOAD_ITEM_LOADER);
+static_assert(
+    static_cast<int>(workflow::ImageDownloadItemKind::partitionTable) ==
+    ZZRK_DOWNLOAD_ITEM_PARTITION_TABLE);
+static_assert(static_cast<int>(workflow::ImageDownloadItemKind::partition) ==
+              ZZRK_DOWNLOAD_ITEM_PARTITION);
+
+static_assert(static_cast<int>(image::PayloadFormat::unknown) ==
+              ZZRK_PAYLOAD_FORMAT_UNKNOWN);
+static_assert(static_cast<int>(image::PayloadFormat::raw) ==
+              ZZRK_PAYLOAD_FORMAT_RAW);
+static_assert(static_cast<int>(image::PayloadFormat::androidSparse) ==
+              ZZRK_PAYLOAD_FORMAT_ANDROID_SPARSE);
+static_assert(static_cast<int>(image::PayloadFormat::rockchipParameter) ==
+              ZZRK_PAYLOAD_FORMAT_ROCKCHIP_PARAMETER);
+
 static_assert(static_cast<int>(workflow::ImageDownloadErrorCode::cancelled) ==
               ZZRK_DOWNLOAD_ERROR_CANCELLED);
 static_assert(
@@ -1540,6 +1557,153 @@ zzrk_status zzrk_run_image_download(
     out_outcome->loader_written = success.loaderWritten;
     out_outcome->partition_table_written = success.partitionTableWritten;
     out_outcome->reset_accepted = success.resetAccepted;
+    return ZZRK_OK;
+}
+
+zzrk_status zzrk_prepare_image_download(
+    const char* port_path, const int32_t layout_source,
+    const char* parameter_path, const char* loader_path,
+    const bool verify_loader, const bool verify_partition_table,
+    const zzrk_download_partition* partitions, const uint32_t partition_count,
+    zzrk_download_plan_item* items, const uint32_t capacity,
+    uint32_t* out_count, zzrk_partition_entry* layout,
+    const uint32_t layout_capacity, uint32_t* out_layout_count)
+{
+    clearError();
+    if (layout_source != ZZRK_DOWNLOAD_LAYOUT_DEVICE_GPT &&
+        layout_source != ZZRK_DOWNLOAD_LAYOUT_PARAMETER_FILE) {
+        setError("download prepare failed: layout_source is out of range");
+        return ZZRK_ERR_INVALID_ARGUMENT;
+    }
+    if (layout_source == ZZRK_DOWNLOAD_LAYOUT_PARAMETER_FILE &&
+        parameter_path == nullptr) {
+        setError("download prepare failed: parameter_path must not be null "
+                 "when the layout source is a parameter file");
+        return ZZRK_ERR_INVALID_ARGUMENT;
+    }
+    if (layout_source == ZZRK_DOWNLOAD_LAYOUT_DEVICE_GPT &&
+        port_path == nullptr) {
+        setError("download prepare failed: port_path must not be null when "
+                 "the layout source is the device GPT");
+        return ZZRK_ERR_INVALID_ARGUMENT;
+    }
+    if (partitions == nullptr && partition_count != 0) {
+        setError("download prepare failed: partitions must not be null when "
+                 "partition_count is nonzero");
+        return ZZRK_ERR_INVALID_ARGUMENT;
+    }
+    for (uint32_t index = 0; index < partition_count; ++index) {
+        if (partitions[index].target == nullptr ||
+            partitions[index].image_path == nullptr) {
+            setError("download prepare failed: partition entries require "
+                     "non-null target and image_path");
+            return ZZRK_ERR_INVALID_ARGUMENT;
+        }
+    }
+    if (items == nullptr && capacity != 0) {
+        setError("download prepare failed: items must not be null when "
+                 "capacity is nonzero");
+        return ZZRK_ERR_INVALID_ARGUMENT;
+    }
+    if (out_count == nullptr) {
+        setError("download prepare failed: out_count must not be null");
+        return ZZRK_ERR_INVALID_ARGUMENT;
+    }
+    *out_count = 0;
+    if (layout != nullptr && out_layout_count == nullptr) {
+        setError("download prepare failed: out_layout_count must not be null "
+                 "when layout is provided");
+        return ZZRK_ERR_INVALID_ARGUMENT;
+    }
+    if (out_layout_count != nullptr) {
+        *out_layout_count = 0;
+    }
+
+    auto backend = workflow::createLibusbFirmwareUpgradeBackend();
+    workflow::FirmwareMd5Verifier verifier;
+    workflow::ImageDownloadWorkflow download{*backend, verifier};
+
+    workflow::ImageDownloadPrepareRequest prepare{};
+    prepare.layoutSource =
+        layout_source == ZZRK_DOWNLOAD_LAYOUT_DEVICE_GPT
+            ? workflow::ImageDownloadLayoutSource::deviceGpt
+            : workflow::ImageDownloadLayoutSource::parameterFile;
+    prepare.verifyLoader = verify_loader;
+    prepare.verifyPartitionTable = verify_partition_table;
+    if (loader_path != nullptr) {
+        prepare.loaderPath = loader_path;
+    }
+    if (prepare.layoutSource ==
+        workflow::ImageDownloadLayoutSource::parameterFile) {
+        prepare.parameterPath = parameter_path;
+    } else {
+        workflow::DeviceManagementWorkflow management{*backend};
+        auto table = management.readPartitions(port_path, false);
+        if (const auto* error =
+                std::get_if<workflow::DeviceManagementError>(&table)) {
+            setError(deviceErrorMessage(*error));
+            return statusForErrorCode(static_cast<int32_t>(error->code));
+        }
+        const auto& deviceTable =
+            std::get<workflow::DevicePartitionTable>(table);
+        prepare.deviceSectors = deviceTable.deviceSectors;
+        for (const auto& partition : deviceTable.table.partitions) {
+            prepare.devicePartitions.push_back(
+                {.name = partition.name,
+                 .firstLba = partition.firstLba,
+                 .sectorCount = partition.sectorCount(),
+                 .grow = false});
+        }
+    }
+    for (uint32_t index = 0; index < partition_count; ++index) {
+        prepare.partitions.push_back(
+            {.target = partitions[index].target,
+             .imagePath = partitions[index].image_path,
+             .verify = partitions[index].verify});
+    }
+
+    auto prepared = download.prepare(prepare, {});
+    if (const auto* error =
+            std::get_if<workflow::ImageDownloadError>(&prepared)) {
+        setError(downloadErrorMessage(*error));
+        return statusForErrorCode(static_cast<int32_t>(error->code));
+    }
+    const auto& plan =
+        std::get<workflow::PreparedImageDownloadPlan>(prepared);
+    *out_count = static_cast<uint32_t>(plan.items.size());
+    const auto count = std::min<std::size_t>(plan.items.size(), capacity);
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& item = plan.items[index];
+        auto& out = items[index];
+        out = zzrk_download_plan_item{};
+        out.kind = static_cast<int32_t>(item.kind);
+        out.format = static_cast<int32_t>(item.format);
+        copyString(out.target, item.target);
+        copyString(out.source_path, item.sourcePath.string());
+        out.first_lba = item.firstLba;
+        out.sector_count = item.sectorCount;
+        out.output_size = item.outputSize;
+        out.verify = item.verify;
+        copyString(out.md5, item.md5.data());
+    }
+    if (out_layout_count != nullptr) {
+        *out_layout_count =
+            static_cast<uint32_t>(plan.layout.partitions.size());
+        if (layout != nullptr) {
+            const auto layoutCount =
+                std::min<std::size_t>(plan.layout.partitions.size(),
+                                      layout_capacity);
+            for (std::size_t index = 0; index < layoutCount; ++index) {
+                const auto& partition = plan.layout.partitions[index];
+                auto& entry = layout[index];
+                entry = zzrk_partition_entry{};
+                copyString(entry.name, partition.name);
+                entry.first_lba = partition.firstLba;
+                entry.sector_count = partition.sectorCount.value_or(0);
+                entry.attributes = 0;
+            }
+        }
+    }
     return ZZRK_OK;
 }
 

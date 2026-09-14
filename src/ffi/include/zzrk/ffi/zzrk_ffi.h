@@ -415,6 +415,54 @@ ZZRK_FFI_API zzrk_status zzrk_run_image_download(
     const zzrk_cancellation* cancellation,
     zzrk_download_outcome* out_outcome);
 
+// ---------------------------------------------------------------------------
+// Image download plan preparation (no execution, no device writes)
+// ---------------------------------------------------------------------------
+
+// Mirrors workflow::ImageDownloadItemKind.
+typedef enum zzrk_download_item_kind {
+    ZZRK_DOWNLOAD_ITEM_LOADER = 0,
+    ZZRK_DOWNLOAD_ITEM_PARTITION_TABLE = 1,
+    ZZRK_DOWNLOAD_ITEM_PARTITION = 2,
+} zzrk_download_item_kind;
+
+// Mirrors image::PayloadFormat.
+typedef enum zzrk_payload_format {
+    ZZRK_PAYLOAD_FORMAT_UNKNOWN = 0,
+    ZZRK_PAYLOAD_FORMAT_RAW = 1,
+    ZZRK_PAYLOAD_FORMAT_ANDROID_SPARSE = 2,
+    ZZRK_PAYLOAD_FORMAT_ROCKCHIP_PARAMETER = 3,
+} zzrk_payload_format;
+
+typedef struct zzrk_download_plan_item {
+    int32_t kind; // zzrk_download_item_kind
+    int32_t format; // zzrk_payload_format
+    char target[128];
+    char source_path[1024];
+    uint64_t first_lba;
+    uint64_t sector_count;
+    uint64_t output_size;
+    bool verify;
+    char md5[33];
+} zzrk_download_plan_item;
+
+// Prepares an image-download plan (parse + inspect + digests) without
+// executing it. With ZZRK_DOWNLOAD_LAYOUT_PARAMETER_FILE this is file-only
+// and never touches a device (`port_path` may be NULL). With
+// ZZRK_DOWNLOAD_LAYOUT_DEVICE_GPT the device GPT is read first (read-only;
+// `port_path` required). `items` may be NULL to only query the count; at
+// most `capacity` entries are copied. The layout partitions (every partition
+// of the parameter file or device GPT, including ones without a selected
+// image) are reported through `layout`/`out_layout_count` when both are
+// non-NULL. Blocking; digest passes on large images take time.
+ZZRK_FFI_API zzrk_status zzrk_prepare_image_download(
+    const char* port_path, int32_t layout_source, const char* parameter_path,
+    const char* loader_path, bool verify_loader, bool verify_partition_table,
+    const zzrk_download_partition* partitions, uint32_t partition_count,
+    zzrk_download_plan_item* items, uint32_t capacity, uint32_t* out_count,
+    zzrk_partition_entry* layout, uint32_t layout_capacity,
+    uint32_t* out_layout_count);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
