@@ -3,6 +3,8 @@
 #include <zzrk/ffi/zzrk_ffi.h>
 
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string_view>
 
@@ -206,8 +208,7 @@ void testDeviceOperationGuards()
 }
 
 void testRunImageDownloadGuards()
-{
-    zzrk_download_outcome outcome{};
+{    zzrk_download_outcome outcome{};
     const zzrk_download_partition partition{
         .target = "boot", .image_path = "boot.img", .verify = true};
     expect(zzrk_run_image_download(
@@ -252,6 +253,95 @@ void testRunImageDownloadGuards()
            "download null partition path rejected");
 }
 
+void testPrepareImageDownloadGuards()
+{
+    uint32_t count = 0;
+    expect(zzrk_prepare_image_download(nullptr, ZZRK_DOWNLOAD_LAYOUT_DEVICE_GPT,
+                                       nullptr, nullptr, true, true, nullptr, 0,
+                                       nullptr, 0, &count,
+                                       nullptr, 0, nullptr) == ZZRK_ERR_INVALID_ARGUMENT,
+           "prepare device-GPT layout without port rejected");
+    expect(zzrk_prepare_image_download("1-2", ZZRK_DOWNLOAD_LAYOUT_PARAMETER_FILE,
+                                       nullptr, nullptr, true, true, nullptr, 0,
+                                       nullptr, 0, &count,
+                                       nullptr, 0, nullptr) == ZZRK_ERR_INVALID_ARGUMENT,
+           "prepare parameter layout without path rejected");
+    expect(zzrk_prepare_image_download(nullptr, 42, nullptr, nullptr, true, true,
+                                       nullptr, 0, nullptr, 0, &count,
+                                       nullptr, 0, nullptr) == ZZRK_ERR_INVALID_ARGUMENT,
+           "prepare invalid layout source rejected");
+    expect(zzrk_prepare_image_download(nullptr, ZZRK_DOWNLOAD_LAYOUT_PARAMETER_FILE,
+                                       "/definitely/missing/parameter.txt",
+                                       nullptr, true, true, nullptr, 0, nullptr, 0, nullptr,
+                                       nullptr, 0, nullptr) == ZZRK_ERR_INVALID_ARGUMENT,
+           "prepare null out_count rejected");
+    expect(zzrk_prepare_image_download(nullptr, ZZRK_DOWNLOAD_LAYOUT_PARAMETER_FILE,
+                                       "/definitely/missing/parameter.txt",
+                                       nullptr, true, true, nullptr, 0, nullptr, 4, &count,
+                                       nullptr, 0, nullptr) == ZZRK_ERR_INVALID_ARGUMENT,
+           "prepare null items with nonzero capacity rejected");
+
+    expect(zzrk_prepare_image_download(nullptr, ZZRK_DOWNLOAD_LAYOUT_PARAMETER_FILE,
+                                       "/definitely/missing/parameter.txt",
+                                       nullptr, true, true, nullptr, 0, nullptr,
+                                       0, &count, nullptr, 0, nullptr) == ZZRK_ERR_FAILED,
+           "prepare with missing parameter file fails");
+    expect(std::strlen(zzrk_last_error_message()) > 0,
+           "prepare failure error message populated");
+}
+
+void testPrepareImageDownloadParameterFile()
+{
+    constexpr std::string_view parameter{
+        "MACHINE_MODEL: ffi-smoke\n"
+        "TYPE: GPT\n"
+        "CMDLINE:mtdparts=rk29xxnand:0x20@0x40(boot_a),"
+        "0x20@0x60(boot_b),-@0x80(userdata:grow)\n"};
+    const auto path = std::filesystem::temp_directory_path() /
+                      "zzrk-ffi-prepare-test-parameter.txt";
+    {
+        std::ofstream out{path, std::ios::binary | std::ios::trunc};
+        out << parameter;
+    }
+
+    uint32_t count = 0;
+    expect(zzrk_prepare_image_download(nullptr, ZZRK_DOWNLOAD_LAYOUT_PARAMETER_FILE,
+                                       path.string().c_str(), nullptr, true, true,
+                                       nullptr, 0, nullptr, 0, &count,
+                                       nullptr, 0, nullptr) == ZZRK_OK,
+           "prepare from parameter file succeeds");
+    expect(count == 1, "parameter-only plan contains the GPT item");
+
+    zzrk_download_plan_item items[4]{};
+    expect(zzrk_prepare_image_download(nullptr, ZZRK_DOWNLOAD_LAYOUT_PARAMETER_FILE,
+                                       path.string().c_str(), nullptr, true, true,
+                                       nullptr, 0, items, 4, &count,
+                                       nullptr, 0, nullptr) == ZZRK_OK,
+           "prepare with item buffer succeeds");
+    expect(count == 1 && items[0].kind == ZZRK_DOWNLOAD_ITEM_PARTITION_TABLE &&
+               std::string_view{items[0].target} == "GPT" &&
+               items[0].sector_count == 67 &&
+               items[0].format == ZZRK_PAYLOAD_FORMAT_ROCKCHIP_PARAMETER,
+           "GPT plan item carries kind, target, sectors and format");
+    expect(std::strlen(items[0].md5) == 32,
+           "GPT plan item carries an MD5 digest");
+
+    zzrk_partition_entry layout[8]{};
+    uint32_t layoutCount = 0;
+    expect(zzrk_prepare_image_download(nullptr, ZZRK_DOWNLOAD_LAYOUT_PARAMETER_FILE,
+                                       path.string().c_str(), nullptr, true, true,
+                                       nullptr, 0, nullptr, 0, &count, layout, 8,
+                                       &layoutCount) == ZZRK_OK,
+           "prepare reports the full layout");
+    expect(layoutCount == 3 &&
+               std::string_view{layout[0].name} == "boot_a" &&
+               layout[0].first_lba == 0x40 && layout[0].sector_count == 0x20 &&
+               std::string_view{layout[2].name} == "userdata",
+           "layout entries carry every parameter-file partition");
+
+    std::filesystem::remove(path);
+}
+
 } // namespace
 
 int main()
@@ -265,6 +355,8 @@ int main()
     testRunFirmwareUpgradeMissingImage();
     testDeviceOperationGuards();
     testRunImageDownloadGuards();
+    testPrepareImageDownloadGuards();
+    testPrepareImageDownloadParameterFile();
 
     if (failures != 0) {
         std::cerr << failures << " expectation(s) failed\n";
