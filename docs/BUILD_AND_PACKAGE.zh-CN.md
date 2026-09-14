@@ -59,6 +59,7 @@ GUI 启动路径固定为：先调用 `ZzWindowKitBootstrap::prepare()`，再构
 | `ZZRK_BUILD_TESTS`             | `ON`               | 构建自动化测试                                      |
 | `ZZRK_WARNINGS_AS_ERRORS`      | `OFF`              | 将项目警告视为错误；发布和 CI 应启用                |
 | `ZZRK_BUNDLE_RUNTIME`          | 应用构建时 `ON`    | 安装/打包 Qt、插件和非系统运行库                    |
+| `ZZRK_FFI_SHARED`              | `OFF`              | 将 `src/ffi` 构建为共享库；Rust 前端构建时自动启用  |
 | `ZZRK_LIBUSB_ROOT`             | Linux 指向仓库副本 | 指定 libusb 头文件、库和版本元数据根目录            |
 | `ZZRK_MACOS_CODESIGN_IDENTITY` | 空                 | macOS `macdeployqt` 使用的签名身份；`-` 表示 ad-hoc |
 
@@ -398,7 +399,43 @@ spctl --assess --type open --context context:primary-signature -v \
 
 签名身份、App Store Connect 密钥、密码和公证 profile 必须存放在开发者 Keychain 或 CI secret store 中。详细策略见 `packaging/macos/README.md`。
 
-## 5. 安装许可证目录和硬件限制
+## 5. Rust GPUI 前端（实验性）
+
+`rust/` 是一个独立的 Cargo workspace，包含第二个 GUI 前端（gpui-kit 组件库），与 Qt GUI 并行维护、共享同一套 C++ 核心：
+
+- `rust/zzrk-sys`：`src/ffi` C ABI 的 Rust 绑定（bindgen 生成）。其 `build.rs` 自动调用 CMake，以 `ZZRK_FFI_SHARED=ON` + PIC 在 `rust/target/` 下的专用构建树编译核心库并链接 `libzzrk_ffi` 共享库，**无需先手动执行 CMake 构建**
+- `rust/gui_gpui`：GPUI 桌面应用本体（设备、完整升级、下载镜像、分区四页，样式对齐 Qt 版）
+
+### 5.1 环境准备
+
+Rust 稳定版工具链（开发验证版本 1.97.1）加上 C++ 侧的 CMake/Ninja/libusb 准备（见第 1、2 节）。Linux 额外需要窗口与图形系统开发包：
+
+```bash
+sudo apt install libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev mesa-vulkan-drivers
+```
+
+说明：
+
+- GPUI 走 Vulkan 渲染；无 GPU 的环境可装 mesa-vulkan-drivers 后用软件 Vulkan（lavapipe）运行：`VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json cargo run -p gui_gpui`
+- 缺 `libxkbcommon-x11-dev` 时 `gui_gpui/build.rs` 会自动建私有符号链接兜底；装上 dev 包后该兜底自动失效
+- 文件选择对话框依赖 xdg-desktop-portal（多数桌面默认自带）；无 portal 的环境下浏览按钮不可用，可直接在输入框手填路径
+
+### 5.2 构建与运行
+
+```bash
+cd rust
+cargo test                    # zzrk-sys 单元测试（无需硬件）
+cargo run -p gui_gpui         # 开发模式运行 GPUI 界面
+cargo build --release -p gui_gpui   # 发布构建
+```
+
+首次构建需下载并编译 gpui 依赖树（约 700 个 crate，10–20 分钟），之后增量构建为秒级。产物位于 `rust/target/<profile>/gui_gpui`。
+
+### 5.3 打包现状
+
+GPUI 前端尚未接入 CPack/DEB/ZIP/DMG 打包链路。`gui_gpui` 二进制经 rpath 引用 `rust/target/` 构建树内的 `libzzrk_ffi.so`，直接拷贝到其他机器无法运行；发布前需要补齐安装规则（核心共享库 + 可执行文件的相对 RPATH）。该工作列入后续迭代，当前仅以 Qt GUI + CLI 作为正式发布产物。
+
+## 6. 安装许可证目录和硬件限制
 
 打包后必须保留 `LICENSE`、`NOTICE.md` 和各依赖许可证。默认安装位置如下：
 
@@ -410,7 +447,7 @@ spctl --assess --type open --context context:primary-signature -v \
 
 自动化和 offscreen 测试使用模拟后端，只能验证无硬件启动、页面工作流和确定性关闭；不得据此宣称真实 RK3588/eMMC 读写成功。连接目标设备前，应先确认供电、USB 线材、设备模式、权限或驱动，并在专用测试设备上依次执行只读扫描、分区读取和 `--prepare-only`。完整刷写会改写存储介质，必须另行确认镜像、分区目标、备份与恢复路径。
 
-## 6. CI 构建
+## 7. CI 构建
 
 `.github/workflows/cross-platform-apps.yml` 定义了 Windows 2022 与 macOS 14 的构建、23 项无硬件测试、打包后启动检查和产物上传。Linux 另有第 24 项安装 smoke test。该 workflow 由 `push`、`pull_request` 或手工 `workflow_dispatch` 触发。
 
@@ -418,7 +455,7 @@ spctl --assess --type open --context context:primary-signature -v \
 
 CI 通过只说明对应 runner 上能够编译、测试、部署和启动，不能替代 USB 真机、Windows 驱动、正式签名或 macOS 公证验证。
 
-## 7. 常见问题
+## 8. 常见问题
 
 ### CMake 找不到 Qt
 
@@ -449,7 +486,7 @@ Windows/macOS 使用对应的 `cmake -S . -B ... --fresh` 配置命令和原有�
 - Windows：确认 EXE 同目录存在 Qt、MSVC runtime、平台插件和 `libusb-1.0.dll`。
 - macOS：检查 `codesign --verify`、`otool -L`、bundle 的 `Contents/Frameworks` 和 `Contents/PlugIns`。
 
-## 8. 发布前统一检查
+## 9. 发布前统一检查
 
 - [ ] Release 构建启用 `ZZRK_WARNINGS_AS_ERRORS=ON`。
 - [ ] 当前平台全部无硬件测试通过；Linux 额外通过安装 smoke test。
