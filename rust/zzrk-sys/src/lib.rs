@@ -1313,6 +1313,196 @@ pub fn run_image_download(
     )
 }
 
+/// Mirrors `zzrk_download_item_kind`.
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DownloadItemKind {
+    Loader = 0,
+    PartitionTable = 1,
+    Partition = 2,
+}
+
+impl_from_raw!(DownloadItemKind, Loader, PartitionTable, Partition);
+
+/// Mirrors `zzrk_payload_format`.
+#[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PayloadFormat {
+    Unknown = 0,
+    Raw = 1,
+    AndroidSparse = 2,
+    RockchipParameter = 3,
+}
+
+impl_from_raw!(PayloadFormat, Unknown, Raw, AndroidSparse, RockchipParameter);
+
+impl PayloadFormat {
+    pub fn name(self) -> &'static str {
+        match self {
+            PayloadFormat::Unknown => "-",
+            PayloadFormat::Raw => "Raw",
+            PayloadFormat::AndroidSparse => "Android Sparse",
+            PayloadFormat::RockchipParameter => "parameter.txt",
+        }
+    }
+}
+
+/// One prepared image-download plan item (see `zzrk_download_plan_item`).
+#[derive(Debug, Clone)]
+pub struct DownloadPlanItem {
+    kind: i32,
+    format: i32,
+    pub target: String,
+    pub source_path: String,
+    pub first_lba: u64,
+    pub sector_count: u64,
+    pub output_size: u64,
+    pub verify: bool,
+    pub md5: String,
+}
+
+impl DownloadPlanItem {
+    pub fn kind(&self) -> Option<DownloadItemKind> {
+        DownloadItemKind::from_raw(self.kind)
+    }
+
+    pub fn format(&self) -> Option<PayloadFormat> {
+        PayloadFormat::from_raw(self.format)
+    }
+}
+
+/// Result of [`prepare_image_download`]: the prepared items plus every
+/// partition of the layout (parameter file or device GPT).
+#[derive(Debug, Clone)]
+pub struct PreparedDownload {
+    pub items: Vec<DownloadPlanItem>,
+    pub layout: Vec<PartitionEntry>,
+}
+
+/// Prepares an image-download plan (parse + inspect + digests) without
+/// executing it. With `DownloadLayout::ParameterFile` this is file-only and
+/// never touches a device; with `DownloadLayout::DeviceGpt` the device GPT
+/// is read first (read-only; `port_path` required). Blocking.
+pub fn prepare_image_download(
+    port_path: Option<&str>,
+    layout: DownloadLayout,
+    loader_path: Option<&Path>,
+    verify_loader: bool,
+    verify_partition_table: bool,
+    partitions: &[DownloadPartition],
+) -> Result<PreparedDownload, String> {
+    let port = port_path.map(cstring).transpose()?;
+    let (layout_source, parameter) = match layout {
+        DownloadLayout::DeviceGpt => (DownloadLayoutSource::DeviceGpt, None),
+        DownloadLayout::ParameterFile(path) => (
+            DownloadLayoutSource::ParameterFile,
+            Some(cstring_path(path)?),
+        ),
+    };
+    let loader = loader_path.map(cstring_path).transpose()?;
+
+    let mut strings = Vec::with_capacity(partitions.len() * 2);
+    let mut raw_partitions = Vec::with_capacity(partitions.len());
+    for p in partitions {
+        strings.push(cstring(p.target)?);
+        strings.push(cstring_path(p.image_path)?);
+    }
+    for (index, p) in partitions.iter().enumerate() {
+        raw_partitions.push(ffi::zzrk_download_partition {
+            target: strings[index * 2].as_ptr(),
+            image_path: strings[index * 2 + 1].as_ptr(),
+            verify: p.verify,
+        });
+    }
+
+    unsafe {
+        #[allow(clippy::too_many_arguments)]
+        let call = |items: *mut ffi::zzrk_download_plan_item,
+                    capacity: u32,
+                    layout_buf: *mut ffi::zzrk_partition_entry,
+                    layout_capacity: u32,
+                    count: &mut u32,
+                    layout_count: &mut u32| {
+            ffi::zzrk_prepare_image_download(
+                port.as_ref().map_or(std::ptr::null(), |p| p.as_ptr()),
+                layout_source as i32,
+                parameter.as_ref().map_or(std::ptr::null(), |p| p.as_ptr()),
+                loader.as_ref().map_or(std::ptr::null(), |p| p.as_ptr()),
+                verify_loader,
+                verify_partition_table,
+                raw_partitions.as_ptr(),
+                raw_partitions.len() as u32,
+                items,
+                capacity,
+                count,
+                layout_buf,
+                layout_capacity,
+                layout_count,
+            )
+        };
+
+        let mut count: u32 = 0;
+        let mut layout_count: u32 = 0;
+        let status = call(
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null_mut(),
+            0,
+            &mut count,
+            &mut layout_count,
+        );
+        if status != ffi::zzrk_status_ZZRK_OK {
+            return Err(last_error());
+        }
+        let mut raw =
+            vec![std::mem::zeroed::<ffi::zzrk_download_plan_item>(); count as usize];
+        let mut raw_layout =
+            vec![std::mem::zeroed::<ffi::zzrk_partition_entry>(); layout_count as usize];
+        if count > 0 || layout_count > 0 {
+            let status = call(
+                raw.as_mut_ptr(),
+                count,
+                raw_layout.as_mut_ptr(),
+                layout_count,
+                &mut count,
+                &mut layout_count,
+            );
+            if status != ffi::zzrk_status_ZZRK_OK {
+                return Err(last_error());
+            }
+            raw.truncate(count as usize);
+            raw_layout.truncate(layout_count as usize);
+        }
+        Ok(PreparedDownload {
+            items: raw
+                .iter()
+                .map(|item| DownloadPlanItem {
+                    kind: item.kind,
+                    format: item.format,
+                    target: cstr_array_to_string(item.target.as_ptr()),
+                    source_path: cstr_array_to_string(item.source_path.as_ptr()),
+                    first_lba: item.first_lba,
+                    sector_count: item.sector_count,
+                    output_size: item.output_size,
+                    verify: item.verify,
+                    md5: cstr_array_to_string(item.md5.as_ptr()),
+                })
+                .collect(),
+            layout: raw_layout
+                .iter()
+                .map(|e| PartitionEntry {
+                    name: cstr_array_to_string(e.name.as_ptr()),
+                    type_guid: e.type_guid,
+                    unique_guid: e.unique_guid,
+                    first_lba: e.first_lba,
+                    sector_count: e.sector_count,
+                    attributes: e.attributes,
+                })
+                .collect(),
+        })
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests (no device write paths; a real device may be attached, scan only)
 // ---------------------------------------------------------------------------
@@ -1444,5 +1634,71 @@ mod tests {
         )
         .expect_err("expected an error for a missing parameter file");
         assert!(!err.message.is_empty());
+    }
+
+    #[test]
+    fn prepare_image_download_missing_parameter_file_errors() {
+        let err = prepare_image_download(
+            None,
+            DownloadLayout::ParameterFile(Path::new("definitely/not/a/parameter.txt")),
+            None,
+            true,
+            true,
+            &[],
+        )
+        .expect_err("expected an error for a missing parameter file");
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn prepare_image_download_from_parameter_file() {
+        let path = std::env::temp_dir().join("zzrk-rs-prepare-test-parameter.txt");
+        std::fs::write(
+            &path,
+            "MACHINE_MODEL: rs-prepare\nTYPE: GPT\n\
+             CMDLINE:mtdparts=rk29xxnand:0x20@0x40(boot_a),0x20@0x60(boot_b),-@0x80(userdata:grow)\n",
+        )
+        .unwrap();
+
+        let prepared = prepare_image_download(
+            None,
+            DownloadLayout::ParameterFile(&path),
+            None,
+            true,
+            true,
+            &[],
+        )
+        .expect("prepare from parameter file should succeed (file-only)");
+        assert_eq!(prepared.items.len(), 1);
+        assert_eq!(prepared.items[0].kind(), Some(DownloadItemKind::PartitionTable));
+        assert_eq!(prepared.items[0].target, "GPT");
+        assert_eq!(prepared.items[0].sector_count, 67);
+        assert_eq!(
+            prepared.items[0].format(),
+            Some(PayloadFormat::RockchipParameter)
+        );
+        assert_eq!(prepared.items[0].md5.len(), 32);
+        assert_eq!(prepared.layout.len(), 3);
+        assert_eq!(prepared.layout[0].name, "boot_a");
+        assert_eq!(prepared.layout[0].first_lba, 0x40);
+        assert_eq!(prepared.layout[0].sector_count, 0x20);
+        assert_eq!(prepared.layout[2].name, "userdata");
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn prepare_image_download_rejects_interior_nul() {
+        assert!(
+            prepare_image_download(
+                Some("1-\u{0}6"),
+                DownloadLayout::DeviceGpt,
+                None,
+                true,
+                true,
+                &[],
+            )
+            .is_err()
+        );
     }
 }
