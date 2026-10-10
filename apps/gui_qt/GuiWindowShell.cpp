@@ -22,6 +22,7 @@
 #include <ZzPureTools/ZzApplicationWindow.h>
 #include <ZzPureTools/ZzPureApplication.h>
 #include <ZzPureTools/ZzPageHost.h>
+#include <ZzPureTools/ZzWorkspaceCenterMode.h>
 #include <ZzPureTools/ZzWorkspacePanelId.h>
 #include <ZzPureTools/ZzWorkspaceShell.h>
 #include <ZzPureTools/ZzWorkspaceTitleMode.h>
@@ -216,8 +217,9 @@ ZzCore::ZzResult<void> GuiWindowShell::initialize() {
         QStringLiteral("GUI 应用窗口中央导航结构不可用"));
   }
 
-  auto workspaceResult =
-      ZzPureTools::ZzWorkspaceShell::create(window_, window_->titleBar());
+  auto workspaceResult = ZzPureTools::ZzWorkspaceShell::create(
+      window_, window_->titleBar(),
+      ZzPureTools::ZzWorkspaceCenterMode::Tabbed);
   if (!workspaceResult) {
     return ZzCore::ZzResult<void>::failure(workspaceResult.error());
   }

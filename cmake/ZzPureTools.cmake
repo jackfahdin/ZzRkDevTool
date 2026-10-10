@@ -210,6 +210,12 @@ function(zzrk_add_puretools)
         EXCLUDE_FROM_ALL
     )
 
+    # 上游用顶层 CMAKE_SOURCE_DIR 定位模块内部头文件；嵌入构建时补齐框架路径。
+    target_include_directories(
+        ZzPureTools PRIVATE
+        "${PROJECT_SOURCE_DIR}/thirdParty/ZzPureTools/ZzFluentUI/widgets/src"
+    )
+
     zzrk_restore_puretools_scope_snapshot(_zzrk_puretools_saved)
     zzrk_clear_puretools_scope_snapshot(_zzrk_puretools_saved)
 endfunction()
