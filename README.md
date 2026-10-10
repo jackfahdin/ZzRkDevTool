@@ -1,228 +1,330 @@
-# ZzRkDevTool
+<div align="center">
 
-ZzRkDevTool is an MIT-licensed C++20 and Qt 6 Rockchip flashing tool. The first
-validated target is RK3588 with eMMC on Ubuntu 26.04 LTS. Its CLI enumerates
-Rockchip USB devices, reads typed Loader information, inspects and plans RKFW /
-RKAF update images, and performs complete eMMC system upgrades from
-`update.img`.
+<h1>⚡ ZzRkDevTool</h1>
 
-中文编译、测试和打包说明见
-[`docs/BUILD_AND_PACKAGE.zh-CN.md`](docs/BUILD_AND_PACKAGE.zh-CN.md)，后续真机、
-跨平台、签名和发布待办见
-[`docs/PROJECT_PLAN.zh-CN.md`](docs/PROJECT_PLAN.zh-CN.md#18-待验证与发布清单)。
+<p>面向 Rockchip 设备的跨平台固件烧录工具<br>共享 C++ 核心 · Qt 桌面界面 · Rust GPUI 实验前端 · 命令行自动化</p>
 
-## Development build
+![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?style=flat-square&logo=cplusplus&logoColor=white)
+![Qt 6.11.1](https://img.shields.io/badge/Qt-6.11.1-41CD52?style=flat-square&logo=qt&logoColor=white)
+![Rust GPUI](https://img.shields.io/badge/Rust-GPUI_Experimental-CE422B?style=flat-square&logo=rust&logoColor=white)
+[![MIT License](https://img.shields.io/badge/License-MIT-7C3AED?style=flat-square)](LICENSE)
 
-Initialize the pinned spdlog v2 submodule after cloning:
+[功能一览](#features) · [快速开始](#quick-start) · [命令行使用](#cli) · [平台与打包](#platforms) · [文档导航](#docs)
+
+</div>
+
+---
+
+ZzRkDevTool 提供设备发现、独立镜像下载、完整固件升级和分区管理。CLI、Qt GUI 与 Rust GPUI 前端复用同一套 C++20 协议、镜像解析和烧录工作流，统一执行写前检查、进度回报和回读校验。
+
+当前真机验证基线是 **Ubuntu 26.04 x86_64 + RK3588/RK3588S + eMMC**，固件样本来自 `pudu_rk3588s`。Windows 和 macOS 已有构建、测试与打包配置，真机验证及正式签名仍待完成；Rust GPUI 当前以 Linux 开发构建为主。
+
+<a id="features"></a>
+
+## ✨ 功能一览
+
+### 四个业务入口
+
+Qt GUI 使用完整的 [ZzPureTools](https://github.com/jackfahdin/ZzPureTools) 框架，提供无边框标题栏、顶部标签页和明暗主题。“下载镜像”位于首标签页。
+
+| 入口 | 当前能力 |
+| --- | --- |
+| 📥 下载镜像 | 从设备 GPT 或文本 `parameter.txt` 获取布局；选择独立 `MiniLoaderAll.bin`、Raw、Android Sparse 镜像；目录自动匹配 A/B 分区；逐项选择与回读校验 |
+| 🔌 设备 | 发现 Rockchip USB 设备；按物理端口选择目标；查看 ChipInfo、Capability、FlashInfo、FlashID、eMMC 容量和 USB 接口信息 |
+| 🚀 完整升级 | 解析 `update.img`、验证 MD5、预览烧录计划；准备 RAM Loader；烧录 Loader、GPT 和固件实际携带的分区文件；选择校验模式与完成后重启 |
+| 🧩 分区 | 校验 GPT 后列出分区名称和 LBA 范围；备份、容量受限写入、回读校验、擦除和取消 |
+
+镜像目录优先匹配 `boot_a.img`、`boot_b.img` 等精确分区名；缺少精确文件时，通用的 `boot.img` 可同时匹配 A/B 两个槽位。匹配项及其回读校验默认开启，可分别调整。
+
+### 烧录与任务体验
+
+- **双进度显示**：同时展示当前分区/操作百分比和完整计划的累计百分比。
+- **事件式设备发现**：Qt GUI 使用 libusb 热插拔事件，保留启动扫描与手动刷新；不使用定时轮询。
+- **分块取消**：在 RockUSB 传输块边界停止后续操作，取消后不自动重启设备。
+- **任务记录与诊断**：Qt GUI 保留本次会话最近 50 条升级记录，可导出与 CLI 共用的 JSON 诊断报告。
+- **自动化接口**：主要 CLI 命令提供版本化 JSON；完整升级可用 JSON Lines 连续输出进度和最终结果。
+
+### 🦀 Rust GPUI 实验前端
+
+`rust/gui_gpui` 使用 `gpui-kit`，已接入设备、完整升级、下载镜像和分区四个页面，通过 `rust/zzrk-sys` 调用 C++ 核心的 C ABI。支持文件选择、任务进度、取消和明暗主题。
+
+当前 GPUI 前端尚未接入设备热插拔事件、升级报告导出及 DEB/ZIP/DMG 打包。其 Linux 构建依赖构建树中的共享库，不能直接拷贝可执行文件作为独立安装包。Qt GUI + CLI 是现有安装打包流程的目标。
+
+<a id="quick-start"></a>
+
+## 🛠️ 快速开始
+
+### 环境要求
+
+| 组件 | 要求 | 使用范围 |
+| --- | --- | --- |
+| C++ 编译器 | 支持 C++20 | C++ 核心、CLI、Qt GUI 与 FFI |
+| CMake / Ninja | CMake ≥ 3.25；Ninja | C++ 构建 |
+| libusb | ≥ 1.0.30 | USB 传输；Qt 热插拔还需运行库具备 `LIBUSB_CAP_HAS_HOTPLUG` |
+| Qt | 6.11.1，含同版本 `CorePrivate`、`GuiPrivate`、`WidgetsPrivate` | Qt GUI；CLI 无需 Qt |
+| Rust / libclang | Rust 稳定版工具链；bindgen 可加载的 libclang | GPUI 前端与 Rust 绑定 |
+
+Linux 预设使用仓库内的 `thirdParty/libusb`。Windows 热插拔要求 libusb 编译时启用 `LIBUSB_WINDOWS_HOTPLUG`，应使用仓库提供的 vcpkg overlay。详见[中文编译与打包指南](docs/BUILD_AND_PACKAGE.zh-CN.md)。
+
+### 1. 获取源码与依赖
 
 ```bash
-git submodule update --init thirdParty/spdlog
+git clone git@gitcode.com:jackfahdin/ZzRkDevTool.git
+cd ZzRkDevTool
+git submodule update --init --recursive
 ```
 
-All application builds require libusb 1.0.30 or newer and a runtime that
-reports `LIBUSB_CAP_HAS_HOTPLUG`. Older runtimes and builds without platform
-hotplug support are rejected; there is no device-polling fallback. The tracked
-Linux presets use libusb 1.0.30 from `thirdParty/libusb`. Point CMake at a Qt
-6.11 or newer installation when configuring a fresh clone:
+Qt GUI 的 ZzPureTools 子模块使用 GitHub SSH 地址，需要配置对应的 SSH 访问。子模块提交由仓库固定；首次配置应用目标时，spdlog 会下载 SHA-256 固定的 fmt 12.1.0。
+
+### 2. 构建 Qt GUI 与 CLI（Linux）
+
+以下示例假设 Qt 安装在 `$HOME/Qt/6.11.1/gcc_64`：
 
 ```bash
-cmake --preset linux-debug -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/gcc_64"
-cmake --build --preset linux-debug
+cmake --preset linux-debug \
+  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/gcc_64"
+cmake --build --preset linux-debug --parallel
 ctest --preset linux-debug
 ```
 
-`linux-sanitize` and `linux-release` provide sanitizer and optimized builds.
-Application builds compile the pinned spdlog v2 source. On the first configure,
-spdlog downloads fmt 12.1.0 from its SHA-256-pinned CMake declaration.
-To compile the portable core/protocol and the current host's platform service
-source set without Qt or libusb:
+启动应用或查看设备：
+
+```bash
+./build/linux-debug/apps/gui_qt/ZzRkDevTool
+./build/linux-debug/apps/cli/zzrkdevtool-cli list
+```
+
+`linux-release` 用于优化构建，`linux-sanitize` 启用 ASan/UBSan。机器专用路径可写入已被 Git 忽略的 `CMakeUserPresets.json`。
+
+<details>
+<summary>📦 仅构建 CLI，或验证不依赖 Qt/libusb 的核心目标</summary>
+
+仅构建 CLI，保留 USB 与镜像烧录能力：
+
+```bash
+cmake -S . -B build/cli-only -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DZZRK_BUILD_GUI=OFF
+cmake --build build/cli-only --parallel
+ctest --test-dir build/cli-only --output-on-failure
+./build/cli-only/apps/cli/zzrkdevtool-cli
+```
+
+不安装 Qt 或 libusb，验证可移植核心、协议和当前平台基础代码：
 
 ```bash
 cmake --preset portable-debug
-cmake --build --preset portable-debug
+cmake --build --preset portable-debug --parallel
 ctest --preset portable-debug
 ```
 
-Run the CLI from the selected preset's build directory:
+portable 构建不生成 GUI、CLI 或 USB 传输目标。
+
+</details>
+
+### 3. 运行 GPUI 实验前端（Linux，可选）
+
+准备 Rust、libclang、CMake/Ninja，以及 Linux 窗口与图形开发依赖：
+
+```bash
+sudo apt install libclang-dev libxcb1-dev libxkbcommon-dev \
+  libxkbcommon-x11-dev libwayland-dev mesa-vulkan-drivers
+
+cd rust
+cargo test -p zzrk-sys
+cargo run -p gui_gpui
+# 发布模式开发构建
+cargo build --release -p gui_gpui
+```
+
+Cargo 会自动通过 CMake 构建 C++ FFI 共享库，无需事先编译 Qt GUI 或 CLI。产物位于 `rust/target/debug/gui_gpui` 或 `rust/target/release/gui_gpui`。文件选择依赖 `xdg-desktop-portal`；缺少该服务时可手动输入路径。软件 Vulkan 和依赖排查见[GPUI 编译说明](docs/BUILD_AND_PACKAGE.zh-CN.md#5-rust-gpui-前端实验性)。
+
+<a id="cli"></a>
+
+## 💻 命令行使用
+
+下面以 `build/linux-debug` 构建为例。`1-5` 是示例物理 USB 端口，执行设备命令前请用 `list` 获取实际端口路径。
+
+### 查看设备与固件
 
 ```bash
 ./build/linux-debug/apps/cli/zzrkdevtool-cli list
-./build/linux-debug/apps/cli/zzrkdevtool-cli list --json
 ./build/linux-debug/apps/cli/zzrkdevtool-cli info 1-5 --json
-./build/linux-debug/apps/cli/zzrkdevtool-cli probe 1-5
-./build/linux-debug/apps/cli/zzrkdevtool-cli read-chip-info 1-5
-./build/linux-debug/apps/cli/zzrkdevtool-cli read-flash-info 1-5
-./build/linux-debug/apps/cli/zzrkdevtool-cli read-flash-id 1-5
-./build/linux-debug/apps/cli/zzrkdevtool-cli inspect-image update.img
-./build/linux-debug/apps/cli/zzrkdevtool-cli plan-image update.img
-./build/linux-debug/apps/cli/zzrkdevtool-cli inspect-image update.img --json
-./build/linux-debug/apps/cli/zzrkdevtool-cli plan-image update.img --json
 ./build/linux-debug/apps/cli/zzrkdevtool-cli partitions 1-5 --json
-./build/linux-debug/apps/cli/zzrkdevtool-cli \
-    read-partition 1-5 boot_a --output boot_a.img
-./build/linux-debug/apps/cli/zzrkdevtool-cli \
-    write-partition 1-5 boot_a --input boot.img --yes
-./build/linux-debug/apps/cli/zzrkdevtool-cli \
-    erase-partition 1-5 cache --yes
-./build/linux-debug/apps/cli/zzrkdevtool-cli \
-    flash-image 1-5 update.img --yes --prepare-only
-./build/linux-debug/apps/cli/zzrkdevtool-cli \
-    flash-image 1-5 update.img --yes --verify critical --json
-./build/linux-debug/apps/cli/zzrkdevtool-cli \
-    flash-image 1-5 update.img --yes --report upgrade-report.json
-./build/linux-debug/apps/cli/zzrkdevtool-cli reset 1-5
-./build/linux-debug/apps/gui_qt/ZzRkDevTool
+
+./build/linux-debug/apps/cli/zzrkdevtool-cli inspect-image update.img
+./build/linux-debug/apps/cli/zzrkdevtool-cli plan-image update.img --json
 ```
 
-Use the stable port path printed by `list` for all device commands. Read-only
-commands accept only the observed RK3588 Loader identity `2207:350b`, `bcdUSB
-0x0201`, `bcdDevice 0x0223` and exact interface layout. `flash-image` also
-accepts the observed RK3588 Maskrom identity `2207:350b`, `bcdUSB 0x0200`,
-`bcdDevice 0x0100`. `probe` performs no bulk or control transfer.
-`read-chip-info` sends the single fixed transaction recorded in its project
-protocol trace and returns an opaque 16-byte value.
-`read-flash-info` sends its separately observed fixed transaction, preserves
-the 11-byte response and reports the sector-derived capacity. Its other fields
-are neutral legacy compatibility codes; it does not determine manufacturer,
-physical geometry or storage type. `read-flash-id` preserves its complete
-five-byte response and recognizes only the exact observed `EMMC ` marker as
-eMMC. That marker is not a CID, manufacturer, capacity or hardware-partition
-identifier; every other five-byte response remains opaque.
+`inspect-image`、`plan-image` 和 `flash-image` 均在接受固件前验证 RKFW 尾部 MD5。校验使用共享 C++ 核心内建的 RFC 1321 实现，无需 Qt 或额外 MD5 库。
 
-`info` opens the selected Loader once and returns the device identity,
-interface, ChipInfo, capability, FlashInfo and FlashID under one typed result.
-`list`, `info`, `inspect-image`, `plan-image`, `partitions`, named partition
-operations and `flash-image` provide a versioned JSON contract. A structured
-`flash-image` run writes JSON Lines to stdout: zero or more `progress` records
-followed by one `result` record. Human logs remain on stderr, so stdout can be
-consumed without filtering log text. The current schema version is `1`.
+### 完整升级
 
-`flash-image --report <file>` atomically writes a schema-versioned diagnostic
-report containing the selected USB identity, firmware MD5, immutable flash
-plan, verification policy, per-operation timing and terminal result or typed
-error. Reports contain only the firmware file name by default. The explicit
-`--report-include-firmware-path` option adds the full source path when it is
-needed for local diagnostics.
-
-`inspect-image`, `plan-image`, and `flash-image` calculate the RKFW trailing
-MD5 with the built-in C++ implementation before accepting the image. Before
-any eMMC write, `flash-image`
-enters Maskrom when necessary, downloads the embedded `MiniLoaderAll.bin`
-`0x471` DDR and `0x472` usbplug stages to RAM, waits for the same physical USB
-port to re-enumerate, and requires typed readiness and RK3588 chip checks. It
-then writes the Loader as a New IDBlock at eMMC LBA 64, generated GPT, and every
-partition payload actually present in the image. A partition that exists only
-in `parameter` and has no image payload is left unchanged. `--prepare-only`
-stops after the RAM Loader, chip, eMMC identity, and capacity checks and exits
-without writing eMMC; use it before destructive hardware validation.
-
-The default `--verify critical` mode reads back GPT, Loader, and boot-chain
-partition payloads. `--verify all` also checks all written Raw and Android
-Sparse RAW/FILL extents; Sparse DONT_CARE extents are intentionally skipped.
-`--verify none` disables read-back verification. A successful flash resets the
-device by default; `--no-reboot` leaves the RAM Loader active. `Ctrl+C` is
-observed between RockUSB transfer blocks, stops new storage commands,
-suppresses the automatic reset, and exits with status 130.
-
-`partitions` reads the eMMC primary GPT and requires valid header and entry
-array CRCs before exposing typed names and ranges. It attempts to validate the
-backup copy for diagnostics, but reports it as `unavailable` without rejecting
-a valid primary copy on the validated Loader. `read-partition`,
-`write-partition`, and `erase-partition` accept only an exact, unambiguous name
-from that validated primary GPT. Writes require `--yes`, must fit within the
-partition, zero-pad only the final partial sector, and are read back by default;
-`--no-verify` explicitly disables that read-back. These commands never select
-an eMMC hardware partition and never accept a caller-provided write LBA.
-
-The Qt Widgets application uses the same typed workflows through an injectable
-operation backend. Its first **Download Image** page can use a validated device
-GPT or a text `parameter.txt` layout, then batch-select `MiniLoaderAll.bin`,
-Raw images, and Android Sparse images. Directory matching prefers an exact
-slot name such as `boot_b.img`; an unsuffixed `boot.img` is shared by both
-`boot_a` and `boot_b` when no exact image exists. Every matched row is enabled
-with read-back verification by default, while selection and verification can
-be changed independently. The page preserves both current-item and cumulative
-plan progress, supports block-boundary cancellation, and reboots by default.
-It does not parse binary `config.cfg` files and never exposes an arbitrary LBA.
-
-The device page reads ChipInfo, Capability, FlashInfo, FlashID, eMMC capacity,
-and the claimed USB interface. The complete-upgrade
-page supports asynchronous MD5 and plan preview, verification mode,
-post-flash reboot, block-boundary cancellation, cumulative plan progress, and
-current-operation progress. The partition page validates GPT before listing
-names and LBA ranges, then supports backup, bounded image write with optional
-per-block read-back, erase, progress, and cancellation. Partition writes and
-erases use separate confirmations that identify the port, partition, LBA range,
-and capacity. A dedicated libusb event context monitors Rockchip arrival and
-departure events. Bursts are debounced before scanning; events received while
-a USB operation owns the device are serviced after that operation completes.
-The startup scan and explicit refresh button remain available, but no periodic
-polling is used.
-The current session retains a bounded 50-entry upgrade history whose completed
-rows can export the same redacted JSON report model used by the CLI. Offscreen
-automated backend tests cover discovery, image-directory A/B matching, per-row
-verification, independent image-download progress, USB busy coordination,
-device details, partition listing, complete-upgrade progress, completion,
-report availability, and history without opening USB hardware.
-
-`CMakeUserPresets.json` may add workstation-specific convenience presets and is
-intentionally ignored by Git. It is not required by the commands above.
-
-## Linux installation package
-
-Build the Ubuntu 26.04 x86_64 Debian package after the release build and tests:
+先检查 RAM Loader、芯片和存储准备流程：
 
 ```bash
+./build/linux-debug/apps/cli/zzrkdevtool-cli \
+  flash-image 1-5 update.img --yes --prepare-only
+```
+
+`--prepare-only` 不写入 eMMC，但会在需要时复位到 Maskrom、下载 DDR/usbplug 到 RAM 并等待 USB 重枚举，因此会改变设备运行状态。
+
+确认目标设备与固件后，执行完整烧录并保存报告：
+
+```bash
+./build/linux-debug/apps/cli/zzrkdevtool-cli \
+  flash-image 1-5 update.img --yes --verify critical \
+  --report upgrade-report.json
+```
+
+> **操作提示：** 完整升级、分区写入和擦除会覆盖设备数据。请核对物理端口、镜像与分区，并提前备份需要保留的内容。
+
+完整升级依次准备 RAM Loader，将固件内的 `MiniLoaderAll.bin` 转换为 New IDBlock 写入 eMMC LBA 64，再写入 GPT 和固件实际携带的全部分区 payload。仅存在于 `parameter`、没有对应 payload 的分区保持原有内容。
+
+| 选项 | 行为 |
+| --- | --- |
+| `--verify critical` | 默认；回读 GPT、Loader 和启动链分区 |
+| `--verify all` | 回读全部已写入分区；Sparse 校验 RAW/FILL，跳过 DONT_CARE 区域 |
+| `--verify none` | 关闭写后回读校验，仍需通过固件 MD5 验证 |
+| `--prepare-only` | 仅完成 RAM Loader、芯片、eMMC 身份与容量检查 |
+| `--no-reboot` | 成功后保留 RAM Loader，不自动重启 |
+| `--report <file>` | 原子写入 JSON 诊断报告，默认只记录固件文件名 |
+| `--report-include-firmware-path` | 在报告中额外记录固件完整路径 |
+| `--json` | stdout 输出 JSON Lines；日志保留在 stderr |
+
+成功升级后默认重启设备。`Ctrl+C` 在传输块边界取消，停止新存储命令、禁止自动重启，CLI 返回状态码 `130`。
+
+### 分区备份、写入与擦除
+
+```bash
+# 备份；输出文件已存在时拒绝覆盖
+./build/linux-debug/apps/cli/zzrkdevtool-cli \
+  read-partition 1-5 boot_a --output boot_a.img
+
+# 写入；默认开启回读校验
+./build/linux-debug/apps/cli/zzrkdevtool-cli \
+  write-partition 1-5 boot_a --input boot.img --yes
+
+# 擦除指定分区
+./build/linux-debug/apps/cli/zzrkdevtool-cli \
+  erase-partition 1-5 cache --yes
+```
+
+分区名称必须来自经过 CRC 和范围校验的设备主 GPT，并且精确、唯一匹配。写入镜像必须小于或等于分区容量，只对最后一个不完整扇区补零；`--no-verify` 可显式关闭回读。
+
+<details>
+<summary>🔎 更多命令与结构化输出</summary>
+
+| 命令 | 用途 |
+| --- | --- |
+| `probe <port-path>` | 仅打开、声明和释放接口，不发送 RockUSB 命令 |
+| `read-chip-info <port-path>` | 读取 16 字节 ChipInfo |
+| `read-capability <port-path>` | 读取 Loader 能力信息 |
+| `read-flash-info <port-path>` | 读取 FlashInfo，按扇区数报告容量 |
+| `read-flash-id <port-path>` | 读取 FlashID；识别已验证的 `EMMC ` 标记 |
+| `read-lba <port-path> --start <lba> --count <sectors> --output <file>` | 按范围只读导出数据 |
+| `reset <port-path>` | 复位明确选择的设备 |
+| `--version` | 查看版本 |
+| 不带参数运行 `zzrkdevtool-cli` | 查看完整用法 |
+
+`list`、`info`、`inspect-image`、`plan-image`、`partitions`、按名称的分区操作和 `flash-image` 支持 `--json`，当前 schema version 为 `1`。完整升级输出零条或多条 `progress` 记录，最后输出一条 `result` 记录。
+
+升级报告包含设备身份、固件 MD5、不可变烧录计划、校验策略、逐步骤耗时和最终结果或类型化错误。报告默认省略固件完整路径，便于分享诊断信息。
+
+</details>
+
+<a id="platforms"></a>
+
+## 🖥️ 平台与打包
+
+| 平台 | 构建与产物 | 当前验证范围 |
+| --- | --- | --- |
+| 🐧 Linux | GCC/Clang；Ubuntu 26.04 x86_64 `.deb` | 已有本地构建、安装冒烟及 RK3588/eMMC CLI 真机验证；Qt 页面验收事项见待办清单 |
+| 🪟 Windows | MSVC x64 ZIP；另有 MinGW GUI 验证配置 | 构建、测试和打包工作流已配置；真机、WinUSB 驱动与正式签名待验证 |
+| 🍎 macOS | Clang；包含 Qt GUI 与 CLI 的 DMG | 构建、测试和打包工作流已配置；真机、Developer ID 签名与公证待验证 |
+
+Linux Release 测试与打包：
+
+```bash
+cmake --preset linux-release \
+  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/gcc_64"
+cmake --build --preset linux-release --parallel
+ctest --test-dir build/linux-release --output-on-failure
 cpack --preset linux-deb
+
 sudo apt install ./build/linux-release/zzrkdevtool_0.1.0_amd64.deb
 ```
 
-The package installs the GUI, CLI, a desktop entry, the scoped Rockchip udev
-rule, private ABI-compatible Qt/libusb/ICU shared libraries, license texts and
-an SPDX component inventory. It creates a dedicated `zzrkdevtool` group; the
-udev rule combines that group's `0660` access with desktop `uaccess` and never
-uses global `0666`. See `packaging/linux/README.md` for headless membership,
-manual rule installation and removal details.
+Linux 默认安装包包含 Qt GUI、CLI、所需 Qt/libusb/ICU 运行库、许可证和 SPDX 组件清单，以及桌面入口与限定 Rockchip 设备的 udev 规则。桌面 `uaccess` 或专用 `zzrkdevtool` 组提供 USB 权限，应用以普通用户运行。
 
-The automated `linux_install_smoke` test installs to a temporary prefix,
-starts both installed applications, checks their relative RPATH and packaged
-runtime files, then removes the installation tree. Set
-`-DZZRK_BUNDLE_RUNTIME=OFF` for an installation whose compatible Qt and libusb
-libraries are managed externally.
+Windows ZIP 不安装或替换 USB 驱动，真机访问需要兼容 WinUSB 驱动。macOS CI 配置采用 ad-hoc 签名；正式发布还需 Developer ID 与 Apple 公证。各平台完整命令见[编译、测试与打包指南](docs/BUILD_AND_PACKAGE.zh-CN.md)。
 
-## Windows and macOS validation packages
+## 📌 当前支持边界
 
-The cross-platform application workflow builds and tests a self-contained
-Windows x86_64 ZIP and a macOS DMG. The ZIP includes the Qt/MSVC runtimes and
-libusb DLL but intentionally does not install or replace a USB driver. Production
-RockUSB access requires a project-owned, signed WinUSB INF/CAT package. The
-macOS bundle contains both applications, Qt frameworks, and a relocatable
-libusb dylib; CI applies only an ad-hoc signature. Developer ID signing,
-notarization, and both platforms' RK3588 hardware tests remain release gates.
-See `packaging/windows/README.md` and `packaging/macos/README.md` for the build,
-driver, signing, and secret-handling policies.
+- 写入目标为已验证 RK3588/RK3588S 的 **eMMC user area**，不操作 boot0、boot1 或 RPMB。
+- 支持 RKFW/RKAF 完整固件、文本 `parameter.txt`、独立 Loader、Raw 和 Android Sparse；GUI 独立镜像下载不解析二进制 `config.cfg`，不开放任意写入 LBA。
+- 所有设备操作都显式选择物理 USB 端口；烧录前复核设备身份、接口布局、芯片、存储标记、容量和镜像计划。
+- 当前 Loader 对盘尾备份 GPT 的读取返回不透明数据：主 GPT 严格验证，备份 GPT 写入报告“已提交”，读取时可报告 `unavailable`。
+- 第二块板卡、更多 Loader revision 和 Windows/macOS 真机兼容矩阵仍在待办清单中。
+- SSH/SFTP 远程固件选择目前处于方案讨论阶段，尚未实现。
 
-## Safety and current limits
+<details>
+<summary>🔬 已验证的 USB 身份与设备信息解释</summary>
 
-All device operations require the physical USB port path printed by `list`.
-Flashing and named partition writes additionally require `--yes`, the
-validated Loader identity, the
-exact `EMMC ` media marker, sufficient eMMC capacity, a valid firmware MD5,
-and a complete typed flash plan. No CLI command exposes raw RockUSB CDB input.
+| 模式 | VID:PID | bcdUSB | bcdDevice |
+| --- | --- | --- | --- |
+| Loader | `2207:350b` | `0x0201` | `0x0223` |
+| Maskrom | `2207:350b` | `0x0200` | `0x0100` |
 
-The claim-only probe requires an exact physical port and fails closed on a
-partial scan, descriptor change, unexpected interface layout, active kernel
-driver, claim failure or release failure. It never selects the first matching
-VID/PID implicitly.
+设备详情、GPT 和按名称分区操作要求已验证的 Loader 身份；完整升级还接受上述 Maskrom 身份。仅匹配 VID/PID 不足以通过检查，还需满足对应接口与端点布局。
 
-Current write support is deliberately limited to complete validated images,
-an exact partition name from a validated device GPT, or an exact partition
-name from a validated text `parameter.txt` plan on the observed RK3588
-Loader/Maskrom identities and eMMC user area. It does not write eMMC boot0,
-boot1, or RPMB. The RK3588 Loader 0x0223 used for validation returns opaque data
-when reading the disk-tail backup GPT, so the tool verifies the primary GPT
-strictly and reports the backup GPT as write-submitted. Additional Loader
-revisions, second-board validation, and Windows/macOS hardware validation remain
-future work. Windows/macOS packaging is covered by CI validation artifacts, not
-formally signed or notarized releases. The current Debian package is an Ubuntu
-26.04 x86_64 baseline rather than a cross-distribution artifact.
+FlashInfo 中的容量按扇区数计算，其他字段保留兼容性代码含义，不据此推断厂商、物理几何或介质类型。FlashID 的五字节 `EMMC ` 标记用于识别 eMMC，不代表 CID、厂商、容量或硬件分区；其他响应保留为不透明数据。
+
+热插拔运行库能力不足时，Qt GUI 显示错误并保留手动刷新，不回退到周期轮询。
+
+</details>
+
+## 🏗️ 项目结构
+
+```text
+apps/
+├── cli/                 命令行入口与结构化输出
+└── gui_qt/              ZzPureTools 窗口、页面、控制器与进度展示
+src/
+├── core/                基础类型与强类型存储单位
+├── protocol/            RockUSB 编解码
+├── session/             会话状态与类型化设备命令
+├── image/               固件、Loader、Raw/Sparse 解析与写入
+├── storage/             GPT 校验与分区布局
+├── transport/           libusb 传输、扫描与热插拔
+├── workflow/            设备管理、MD5、升级、镜像下载与诊断报告
+├── ffi/                 C ABI，供 Rust 等前端调用
+├── platform/            平台服务
+└── logging/             spdlog 日志封装
+rust/
+├── zzrk-sys/            Rust 绑定与自动构建 C++ FFI
+└── gui_gpui/            gpui-kit 实验界面
+tests/                   协议、工作流、GUI 与安装测试
+packaging/               Linux / Windows / macOS 打包与许可证
+docs/                    构建指南、开发计划、硬件与协议记录
+```
+
+无硬件测试覆盖协议编解码、会话故障、镜像和 GPT 校验、热插拔、工作流、JSON/报告契约以及 Qt 模拟后端页面操作。安装冒烟验证打包后程序的启动与运行库部署；真机能力以硬件验证记录为准。
+
+<a id="docs"></a>
+
+## 📚 文档导航
+
+| 文档 | 内容 |
+| --- | --- |
+| [🛠️ 中文编译与打包指南](docs/BUILD_AND_PACKAGE.zh-CN.md) | Linux、Windows、macOS、GPUI 的环境与构建命令，签名和常见问题 |
+| [🗺️ 项目计划与待办](docs/PROJECT_PLAN.zh-CN.md#18-待验证与发布清单) | 真机验收、第二块板卡、兼容矩阵与发布事项 |
+| [🐧 Linux 安装与 USB 权限](packaging/linux/README.md) | DEB、udev、用户组、安装与卸载 |
+| [🪟 Windows 打包与驱动](packaging/windows/README.md) | ZIP、libusb、WinUSB 与签名策略 |
+| [🍎 macOS 打包与签名](packaging/macos/README.md) | DMG、运行库部署、Developer ID 与公证 |
+| [🔬 RK3588S 硬件观察](docs/hardware/rk3588s-pudu-usb-observations.md) | Loader/Maskrom USB 身份与接口记录 |
+| [📡 USB 协议采集工具](tools/usbtrace/README.md) | libusb trace 的采集与对比方式 |
+
+## 📄 许可证
+
+项目代码采用 [MIT License](LICENSE)。第三方依赖保留各自许可证，分发说明见 [NOTICE.md](NOTICE.md) 和[第三方声明](packaging/linux/THIRD_PARTY_NOTICES.md)；安装包附带许可证正文与 SPDX 组件清单。
