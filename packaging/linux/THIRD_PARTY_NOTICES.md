@@ -19,15 +19,15 @@ with `ZZRK_BUNDLE_RUNTIME=OFF` to link and install without copying runtime
 libraries. The corresponding license texts are installed beside this notice.
 
 The GUI statically links the following components from ZzPureTools commit
-`d6b90f1d266b6aa97b0ffb3a75deaa4bc2314514`, sourced from
+`38e96bb08a44c838e2748979a9683c085fcdb9e1`, sourced from
 `git@github.com:jackfahdin/ZzPureTools.git`. They are not runtime shared
 libraries in the package.
 
 | Component | Version source | License | Installed license path |
 |---|---|---|---|
-| ZzPureTools | commit `d6b90f1d266b6aa97b0ffb3a75deaa4bc2314514` | MIT | `/usr/share/doc/zzrkdevtool/licenses/ZzPureTools/ZzPureTools-MIT.txt` |
-| ZzLog | vendored at ZzPureTools commit `d6b90f1d266b6aa97b0ffb3a75deaa4bc2314514` | MIT | `/usr/share/doc/zzrkdevtool/licenses/ZzLog/LICENSE` |
-| QWindowKit | vendored at ZzPureTools commit `d6b90f1d266b6aa97b0ffb3a75deaa4bc2314514` | Apache-2.0 | `/usr/share/doc/zzrkdevtool/licenses/QWindowKit/QWindowKit-Apache-2.0.txt` |
+| ZzPureTools | commit `38e96bb08a44c838e2748979a9683c085fcdb9e1` | MIT | `/usr/share/doc/zzrkdevtool/licenses/ZzPureTools/ZzPureTools-MIT.txt` |
+| ZzLog | vendored at ZzPureTools commit `38e96bb08a44c838e2748979a9683c085fcdb9e1` | MIT | `/usr/share/doc/zzrkdevtool/licenses/ZzLog/LICENSE` |
+| QWindowKit | vendored at ZzPureTools commit `38e96bb08a44c838e2748979a9683c085fcdb9e1` | Apache-2.0 | `/usr/share/doc/zzrkdevtool/licenses/QWindowKit/QWindowKit-Apache-2.0.txt` |
 
 The generated Debian dependency list covers the remaining operating-system
 libraries. Those libraries are not copied into this package and retain the
