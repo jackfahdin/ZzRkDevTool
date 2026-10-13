@@ -16,7 +16,6 @@
 #include <ZzFluentUI/ZzTabWidget.h>
 #include <ZzFluentUI/ZzThemeController.h>
 #include <ZzFluentUI/ZzThemeMode.h>
-#include <ZzFluentUI/ZzTitleBarThemeInteractionMode.h>
 #include <ZzPureTools/ZzApplicationBuilder.h>
 #include <ZzPureTools/ZzApplicationWindow.h>
 #include <ZzPureTools/ZzNavigationController.h>
@@ -40,7 +39,6 @@
 #include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
-#include <QMenu>
 #include <QMessageBox>
 #include <QPointer>
 #include <QProcess>
@@ -905,18 +903,23 @@ int main(int argc, char **argv) {
                  originalThemeMode == ZzFluentUI::ZzThemeMode::Dark ||
                  originalThemeMode == ZzFluentUI::ZzThemeMode::HighContrast,
              "theme controller exposes a readable initial mode");
-      const auto originalThemeInteraction = titleBar->themeInteractionMode();
       auto *const originalStyle = QApplication::style();
       int snapshotChanges = 0;
-      QObject::connect(themeController,
-                       &ZzFluentUI::ZzThemeController::snapshotChanged,
-                       [&] { ++snapshotChanges; });
+      const auto snapshotConnection = QObject::connect(
+          themeController, &ZzFluentUI::ZzThemeController::snapshotChanged,
+          [&snapshotChanges] { ++snapshotChanges; });
 
       themeController->setMode(ZzFluentUI::ZzThemeMode::Light);
-      expect(waitFor([themeController] {
-               return themeController->mode() == ZzFluentUI::ZzThemeMode::Light;
+      expect(waitFor([themeController, titleBar, tabs, window] {
+               const QColor surface =
+                   QApplication::palette().color(QPalette::Window);
+               return themeController->mode() == ZzFluentUI::ZzThemeMode::Light &&
+                      titleBar->palette().color(QPalette::Window) == surface &&
+                      tabs->palette().color(QPalette::Window) == surface &&
+                      window->statusBar()->palette().color(QPalette::Window) ==
+                          surface;
              }),
-             "theme controller accepts the light baseline");
+             "framework propagates the light baseline to window surfaces");
       const QColor lightTitleSurface =
           titleBar->palette().color(QPalette::Window);
       const QColor lightTabsSurface = tabs->palette().color(QPalette::Window);
@@ -931,42 +934,116 @@ int main(int argc, char **argv) {
           QApplication::palette().color(QPalette::Window);
       expect(titleBar->themeMode() == ZzFluentUI::ZzThemeMode::Dark,
              "dark snapshot refreshes the title-bar theme state");
-      expect(titleBar->palette().color(QPalette::Window) == darkSurface &&
-                 titleBar->palette().color(QPalette::Window) !=
-                     lightTitleSurface,
+      expect(waitFor([titleBar, darkSurface, lightTitleSurface] {
+               const QColor surface =
+                   titleBar->palette().color(QPalette::Window);
+               return surface == darkSurface && surface != lightTitleSurface;
+             }),
              "dark snapshot refreshes the title-bar palette");
-      expect(tabs->palette().color(QPalette::Window) == darkSurface &&
-                 tabs->palette().color(QPalette::Window) != lightTabsSurface,
+      expect(waitFor([tabs, darkSurface, lightTabsSurface] {
+               const QColor surface = tabs->palette().color(QPalette::Window);
+               return surface == darkSurface && surface != lightTabsSurface;
+             }),
              "dark snapshot refreshes the main-tabs palette");
-      expect(window->statusBar()->palette().color(QPalette::Window) ==
-                     darkSurface &&
-                 window->statusBar()->palette().color(QPalette::Window) !=
-                     lightStatusSurface,
+      expect(waitFor([window, darkSurface, lightStatusSurface] {
+               const QColor surface =
+                   window->statusBar()->palette().color(QPalette::Window);
+               return surface == darkSurface && surface != lightStatusSurface;
+             }),
              "dark snapshot refreshes the status-bar palette");
 
-      titleBar->setThemeInteractionMode(
-          ZzFluentUI::ZzTitleBarThemeInteractionMode::Toggle);
-      auto *themeButton = qobject_cast<QAbstractButton *>(
-          titleBar->themeMenu()->parentWidget());
-      expect(themeButton != nullptr,
-             "title bar exposes a clickable theme intent button");
-      if (themeButton != nullptr)
-        themeButton->click();
-      expect(waitFor([themeController] {
-               return themeController->mode() == ZzFluentUI::ZzThemeMode::Light;
+      auto *themeButton = titleBar->findChild<QToolButton *>(
+          QStringLiteral("zzTitleBarThemeButton"));
+      expect(themeButton != nullptr && themeButton->menu() == nullptr,
+             "framework title bar exposes its theme toggle button");
+      if (themeButton != nullptr) {
+        int toggleNotifications = 0;
+        std::optional<ZzFluentUI::ZzThemeMode> reportedThemeMode;
+        const auto toggleConnection = QObject::connect(
+            window, &ZzPureTools::ZzApplicationWindow::themeToggled,
+            [&toggleNotifications, &reportedThemeMode](const auto mode) {
+              ++toggleNotifications;
+              reportedThemeMode = mode;
+            });
+        for (const auto baselineMode : {ZzFluentUI::ZzThemeMode::Light,
+                                       ZzFluentUI::ZzThemeMode::Dark,
+                                       ZzFluentUI::ZzThemeMode::System,
+                                       ZzFluentUI::ZzThemeMode::HighContrast}) {
+          const int notificationsBeforeToggle = toggleNotifications;
+          themeController->setMode(baselineMode);
+          expect(waitFor([titleBar, baselineMode] {
+                   return titleBar->themeMode() == baselineMode;
+                 }),
+                 "external theme mode synchronizes the framework title bar");
+          expect(toggleNotifications == notificationsBeforeToggle,
+                 "external theme synchronization emits no window toggle");
+          const auto expectedMode =
+              themeController->resolvedMode() == ZzFluentUI::ZzThemeMode::Dark
+                  ? ZzFluentUI::ZzThemeMode::Light
+                  : ZzFluentUI::ZzThemeMode::Dark;
+          themeButton->click();
+          expect(waitFor([themeController, titleBar, themeButton, expectedMode] {
+                   return themeController->mode() == expectedMode &&
+                          titleBar->themeMode() == expectedMode &&
+                          themeButton->isChecked();
+                 }),
+                 "framework theme button switches the application theme");
+          expect(toggleNotifications == notificationsBeforeToggle + 1 &&
+                     reportedThemeMode == expectedMode,
+                 "each button click reports exactly one framework toggle");
+        }
+        QObject::disconnect(toggleConnection);
+      }
+
+      const QPalette originalPalette = QApplication::palette();
+      QPalette updatedPalette = originalPalette;
+      const QColor inheritedSurface{QStringLiteral("#204060")};
+      updatedPalette.setColor(QPalette::Window, inheritedSurface);
+      QApplication::setPalette(updatedPalette);
+      expect(waitFor([titleBar, inheritedSurface] {
+               return titleBar->palette().color(QPalette::Window) ==
+                      inheritedSurface;
              }),
-             "title-bar theme toggle changes the application theme");
+             "title bar inherits application palette changes");
+      expect(tabs->palette().color(QPalette::Window) == inheritedSurface,
+             "main tabs inherit application palette changes");
+      expect(window->statusBar()->palette().color(QPalette::Window) ==
+                 inheritedSurface,
+             "status bar inherits application palette changes");
+      QApplication::setPalette(originalPalette);
 
       themeController->setMode(originalThemeMode);
       expect(
           waitFor([&] { return themeController->mode() == originalThemeMode; }),
           "theme controller restores the original mode");
-      titleBar->setThemeInteractionMode(originalThemeInteraction);
       expect(QApplication::style() == originalStyle,
              "theme switching preserves the application style object");
+      QObject::disconnect(snapshotConnection);
     }
 
     auto *buttonTitleBar = window->titleBar();
+    auto *pinButton = window->findChild<QAbstractButton *>(
+        QStringLiteral("zzTitleBarAlwaysOnTopButton"));
+    expect(pinButton != nullptr && buttonTitleBar != nullptr,
+           "framework title bar exposes the always-on-top button");
+    if (pinButton != nullptr && buttonTitleBar != nullptr) {
+      const bool originallyPinned =
+          window->windowFlags().testFlag(Qt::WindowStaysOnTopHint);
+      const auto originalWindowState = window->windowState();
+      for (const bool pinned : {!originallyPinned, originallyPinned}) {
+        pinButton->click();
+        expect(waitFor([window, buttonTitleBar, pinButton, pinned] {
+                 return window->windowFlags().testFlag(
+                            Qt::WindowStaysOnTopHint) == pinned &&
+                        buttonTitleBar->isAlwaysOnTop() == pinned &&
+                        pinButton->isChecked() == pinned;
+               }),
+               "framework pin button synchronizes window and title bar");
+        expect(window->isVisible() &&
+                   window->windowState() == originalWindowState,
+               "framework pinning preserves visibility and window state");
+      }
+    }
     auto *minimizeButton =
         buttonTitleBar != nullptr
             ? qobject_cast<QAbstractButton *>(buttonTitleBar->minimizeButton())
