@@ -17,10 +17,7 @@
 #include <ZzFluentUI/ZzSidePaneEdge.h>
 #include <ZzFluentUI/ZzTabBar.h>
 #include <ZzFluentUI/ZzTabWidget.h>
-#include <ZzFluentUI/ZzThemeController.h>
-#include <ZzFluentUI/ZzThemeMode.h>
 #include <ZzPureTools/ZzApplicationWindow.h>
-#include <ZzPureTools/ZzPureApplication.h>
 #include <ZzPureTools/ZzPageHost.h>
 #include <ZzPureTools/ZzWorkspaceCenterMode.h>
 #include <ZzPureTools/ZzWorkspacePanelId.h>
@@ -28,7 +25,6 @@
 #include <ZzPureTools/ZzWorkspaceTitleMode.h>
 
 #include <QBoxLayout>
-#include <QApplication>
 #include <QCoreApplication>
 #include <QEvent>
 #include <QStatusBar>
@@ -263,39 +259,6 @@ ZzCore::ZzResult<void> GuiWindowShell::initialize() {
                               QStringLiteral("GUI 导航面板不可用"));
   }
   window_->navigationPane()->hide();
-
-  auto *application =
-      qobject_cast<ZzPureTools::ZzPureApplication *>(QApplication::instance());
-  auto *themeController =
-      application != nullptr ? application->themeController() : nullptr;
-  if (themeController == nullptr) {
-    rollbackApplicationNavigation(*window_, *workspace, applicationBody);
-    return shellFailure<void>(ZzCore::ZzErrorCode::InvalidState,
-                              QStringLiteral("GUI 应用主题控制器不可用"));
-  }
-  const QPointer<QWidget> titleBar = window_->titleBar();
-  const QPointer<QWidget> tabWidget = workspace->tabWidget();
-  const QPointer<QWidget> statusBar = window_->statusBar();
-  const auto refreshThemePalette = [titleBar, tabWidget, statusBar] {
-    const QPalette palette = QApplication::palette();
-    if (titleBar != nullptr)
-      titleBar->setPalette(palette);
-    if (tabWidget != nullptr)
-      tabWidget->setPalette(palette);
-    if (statusBar != nullptr)
-      statusBar->setPalette(palette);
-  };
-  refreshThemePalette();
-  connect(themeController, &ZzFluentUI::ZzThemeController::snapshotChanged,
-          window_, refreshThemePalette);
-  connect(window_->titleBar(),
-          &ZzFluentUI::ZzFluentTitleBar::themeToggleRequested, window_,
-          [themeController] {
-            themeController->setMode(
-                themeController->mode() == ZzFluentUI::ZzThemeMode::Dark
-                    ? ZzFluentUI::ZzThemeMode::Light
-                    : ZzFluentUI::ZzThemeMode::Dark);
-          });
 
   workspace_ = std::move(workspace);
   return ZzCore::ZzResult<void>::success();
