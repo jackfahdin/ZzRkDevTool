@@ -32,6 +32,9 @@ void configureApplicationMetadata(
     ZzPureTools::ZzPureApplication &application)
 {
   Q_UNUSED(application);
+  // 全部应用弹窗走框架。Qt 在 Polish/Show 前就可能打开 macOS 原生提示，
+  // 必须在创建任何业务对话框前禁用原生路径，再由文件提示桥接接管展示。
+  QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
   QCoreApplication::setOrganizationName(QStringLiteral("ZzRkDevTool"));
   QCoreApplication::setOrganizationDomain(QStringLiteral("github.com"));
   QCoreApplication::setApplicationName(QStringLiteral("ZzRkDevTool"));

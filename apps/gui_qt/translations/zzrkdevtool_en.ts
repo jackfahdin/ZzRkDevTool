@@ -3,6 +3,10 @@
 <TS version="2.1" language="en" sourcelanguage="zh_CN">
   <context>
     <name>ZzRkDevTool</name>
+    <message><source>确定</source><translation>OK</translation></message>
+    <message><source>继续</source><translation>Continue</translation></message>
+    <message><source>重试</source><translation>Retry</translation></message>
+    <message><source>开始下载</source><translation>Start download</translation></message>
     <message><source>解析固件</source><translation>Parse firmware</translation></message>
     <message><source>生成升级计划</source><translation>Create upgrade plan</translation></message>
     <message><source>烧录固件</source><translation>Flash firmware</translation></message>

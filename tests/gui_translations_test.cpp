@@ -27,6 +27,8 @@ int main(int argc, char **argv) {
   QLabel chinese(guiText("设备"));
   if (chinese.text() != QStringLiteral("设备"))
     return 5;
+  if (QCoreApplication::translate("QFileDialog", "Delete") != QStringLiteral("删除"))
+    return 14;
   if (!translations.install(QStringLiteral("invalid")) ||
       guiText("取消") != QStringLiteral("取消"))
     return 6;
