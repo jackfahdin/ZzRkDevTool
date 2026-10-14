@@ -33,6 +33,9 @@ Qt GUI 使用完整的 [ZzPureTools](https://github.com/jackfahdin/ZzPureTools) 
 | 🔌 设备 | 发现 Rockchip USB 设备；按物理端口选择目标；查看 ChipInfo、Capability、FlashInfo、FlashID、eMMC 容量和 USB 接口信息 |
 | 🚀 完整升级 | 解析 `update.img`、验证 MD5、预览烧录计划；准备 RAM Loader；烧录 Loader、GPT 和固件实际携带的分区文件；选择校验模式与完成后重启 |
 | 🧩 分区 | 校验 GPT 后列出分区名称和 LBA 范围；备份、容量受限写入、回读校验、擦除和取消 |
+| ⚙️ 设置 | 配置目录、默认备份目录、主题及语言；重启恢复镜像草稿与操作选项 |
+
+首次启动可选择用户配置目录、应用所在目录或自定义目录。主题与语言即时生效，语言支持简体中文、英文和跟随系统。详见 [GUI 配置说明](docs/GUI_SETTINGS_ZH.md)。
 
 镜像目录优先匹配 `boot_a.img`、`boot_b.img` 等精确分区名；缺少精确文件时，通用的 `boot.img` 可同时匹配 A/B 两个槽位。匹配项及其回读校验默认开启，可分别调整。
 
@@ -61,7 +64,7 @@ Qt GUI 使用完整的 [ZzPureTools](https://github.com/jackfahdin/ZzPureTools) 
 | C++ 编译器 | 支持 C++20 | C++ 核心、CLI、Qt GUI 与 FFI |
 | CMake / Ninja | CMake ≥ 3.25；Ninja | C++ 构建 |
 | libusb | ≥ 1.0.30 | USB 传输；Qt 热插拔还需运行库具备 `LIBUSB_CAP_HAS_HOTPLUG` |
-| Qt | 6.11.1，含同版本 `CorePrivate`、`GuiPrivate`、`WidgetsPrivate` | Qt GUI；CLI 无需 Qt |
+| Qt | 6.11.1，含同版本 `CorePrivate`、`GuiPrivate`、`WidgetsPrivate` 及 `LinguistTools` | Qt GUI；CLI 无需 Qt |
 | Rust / libclang | Rust 稳定版工具链；bindgen 可加载的 libclang | GPUI 前端与 Rust 绑定 |
 
 Linux 预设使用仓库内的 `thirdParty/libusb`。Windows 热插拔要求 libusb 编译时启用 `LIBUSB_WINDOWS_HOTPLUG`，应使用仓库提供的 vcpkg overlay。详见[中文编译与打包指南](docs/BUILD_AND_PACKAGE.zh-CN.md)。

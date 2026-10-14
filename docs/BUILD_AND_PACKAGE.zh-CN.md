@@ -47,7 +47,9 @@ test -f "$HOME/Qt/6.11.1/gcc_64/lib/cmake/Qt6GuiPrivate/Qt6GuiPrivateConfig.cmak
 test -f "$HOME/Qt/6.11.1/gcc_64/lib/cmake/Qt6WidgetsPrivate/Qt6WidgetsPrivateConfig.cmake"
 ```
 
-GUI 启动路径固定为：先调用 `ZzWindowKitBootstrap::prepare()`，再构造 `ZzPureApplication`，通过 `ZzApplicationBuilder` 创建唯一的 `ZzApplicationWindow`，最后由 `GuiWindowShell` 装配 `ZzWorkspaceShell` 和顶部 4 个固定业务标签。不要在应用侧另建 `QApplication`、`QMainWindow` 或 `QTabWidget`。
+GUI 还需要 Qt `LinguistTools`（包含 `lrelease`）。英文 TS 在构建时生成 QM 并内嵌，安装包无需单独部署翻译文件。
+
+GUI 启动路径固定为：先调用 `ZzWindowKitBootstrap::prepare()`，再构造 `ZzPureApplication`，定位配置并安装翻译，通过 `ZzApplicationBuilder` 创建唯一的 `ZzApplicationWindow`，最后由 `GuiWindowShell` 装配工作区、4 个业务标签和设置标签。首次启动选择目录的行为见 [GUI 配置说明](GUI_SETTINGS_ZH.md)。不要在应用侧另建 `QApplication`、`QMainWindow` 或 `QTabWidget`。
 
 主要 CMake 选项：
 

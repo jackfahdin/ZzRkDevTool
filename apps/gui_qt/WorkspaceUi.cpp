@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "WorkspaceUi.hpp"
+#include "GuiTranslations.hpp"
 
 #include <ZzFluentUI/ZzButtonAppearance.h>
 #include <ZzFluentUI/ZzControlAppearance.h>
@@ -189,19 +190,23 @@ void configurePage(QWidget *page, QVBoxLayout *layout) {
 
 QWidget *card(QWidget *parent) { return new Surface(parent); }
 
-QLabel *sectionTitle(const QString &text, QWidget *parent) {
-  return label(text, parent, 14, QFont::DemiBold);
+QLabel *sectionTitle(const GuiText &text, QWidget *parent) {
+  auto *result = label(text, parent, 14, QFont::DemiBold);
+  setGuiText(result, "text", text);
+  return result;
 }
 
-QLabel *secondaryText(const QString &text, QWidget *parent) {
+QLabel *secondaryText(const GuiText &text, QWidget *parent) {
   auto *result = label(text, parent, 12, QFont::Normal);
+  setGuiText(result, "text", text);
   result->setForegroundRole(QPalette::PlaceholderText);
   return result;
 }
 
-QPushButton *button(const QString &text, const Icon role, QWidget *parent,
+QPushButton *button(const GuiText &text, const Icon role, QWidget *parent,
                     const bool accent) {
   auto *result = new ZzFluentUI::ZzPushButton(text, parent);
+  setGuiText(result, "text", text);
   result->setAppearance(accent ? ZzFluentUI::ZzButtonAppearance::Accent
                                : ZzFluentUI::ZzButtonAppearance::Standard);
   result->setIcon(icon(role));
@@ -237,7 +242,7 @@ void configureTable(QTableWidget *table) {
   // Qt 样式表会固定部分调色板角色，导致运行中切换主题后仍残留浅色背景。
 }
 
-void addProgressRow(QVBoxLayout *layout, const QString &title,
+void addProgressRow(QVBoxLayout *layout, const GuiText &title,
                     QProgressBar *progress, const bool primary) {
   auto *row = new QHBoxLayout;
   row->addWidget(secondaryText(title, layout->parentWidget()));
@@ -256,6 +261,7 @@ void addProgressRow(QVBoxLayout *layout, const QString &title,
   QObject::connect(progress, &QProgressBar::valueChanged, percent,
                    [progress](int) { refreshProgressText(progress); });
   refreshProgressText(progress);
+  bindGuiTranslation(progress, [progress] { refreshProgressText(progress); });
 }
 
 void refreshProgressText(QProgressBar *progress) {
@@ -267,14 +273,14 @@ void refreshProgressText(QProgressBar *progress) {
   if (percent != nullptr)
     percent->setText(
         progress->minimum() == 0 && progress->maximum() == 0
-            ? QStringLiteral("进行中")
+            ? guiText("进行中")
             : QStringLiteral("%1%").arg(qMax(0, progress->value())));
 }
 
 ZzFluentUI::ZzInfoBar *addErrorNotice(QVBoxLayout *layout) {
   auto *notice = new ZzFluentUI::ZzInfoBar(layout->parentWidget());
   notice->setSeverity(ZzFluentUI::ZzInfoBar::Error);
-  notice->setTitle(QStringLiteral("操作未完成"));
+  setGuiText(notice, "title", guiText("操作未完成"));
   notice->setClosable(false);
   notice->setAnimationEnabled(false);
   for (auto *label : notice->findChildren<QLabel *>())

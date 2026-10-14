@@ -11,17 +11,20 @@
 #include <QPointer>
 
 #include <memory>
+class QTimer;
 
 class QWidget;
 
 namespace ZzPureTools {
 class ZzApplicationWindow;
 class ZzWorkspaceShell;
-}
+} // namespace ZzPureTools
 
 namespace zzrk::gui {
 
 class MainWorkspaceController;
+class GuiSettingsStore;
+class SettingsPage;
 
 class GuiWindowShell final : public QObject {
   Q_OBJECT
@@ -30,7 +33,8 @@ public:
   [[nodiscard]] static ZzCore::ZzResult<void>
   attach(ZzPureTools::ZzApplicationWindow &window,
          std::shared_ptr<IGuiOperationBackend> backend,
-         bool showModalDialogs = true);
+         bool showModalDialogs = true,
+         std::shared_ptr<GuiSettingsStore> settings = {});
 
   [[nodiscard]] static GuiWindowShell *
   attachedTo(ZzPureTools::ZzApplicationWindow &window) noexcept;
@@ -41,6 +45,8 @@ public:
   GuiWindowShell &operator=(const GuiWindowShell &) = delete;
 
   [[nodiscard]] MainWorkspaceController *controller() const noexcept;
+  [[nodiscard]] std::shared_ptr<GuiSettingsStore> settings() const noexcept;
+  bool savePreferences();
 
   [[nodiscard]] ZzCore::ZzResult<std::unique_ptr<ZzPureTools::ZzPageInstance>>
   createInitialDownloadPage(QWidget *pageParent);
@@ -48,17 +54,25 @@ public:
 private:
   GuiWindowShell(ZzPureTools::ZzApplicationWindow &window,
                  std::shared_ptr<IGuiOperationBackend> backend,
-                 bool showModalDialogs);
+                 bool showModalDialogs,
+                 std::shared_ptr<GuiSettingsStore> settings);
 
   [[nodiscard]] ZzCore::ZzResult<void> initialize();
   void configureFixedTabs();
   void updateWindowTitle();
+  void restorePreferences();
+  void scheduleSave();
+  bool eventFilter(QObject *watched, QEvent *event) override;
 
   QPointer<ZzPureTools::ZzApplicationWindow> window_;
   std::shared_ptr<IGuiOperationBackend> backend_;
   bool showModalDialogs_ = true;
   std::unique_ptr<ZzPureTools::ZzWorkspaceShell> workspace_;
   QPointer<MainWorkspaceController> controller_;
+  std::shared_ptr<GuiSettingsStore> settings_;
+  QPointer<SettingsPage> settingsPage_;
+  QTimer *saveTimer_ = nullptr;
+  bool restoring_ = false;
 };
 
 } // namespace zzrk::gui

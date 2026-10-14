@@ -3,6 +3,7 @@
 #pragma once
 
 #include "GuiOperationBackend.hpp"
+#include "GuiTranslations.hpp"
 #include "MainWorkspaceViewModel.hpp"
 #include "UpgradeProgressTracker.hpp"
 
@@ -38,6 +39,7 @@ class DevicePage;
 class FullUpgradePage;
 class ImageDownloadPage;
 class PartitionPage;
+class GuiSettingsStore;
 
 /**
  * @brief 控制器销毁后仍可读取的关闭生命周期状态。
@@ -94,6 +96,10 @@ public:
   attachWorkspace(ZzFluentUI::ZzTabWidget *tabs, QStatusBar *statusBar,
                   ImageDownloadPage *downloadPage);
   void setExternalBusyCallback(std::function<bool()> callback);
+  void setSettings(std::shared_ptr<GuiSettingsStore> settings);
+  void restoreSettings();
+  void captureSettings();
+  void revalidateDownloadDraft();
   void attachPages(ImageDownloadPage *downloadPage, DevicePage *devicePage,
                    FullUpgradePage *upgradePage = nullptr,
                    PartitionPage *partitionPage = nullptr);
@@ -117,7 +123,7 @@ public:
       const zzrk::workflow::DevicePartitionTable *partitions);
   [[nodiscard]] const std::optional<zzrk::workflow::DevicePartitionTable> &
   devicePartitionTable() const noexcept;
-  [[nodiscard]] const QString &partitionTableStatus() const noexcept;
+  [[nodiscard]] QString partitionTableStatus() const;
 
   [[nodiscard]] ZzFluentUI::ZzTabWidget *mainTabs() const noexcept;
   [[nodiscard]] QLabel *connectionStatusText() const noexcept;
@@ -138,6 +144,7 @@ signals:
   void upgradeProgressChanged(int overallPercent, int operationPercent);
   void upgradeCompleted();
   void partitionOperationCompleted(bool success);
+  void preferencesChanged();
 
 private slots:
   void handleScanFinished();
@@ -223,7 +230,7 @@ private:
   QTimer *m_hotplugDebounceTimer = nullptr;
   zzrk::transport::ScanResult m_lastScanResult;
   QString m_deviceMonitoringError;
-  QString m_partitionTableStatus{QStringLiteral("尚未读取分区表")};
+  GuiText m_partitionTableStatus{guiText("尚未读取分区表")};
   bool m_hotplugRefreshPending = false;
   bool m_showModalDialogs = true;
   bool m_shuttingDown = false;
@@ -234,6 +241,7 @@ private:
   std::optional<zzrk::workflow::PreparedFirmwareUpgrade> m_preparedUpgrade;
   std::optional<UpgradeProgressTracker> m_progressTracker;
   QString m_firmwarePath;
+  bool m_startUpgradeAfterPreparation = false;
   zzrk::workflow::PartitionOperationPhase m_partitionOperationPhase{
       zzrk::workflow::PartitionOperationPhase::read};
   std::optional<zzrk::image::RockchipParameterLayout> m_downloadLayout;
@@ -244,6 +252,8 @@ private:
   std::unordered_map<std::string, bool> m_downloadSelections;
   std::unordered_map<std::string, bool> m_downloadVerifications;
   std::unordered_set<std::string> m_validDownloadImages;
+  std::shared_ptr<GuiSettingsStore> m_settings;
+  bool m_downloadDraftRestored = false;
 };
 
 } // namespace zzrk::gui

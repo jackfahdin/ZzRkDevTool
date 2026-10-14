@@ -2,9 +2,12 @@
 
 #include "GuiWindowShell.hpp"
 
+#include "GuiSettings.hpp"
+#include "GuiTranslations.hpp"
 #include "MainWorkspaceController.hpp"
 #include "MainWorkspaceViewModel.hpp"
 #include "pages/ImageDownloadPage.hpp"
+#include "pages/SettingsPage.hpp"
 
 #include <ZzCore/ZzError.h>
 #include <ZzCore/ZzErrorCode.h>
@@ -18,19 +21,26 @@
 #include <ZzFluentUI/ZzTabBar.h>
 #include <ZzFluentUI/ZzTabBarAppearance.h>
 #include <ZzFluentUI/ZzTabWidget.h>
+#include <ZzFluentUI/ZzThemeController.h>
 #include <ZzPureTools/ZzApplicationWindow.h>
 #include <ZzPureTools/ZzPageHost.h>
+#include <ZzPureTools/ZzPureApplication.h>
 #include <ZzPureTools/ZzWorkspaceCenterMode.h>
 #include <ZzPureTools/ZzWorkspacePanelId.h>
 #include <ZzPureTools/ZzWorkspaceShell.h>
 #include <ZzPureTools/ZzWorkspaceTitleMode.h>
+#include <ZzWindowKit/ZzWindowAgent.h>
 
+#include <QApplication>
 #include <QBoxLayout>
 #include <QCoreApplication>
 #include <QEvent>
+#include <QScreen>
 #include <QStatusBar>
 #include <QThread>
+#include <QTimer>
 #include <QWidget>
+#include <algorithm>
 
 #include <array>
 #include <exception>
@@ -141,8 +151,8 @@ void rollbackApplicationNavigation(
 }
 
 template <typename Value>
-[[nodiscard]] ZzCore::ZzResult<Value> shellFailure(
-    ZzCore::ZzErrorCode code, QString message) {
+[[nodiscard]] ZzCore::ZzResult<Value> shellFailure(ZzCore::ZzErrorCode code,
+                                                   QString message) {
   return ZzCore::ZzResult<Value>::failure(
       ZzCore::ZzError(code, std::move(message)));
 }
@@ -152,15 +162,16 @@ template <typename Value>
 ZzCore::ZzResult<void>
 GuiWindowShell::attach(ZzPureTools::ZzApplicationWindow &window,
                        std::shared_ptr<IGuiOperationBackend> backend,
-                       const bool showModalDialogs) {
+                       const bool showModalDialogs,
+                       std::shared_ptr<GuiSettingsStore> settings) {
   if (attachedTo(window) != nullptr) {
     return shellFailure<void>(ZzCore::ZzErrorCode::InvalidState,
-                              QStringLiteral("GUI 窗口壳层只能装配一次"));
+                              guiText("GUI 窗口壳层只能装配一次"));
   }
 
   try {
     auto shell = std::unique_ptr<GuiWindowShell>(new GuiWindowShell(
-        window, std::move(backend), showModalDialogs));
+        window, std::move(backend), showModalDialogs, std::move(settings)));
     auto initialized = shell->initialize();
     if (!initialized) {
       return initialized;
@@ -170,11 +181,11 @@ GuiWindowShell::attach(ZzPureTools::ZzApplicationWindow &window,
   } catch (const std::exception &exception) {
     return shellFailure<void>(
         ZzCore::ZzErrorCode::Unknown,
-        QStringLiteral("无法创建 GUI 窗口壳层：%1")
+        guiText("无法创建 GUI 窗口壳层：%1")
             .arg(QString::fromLocal8Bit(exception.what())));
   } catch (...) {
     return shellFailure<void>(ZzCore::ZzErrorCode::Unknown,
-                              QStringLiteral("无法创建 GUI 窗口壳层"));
+                              guiText("无法创建 GUI 窗口壳层"));
   }
 }
 
@@ -184,39 +195,41 @@ GuiWindowShell::attachedTo(ZzPureTools::ZzApplicationWindow &window) noexcept {
                                             Qt::FindDirectChildrenOnly);
 }
 
-GuiWindowShell::GuiWindowShell(
-    ZzPureTools::ZzApplicationWindow &window,
-    std::shared_ptr<IGuiOperationBackend> backend,
-    const bool showModalDialogs)
+GuiWindowShell::GuiWindowShell(ZzPureTools::ZzApplicationWindow &window,
+                               std::shared_ptr<IGuiOperationBackend> backend,
+                               const bool showModalDialogs,
+                               std::shared_ptr<GuiSettingsStore> settings)
     : QObject(&window), window_(&window), backend_(std::move(backend)),
-      showModalDialogs_(showModalDialogs) {
+      showModalDialogs_(showModalDialogs), settings_(std::move(settings)) {
   setObjectName(QStringLiteral("guiWindowShell"));
+  saveTimer_ = new QTimer(this);
+  saveTimer_->setSingleShot(true);
+  saveTimer_->setInterval(400);
+  connect(saveTimer_, &QTimer::timeout, this, [this] { savePreferences(); });
+  window.installEventFilter(this);
 }
 
 GuiWindowShell::~GuiWindowShell() = default;
 
 ZzCore::ZzResult<void> GuiWindowShell::initialize() {
   if (window_ == nullptr || backend_ == nullptr) {
-    return shellFailure<void>(
-        ZzCore::ZzErrorCode::InvalidArgument,
-        QStringLiteral("GUI 窗口壳层需要窗口和操作后端"));
+    return shellFailure<void>(ZzCore::ZzErrorCode::InvalidArgument,
+                              guiText("GUI 窗口壳层需要窗口和操作后端"));
   }
   if (QThread::currentThread() != window_->thread()) {
     return shellFailure<void>(ZzCore::ZzErrorCode::InvalidState,
-                              QStringLiteral("GUI 窗口壳层必须在 GUI 线程装配"));
+                              guiText("GUI 窗口壳层必须在 GUI 线程装配"));
   }
 
   const ApplicationBodySnapshot applicationBody =
       captureApplicationBody(*window_);
   if (!applicationBody.isValid()) {
-    return shellFailure<void>(
-        ZzCore::ZzErrorCode::InvalidState,
-        QStringLiteral("GUI 应用窗口中央导航结构不可用"));
+    return shellFailure<void>(ZzCore::ZzErrorCode::InvalidState,
+                              guiText("GUI 应用窗口中央导航结构不可用"));
   }
 
   auto workspaceResult = ZzPureTools::ZzWorkspaceShell::create(
-      window_, window_->titleBar(),
-      ZzPureTools::ZzWorkspaceCenterMode::Tabbed);
+      window_, window_->titleBar(), ZzPureTools::ZzWorkspaceCenterMode::Tabbed);
   if (!workspaceResult) {
     return ZzCore::ZzResult<void>::failure(workspaceResult.error());
   }
@@ -225,10 +238,10 @@ ZzCore::ZzResult<void> GuiWindowShell::initialize() {
   workspace->setTitleMode(ZzPureTools::ZzWorkspaceTitleMode::Application);
 
   auto integrated = workspace->integrateApplicationNavigation(
-      kNavigationPanelId, QStringLiteral("内部导航"),
+      kNavigationPanelId, guiText("内部导航"),
       ZzFluentUI::ZzIconDescriptor::fromFontIcon(
           ZzFluentUI::ZzFontIcon::Download),
-      ZzFluentUI::ZzActivityArea::LeftPrimary, QStringLiteral("下载镜像"));
+      ZzFluentUI::ZzActivityArea::LeftPrimary, guiText("下载镜像"));
   if (!integrated) {
     return integrated;
   }
@@ -247,9 +260,8 @@ ZzCore::ZzResult<void> GuiWindowShell::initialize() {
     auto *sidePane = workspace->sidePane(edge);
     if (activityBar == nullptr || sidePane == nullptr) {
       rollbackApplicationNavigation(*window_, *workspace, applicationBody);
-      return shellFailure<void>(
-          ZzCore::ZzErrorCode::InvalidState,
-          QStringLiteral("GUI 工作区侧栏表面不可用"));
+      return shellFailure<void>(ZzCore::ZzErrorCode::InvalidState,
+                                guiText("GUI 工作区侧栏表面不可用"));
     }
     activityBar->hide();
     sidePane->hide();
@@ -257,7 +269,7 @@ ZzCore::ZzResult<void> GuiWindowShell::initialize() {
   if (window_->navigationPane() == nullptr) {
     rollbackApplicationNavigation(*window_, *workspace, applicationBody);
     return shellFailure<void>(ZzCore::ZzErrorCode::InvalidState,
-                              QStringLiteral("GUI 导航面板不可用"));
+                              guiText("GUI 导航面板不可用"));
   }
   window_->navigationPane()->hide();
 
@@ -282,18 +294,16 @@ GuiWindowShell::createInitialDownloadPage(QWidget *pageParent) {
       pageParent->window() != window_) {
     return shellFailure<PageInstance>(
         ZzCore::ZzErrorCode::InvalidArgument,
-        QStringLiteral("下载镜像页面需要当前框架窗口的页面父对象"));
+        guiText("下载镜像页面需要当前框架窗口的页面父对象"));
   }
   if (controller_ != nullptr) {
-    return shellFailure<PageInstance>(
-        ZzCore::ZzErrorCode::InvalidState,
-        QStringLiteral("下载镜像页面已经创建"));
+    return shellFailure<PageInstance>(ZzCore::ZzErrorCode::InvalidState,
+                                      guiText("下载镜像页面已经创建"));
   }
   auto *tabs = workspace_->tabWidget();
   if (tabs == nullptr || window_->statusBar() == nullptr) {
-    return shellFailure<PageInstance>(
-        ZzCore::ZzErrorCode::InvalidState,
-        QStringLiteral("GUI 工作区标签或状态栏不可用"));
+    return shellFailure<PageInstance>(ZzCore::ZzErrorCode::InvalidState,
+                                      guiText("GUI 工作区标签或状态栏不可用"));
   }
 
   auto viewModel = std::make_unique<MainWorkspaceViewModel>();
@@ -316,10 +326,157 @@ GuiWindowShell::createInitialDownloadPage(QWidget *pageParent) {
     return instance;
   }
   controller_ = controllerObserver;
+  auto *application = qobject_cast<ZzPureTools::ZzPureApplication *>(qApp);
+  settingsPage_ =
+      new SettingsPage(settings_, application->themeController(), tabs);
+  tabs->addTab(settingsPage_, guiText("设置"));
+  settingsPage_->setFlushCallback([this] { return savePreferences(); });
+  settingsPage_->setLanguageCallback([](const QString &language) {
+    auto *translations = GuiTranslations::active();
+    return translations && translations->install(language);
+  });
+  connect(settingsPage_, &SettingsPage::saveRequested, this,
+          &GuiWindowShell::scheduleSave);
+  connect(settingsPage_, &SettingsPage::resetRequested, this, [this] {
+    restorePreferences();
+    settingsPage_->refresh();
+  });
+  connect(controller_, &MainWorkspaceController::preferencesChanged, this,
+          &GuiWindowShell::scheduleSave);
+  connect(controller_->viewModel(), &MainWorkspaceViewModel::busyChanged,
+          settingsPage_, &SettingsPage::setBusy);
+  connect(tabs, &QTabWidget::currentChanged, this,
+          &GuiWindowShell::scheduleSave);
+  connect(application->themeController(),
+          &ZzFluentUI::ZzThemeController::snapshotChanged, this,
+          &GuiWindowShell::scheduleSave);
+  connect(window_->titleBar(),
+          &ZzFluentUI::ZzFluentTitleBar::alwaysOnTopChanged, this,
+          &GuiWindowShell::scheduleSave);
+  controller_->setSettings(settings_);
+  restorePreferences();
   configureFixedTabs();
   workspace_->setApplicationTitle(QStringLiteral("ZzRkDevTool"));
   updateWindowTitle();
   return instance;
+}
+
+std::shared_ptr<GuiSettingsStore> GuiWindowShell::settings() const noexcept {
+  return settings_;
+}
+
+void GuiWindowShell::scheduleSave() {
+  if (settings_ && !restoring_)
+    saveTimer_->start();
+}
+
+bool GuiWindowShell::eventFilter(QObject *watched, QEvent *event) {
+  if (watched == window_ && event->type() == QEvent::LanguageChange &&
+      workspace_) {
+    // 固定标签只修改标题，页面实例、当前索引及后台任务保持不变。
+    auto *tabs = workspace_->tabWidget();
+    const std::array names{"下载镜像", "设备", "完整升级", "分区", "设置"};
+    for (int index = 0;
+         index < tabs->count() && index < static_cast<int>(names.size());
+         ++index)
+      tabs->setTabText(index, guiText(names[static_cast<std::size_t>(index)]));
+    updateWindowTitle();
+  }
+  if (watched == window_ && settings_ && controller_ && !restoring_) {
+    if (event->type() == QEvent::Close)
+      savePreferences();
+    else if (event->type() == QEvent::Move || event->type() == QEvent::Resize ||
+             event->type() == QEvent::WindowStateChange)
+      scheduleSave();
+  }
+  return QObject::eventFilter(watched, event);
+}
+
+bool GuiWindowShell::savePreferences() {
+  if (!settings_ || restoring_ || !window_ || !controller_)
+    return true;
+  saveTimer_->stop();
+  controller_->captureSettings();
+  auto *application = qobject_cast<ZzPureTools::ZzPureApplication *>(qApp);
+  const auto mode = application->themeController()->mode();
+  settings_->setValue(
+      QStringLiteral("appearance/theme"),
+      mode == ZzFluentUI::ZzThemeMode::Dark    ? QStringLiteral("dark")
+      : mode == ZzFluentUI::ZzThemeMode::Light ? QStringLiteral("light")
+                                               : QStringLiteral("system"));
+  settings_->setValue(QStringLiteral("window/tab"),
+                      workspace_->tabWidget()->currentIndex());
+  settings_->setValue(QStringLiteral("window/geometry"),
+                      window_->isMaximized() || window_->isMinimized()
+                          ? window_->normalGeometry()
+                          : window_->geometry());
+  settings_->setValue(QStringLiteral("window/maximized"),
+                      window_->isMaximized());
+  settings_->setValue(QStringLiteral("window/pinned"),
+                      window_->titleBar()->isAlwaysOnTop());
+  const auto result = settings_->sync();
+  if (!result) {
+    setGuiStatus(window_->statusBar(),
+        guiText("配置保存失败：%1").arg(result.error().technicalMessage()));
+    return false;
+  }
+  return true;
+}
+
+void GuiWindowShell::restorePreferences() {
+  if (!settings_ || !window_ || !controller_)
+    return;
+  restoring_ = true;
+  saveTimer_->stop();
+  auto *application = qobject_cast<ZzPureTools::ZzPureApplication *>(qApp);
+  const auto theme =
+      settings_
+          ->value(QStringLiteral("appearance/theme"), QStringLiteral("system"))
+          .toString();
+  if (auto *translations = GuiTranslations::active())
+    translations->install(settings_
+                              ->value(QStringLiteral("appearance/language"),
+                                      QStringLiteral("system"))
+                              .toString());
+  application->themeController()->setMode(
+      theme == QStringLiteral("dark")    ? ZzFluentUI::ZzThemeMode::Dark
+      : theme == QStringLiteral("light") ? ZzFluentUI::ZzThemeMode::Light
+                                         : ZzFluentUI::ZzThemeMode::System);
+  auto geometry = settings_->value(QStringLiteral("window/geometry")).toRect();
+  if (geometry.isValid()) {
+    QScreen *screen = window_->screen();
+    for (auto *candidate : QGuiApplication::screens())
+      if (candidate->availableGeometry().intersects(geometry)) {
+        screen = candidate;
+        break;
+      }
+    const auto available = screen->availableGeometry();
+    geometry.setSize(geometry.size()
+                         .expandedTo(window_->minimumSize())
+                         .boundedTo(available.size()));
+    geometry.moveLeft(std::clamp(geometry.left(), available.left(),
+                                 available.right() - geometry.width() + 1));
+    geometry.moveTop(std::clamp(geometry.top(), available.top(),
+                                available.bottom() - geometry.height() + 1));
+    window_->setGeometry(geometry);
+  }
+  if (settings_->value(QStringLiteral("window/maximized"), false).toBool())
+    window_->setWindowState(Qt::WindowMaximized);
+  else
+    window_->setWindowState(Qt::WindowNoState);
+  const auto pinResult = window_->windowAgent()->setAlwaysOnTop(
+      settings_->value(QStringLiteral("window/pinned"), false).toBool());
+  if (pinResult)
+    window_->titleBar()->setAlwaysOnTop(
+        window_->windowFlags().testFlag(Qt::WindowStaysOnTopHint));
+  controller_->restoreSettings();
+  auto *tabs = workspace_->tabWidget();
+  tabs->setCurrentIndex(
+      std::clamp(settings_->value(QStringLiteral("window/tab"), 0).toInt(), 0,
+                 tabs->count() - 1));
+  if (settingsPage_)
+    settingsPage_->refresh();
+  restoring_ = false;
 }
 
 void GuiWindowShell::updateWindowTitle() {
@@ -329,9 +486,9 @@ void GuiWindowShell::updateWindowTitle() {
   const QString applicationTitle = workspace_->applicationTitle();
   const QString pageTitle = tabs->tabText(tabs->currentIndex());
   // 页面名称取自顶部标签，后续改名只需修改标签文案；系统窗口与框架标题栏同步更新。
-  workspace_->setCustomTitle(pageTitle.isEmpty()
-                                ? applicationTitle
-                                : applicationTitle + QStringLiteral("-") + pageTitle);
+  workspace_->setCustomTitle(
+      pageTitle.isEmpty() ? applicationTitle
+                          : applicationTitle + QStringLiteral("-") + pageTitle);
 }
 
 void GuiWindowShell::configureFixedTabs() {

@@ -245,6 +245,16 @@ if(TARGET zzrk_gui_support)
     endfunction()
 
     zzrk_add_gui_test(gui_framework gui_framework_test.cpp)
+    zzrk_add_gui_test(gui_settings_restore gui_settings_restore_test.cpp)
+    add_test(NAME gui_settings_english COMMAND gui_settings_restore_test --english)
+    set_tests_properties(gui_settings_english PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_test(NAME gui_live_language COMMAND gui_settings_restore_test --live)
+    set_tests_properties(gui_live_language PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    zzrk_add_gui_test(gui_settings_dialog gui_settings_dialog_test.cpp)
+    add_executable(zzrk_gui_settings_test gui_settings_test.cpp)
+    target_link_libraries(zzrk_gui_settings_test PRIVATE zzrk::gui zzrk_project_warnings)
+    add_test(NAME gui_settings COMMAND zzrk_gui_settings_test)
+    zzrk_add_gui_test(gui_translations gui_translations_test.cpp)
 
     add_executable(upgrade_progress_tracker_test
                    upgrade_progress_tracker_test.cpp)

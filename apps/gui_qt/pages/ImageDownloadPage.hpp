@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "GuiTranslations.hpp"
 #include <QString>
 #include <QWidget>
 
@@ -33,12 +34,12 @@ public:
   struct PlanRow {
     RowKind kind = RowKind::partition;
     QString target;
-    QString lba;
+    GuiText lba;
     QString capacity;
     QString file;
-    QString format;
+    GuiText format;
     QString expandedSize;
-    QString status;
+    GuiText status;
     bool selected = false;
     bool selectionForced = false;
     bool verify = true;
@@ -84,13 +85,13 @@ public:
   [[nodiscard]] std::optional<PlanTarget> currentTarget() const;
 
   void setPlan(std::vector<PlanRow> rows);
-  void setTargetStatus(const QString &target, const QString &status);
-  void setSelectedTargetsStatus(const QString &status);
+  void setTargetStatus(const QString &target, const GuiText &status);
+  void setSelectedTargetsStatus(const GuiText &status);
   void setProgress(int overallPercent, int operationPercent,
                    bool overallIndeterminate = false,
                    bool operationIndeterminate = false);
-  void setStatus(const QString &text);
-  void setError(const QString &text);
+  void setStatus(const GuiText &text);
+  void setError(const GuiText &text);
   void setBusy(bool busy, bool canStart, bool canCancel);
 
 signals:

@@ -4,6 +4,7 @@
 
 #include <zzrk/image/RkFirmwareFlasher.hpp>
 
+#include "GuiTranslations.hpp"
 #include <QString>
 #include <QWidget>
 
@@ -31,11 +32,11 @@ public:
   [[nodiscard]] bool rebootAfterFlash() const;
 
   void setFirmwarePath(const QString &path);
-  void setPlanPreview(const QString &text);
+  void setPlanPreview(const GuiText &text);
   void setOverallProgress(int percent, bool indeterminate = false);
   void setOperationProgress(int percent, bool indeterminate = false);
-  void setStatus(const QString &text);
-  void setError(const QString &text);
+  void setStatus(const GuiText &text);
+  void setError(const GuiText &text);
   void setBusy(bool busy, bool canStart, bool canCancel);
 
 signals:

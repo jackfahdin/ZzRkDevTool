@@ -981,7 +981,7 @@ int main(int argc, char **argv) {
     if (mainTabs != nullptr) {
       const QStringList expectedTabs{
           QStringLiteral("下载镜像"), QStringLiteral("设备"),
-          QStringLiteral("完整升级"), QStringLiteral("分区")};
+          QStringLiteral("完整升级"), QStringLiteral("分区"), QStringLiteral("设置")};
       QStringList actualTabs;
       for (int index = 0; index < mainTabs->count(); ++index)
         actualTabs.append(mainTabs->tabText(index));

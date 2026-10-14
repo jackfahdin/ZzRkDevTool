@@ -3,6 +3,9 @@
 #include "GuiApplicationBootstrap.hpp"
 #include "GuiWindowShell.hpp"
 #include "MainWorkspaceController.hpp"
+#include "GuiSettings.hpp"
+#include "GuiTranslations.hpp"
+#include "SettingsLocationDialog.hpp"
 
 #include <zzrk/logging/Logging.hpp>
 
@@ -15,6 +18,8 @@
 #include <QStatusBar>
 #include <QTimer>
 #include <QToolButton>
+#include <QStandardPaths>
+#include <QDir>
 
 #include <cstdlib>
 #include <memory>
@@ -30,9 +35,9 @@ bool hasCompletedUiState(const ZzPureTools::ZzApplicationWindow &window)
     const auto *refreshButton =
         window.findChild<QToolButton *>(QStringLiteral("refreshButton"));
     return connectionText != nullptr && !connectionText->text().isEmpty()
-        && connectionText->text() != QStringLiteral("正在检测设备...")
+        && connectionText->text() != zzrk::gui::guiText("正在检测设备...")
         && lastScanText != nullptr
-        && lastScanText->text().startsWith(QStringLiteral("更新于 "))
+        && lastScanText->text().startsWith(zzrk::gui::guiText("更新于 "))
         && refreshButton != nullptr && refreshButton->isEnabled()
         && window.statusBar() != nullptr
         && !window.statusBar()->currentMessage().isEmpty();
@@ -83,6 +88,36 @@ int main(int argc, char *argv[])
     zzrk::gui::GuiApplicationOptions options;
     options.showModalDialogs = !smokeTest;
     options.smokeTest = smokeTest;
+    zzrk::gui::GuiTranslations translations;
+    if (!smokeTest) {
+        auto applicationDirectory = QCoreApplication::applicationDirPath();
+#ifdef Q_OS_MACOS
+        // macOS 的可执行文件在 .app 内；便携配置放在 .app 同级目录，避免修改签名包。
+        QDir directory(applicationDirectory);
+        if (directory.dirName() == QStringLiteral("MacOS")) {
+            directory.cdUp(); directory.cdUp(); directory.cdUp();
+            applicationDirectory = directory.absolutePath();
+        }
+#endif
+        options.settings = std::make_shared<zzrk::gui::GuiSettingsStore>(
+            QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation),
+            applicationDirectory);
+        translations.install(QStringLiteral("system"));
+        const auto located = options.settings->locate();
+        if (!located || !located.value()) {
+            const QString reason = located ? QString{} :
+                zzrk::gui::guiText("原配置不可用，请重新选择有效目录：%1")
+                    .arg(located.error().technicalMessage());
+            const bool quitOnClose = application.quitOnLastWindowClosed();
+            application.setQuitOnLastWindowClosed(false);
+            const bool selected = zzrk::gui::chooseSettingsLocation(*options.settings, nullptr, false, reason);
+            application.setQuitOnLastWindowClosed(quitOnClose);
+            if (!selected) return EXIT_SUCCESS;
+        }
+        if (!translations.install(options.settings->value(QStringLiteral("appearance/language"), QStringLiteral("system")).toString())) {
+            zzrk::logging::error("GUI translation resource could not be loaded");
+        }
+    }
     auto buildResult = zzrk::gui::buildGuiApplication(application, options);
     if (!buildResult) {
         zzrk::gui::reportStartupFailure("GUI application build failed",
@@ -96,6 +131,8 @@ int main(int argc, char *argv[])
         zzrk::logging::error("GUI workspace controller is unavailable");
         return EXIT_FAILURE;
     }
+    QObject::connect(&application, &QCoreApplication::aboutToQuit, shell,
+                     [shell] { shell->savePreferences(); });
 
     if (smokeTest) {
         constexpr int requiredCompletedScans = 2;

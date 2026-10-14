@@ -2,6 +2,7 @@
 
 #include "GuiOperationBackend.hpp"
 #include "GuiTestHarness.hpp"
+#include "GuiTranslations.hpp"
 #include "MainWorkspaceController.hpp"
 #include "MainWorkspaceViewModel.hpp"
 #include "pages/FullUpgradePage.hpp"
@@ -12,10 +13,12 @@
 #include <QCheckBox>
 #include <QCoreApplication>
 #include <QEventLoop>
+#include <QFileDialog>
 #include <QLabel>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QTableWidget>
+#include <QTemporaryFile>
 #include <QTimer>
 #include <QToolButton>
 
@@ -423,6 +426,10 @@ int main() {
   auto &application = *harness->application();
   auto *window = harness->window();
   auto *controller = harness->controller();
+  QTemporaryFile partitionImage;
+  if (!partitionImage.open() || partitionImage.write("partition") != 9)
+    return EXIT_FAILURE;
+  partitionImage.flush();
   window->show();
 
   const auto cancellationButtonsStayDisabled = [&]() {
@@ -559,6 +566,7 @@ int main() {
   bool inspectionCompleted = false;
   bool partitionsCompleted = false;
   bool partitionOperationFinished = false;
+  bool verifiedWriteFinished = false;
   bool upgradeUiCompleted = false;
   bool observedWorkspaceBusy = false;
   bool failed = false;
@@ -690,6 +698,25 @@ int main() {
             QStringLiteral("partitionProgress"));
         const auto *status =
             window->findChild<QLabel *>(QStringLiteral("partitionStatus"));
+        if (partitionOperationFinished) {
+          // 完成真实控制器的模拟写入后切换语言，连同校验后缀一起验证。
+          auto *translations = zzrk::gui::GuiTranslations::active();
+          verifiedWriteFinished = success && status != nullptr &&
+              status->text().contains(QStringLiteral("回读校验通过")) &&
+              translations != nullptr && translations->install("en");
+          QCoreApplication::sendPostedEvents(nullptr, QEvent::LanguageChange);
+          verifiedWriteFinished = verifiedWriteFinished &&
+              status->text().startsWith(QStringLiteral("Write complete")) &&
+              status->text().contains(QStringLiteral("readback verification passed"));
+          if (!verifiedWriteFinished || !translations->install("zh_CN")) {
+            failed = true;
+            application.exit(EXIT_FAILURE);
+            return;
+          }
+          QCoreApplication::sendPostedEvents(nullptr, QEvent::LanguageChange);
+          harness->loadFirmwareImage(QStringLiteral("automated-update.img"));
+          return;
+        }
         partitionOperationFinished =
             success && progress != nullptr && progress->value() == 100 &&
             status != nullptr &&
@@ -699,7 +726,19 @@ int main() {
           application.exit(EXIT_FAILURE);
           return;
         }
-        harness->loadFirmwareImage(QStringLiteral("automated-update.img"));
+        QTimer::singleShot(0, window, [&] {
+          auto *dialog = window->findChild<QDialog *>(QStringLiteral("fileSelectionDialog"));
+          auto *browser = dialog != nullptr ? dialog->findChild<QFileDialog *>() : nullptr;
+          if (browser == nullptr) {
+            failed = true;
+            application.exit(EXIT_FAILURE);
+            return;
+          }
+          QTimer::singleShot(2000, dialog, &QDialog::reject);
+          browser->selectFile(partitionImage.fileName());
+          QMetaObject::invokeMethod(browser, "accept", Qt::DirectConnection);
+        });
+        window->findChild<QPushButton *>(QStringLiteral("writePartitionButton"))->click();
       });
 
   QObject::connect(controller,
@@ -753,11 +792,11 @@ int main() {
         controller->viewModel()->overallProgress() == 100 &&
         controller->viewModel()->operationProgress() == 100 &&
         inspectionCompleted && partitionsCompleted &&
-        partitionOperationFinished && backend->scans.load() >= 1 &&
+        partitionOperationFinished && verifiedWriteFinished && backend->scans.load() >= 1 &&
         backend->preparations.load() == 1 && backend->upgrades.load() == 1 &&
         backend->inspections.load() == 1 &&
         backend->partitionReads.load() == 1 &&
-        backend->partitionOperations.load() == 1;
+        backend->partitionOperations.load() == 2;
     upgradeUiCompleted = complete;
     failed = failed || !complete;
     if (failed) {

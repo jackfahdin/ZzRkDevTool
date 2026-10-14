@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "GuiTranslations.hpp"
 #include <QString>
 #include <QWidget>
 
@@ -19,8 +20,8 @@ class DevicePage final : public QWidget {
 public:
   struct DeviceRow {
     QString key;
-    QString status;
-    QString mode;
+    GuiText status;
+    GuiText mode;
     QString deviceId;
     QString bus;
     QString portPath;
@@ -40,11 +41,11 @@ public:
   [[nodiscard]] QString selectedPortPath() const;
   void selectPort(const QString &port);
   void setDevices(std::vector<DeviceRow> devices);
-  void setInspection(const QString &status, const QString &chipInfo = {},
-                     const QString &capability = {},
-                     const QString &flashId = {}, const QString &capacity = {},
-                     const QString &flashInfo = {},
-                     const QString &usbInterface = {});
+  void setInspection(const GuiText &status, const GuiText &chipInfo = {},
+                     const GuiText &capability = {},
+                     const GuiText &flashId = {}, const GuiText &capacity = {},
+                     const GuiText &flashInfo = {},
+                     const GuiText &usbInterface = {});
   void setBusy(bool busy, bool canInspect);
 
 signals:
@@ -55,6 +56,7 @@ private:
   explicit DevicePage(QWidget *parent);
 
   QTableWidget *m_table = nullptr;
+  std::vector<DeviceRow> m_rows;
   QPushButton *m_inspectButton = nullptr;
   QLabel *m_status = nullptr;
   QLabel *m_chipInfo = nullptr;

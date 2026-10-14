@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "GuiTranslations.hpp"
 #include <QString>
 #include <QWidget>
 
@@ -38,8 +39,8 @@ public:
   void setPartitions(std::vector<PartitionRow> partitions);
   void clearPartitions();
   void setProgress(int percent, bool indeterminate = false);
-  void setStatus(const QString &text);
-  void setError(const QString &text);
+  void setStatus(const GuiText &text);
+  void setError(const GuiText &text);
   void setBusy(bool busy, bool canRead, bool canOperate, bool canCancel);
 
 signals:

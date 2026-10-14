@@ -1,6 +1,6 @@
 # GUI 外观修改指南
 
-界面使用项目已有的 ZzPureTools，顶部四个功能标签和业务控制器保持原来的职责划分。修改布局通常不需要修改 USB、镜像解析或烧录代码。
+界面使用项目已有的 ZzPureTools，顶部四个业务标签及设置标签和业务控制器保持明确的职责划分。修改布局通常不需要修改 USB、镜像解析或烧录代码。
 
 ## 先找这些文件
 
@@ -16,6 +16,7 @@
 | 设备列表及可展开原始信息 | `pages/DevicePage.cpp` 构造函数 |
 | 完整升级的固件、计划和任务分区 | `pages/FullUpgradePage.cpp` 构造函数 |
 | 分区表与操作按钮位置 | `pages/PartitionPage.cpp` 构造函数 |
+| 设置页面、首次启动及配置持久化 | `pages/SettingsPage.cpp`，详见 [配置说明](GUI_SETTINGS_ZH.md) |
 
 表中 `pages/` 路径均位于 `apps/gui_qt/` 下。
 
@@ -41,7 +42,7 @@
 bar->setAppearance(ZzFluentUI::ZzTabBarAppearance::PivotSlide);
 ```
 
-例如换成 `SegmentedSlide`。四个标签采用纯文字，避免与标题栏混用图标样式。主题、置顶、最小化、最大化和关闭继续交给 ZzPureTools 管理。
+例如换成 `SegmentedSlide`。标签采用纯文字，避免与标题栏混用图标样式。主题、置顶、最小化、最大化和关闭继续交给 ZzPureTools 管理。
 
 标题栏使用框架 `Custom` 标题模式，在标签切换时读取标签名称并同步系统窗口和框架标题栏。修改分隔符或显示顺序只需修改 `updateWindowTitle()`，无需修改框架子仓库。
 

@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: MIT
 
 #include "FileSelectionDialog.hpp"
+#include "GuiSettings.hpp"
+#include "GuiTranslations.hpp"
+#include "GuiWindowShell.hpp"
 #include "WorkspaceUi.hpp"
+#include <QStatusBar>
+#include <ZzPureTools/ZzApplicationWindow.h>
 
 #include <ZzFluentUI/ZzContentDialog.h>
 #include <ZzFluentUI/ZzSegoeIconFont.h>
@@ -15,8 +20,8 @@
 #include <QFileDialog>
 #include <QFileIconProvider>
 #include <QFileInfo>
-#include <QHeaderView>
 #include <QGridLayout>
+#include <QHeaderView>
 #include <QIdentityProxyModel>
 #include <QLabel>
 #include <QLayout>
@@ -24,8 +29,8 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QScreen>
-#include <QStandardPaths>
 #include <QSplitter>
+#include <QStandardPaths>
 #include <QStyledItemDelegate>
 #include <QToolButton>
 #include <QTreeView>
@@ -54,16 +59,16 @@ public:
   }
   QString type(const QFileInfo &info) const override {
     if (info.isDir())
-      return QStringLiteral("文件夹");
+      return guiText("文件夹");
     const auto suffix = info.suffix().toLower();
     if (suffix == QStringLiteral("img"))
-      return QStringLiteral("镜像文件");
+      return guiText("镜像文件");
     if (suffix == QStringLiteral("bin"))
-      return QStringLiteral("二进制文件");
+      return guiText("二进制文件");
     if (suffix == QStringLiteral("txt"))
-      return QStringLiteral("文本文件");
-    return suffix.isEmpty() ? QStringLiteral("文件")
-                           : suffix.toUpper() + QStringLiteral(" 文件");
+      return guiText("文本文件");
+    return suffix.isEmpty() ? guiText("文件")
+                            : suffix.toUpper() + guiText(" 文件");
   }
 };
 
@@ -73,8 +78,8 @@ public:
   using QIdentityProxyModel::QIdentityProxyModel;
   QVariant headerData(int section, Qt::Orientation orientation,
                       int role) const override {
-    const QStringList labels{QStringLiteral("名称"), QStringLiteral("大小"),
-                             QStringLiteral("类型"), QStringLiteral("修改时间")};
+    const QStringList labels{guiText("名称"), guiText("大小"), guiText("类型"),
+                             guiText("修改时间")};
     if (orientation == Qt::Horizontal && role == Qt::DisplayRole &&
         section >= 0 && section < labels.size())
       return labels.at(section);
@@ -98,6 +103,7 @@ class PlaceRows final : public FileRows {
 public:
   PlaceRows(QFileDialog *browser, QWidget *parent)
       : FileRows(parent), m_browser(browser) {}
+
 protected:
   void initStyleOption(QStyleOptionViewItem *option,
                        const QModelIndex &index) const override {
@@ -107,14 +113,18 @@ protected:
       return;
     const QString path = urls.at(index.row()).toLocalFile();
     if (path == QDir::homePath())
-      option->text = QStringLiteral("主目录");
-    else if (path == QStandardPaths::writableLocation(QStandardPaths::DesktopLocation))
-      option->text = QStringLiteral("桌面");
-    else if (path == QStandardPaths::writableLocation(QStandardPaths::DownloadLocation))
-      option->text = QStringLiteral("下载");
-    else if (path == QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
-      option->text = QStringLiteral("文档");
+      option->text = guiText("主目录");
+    else if (path ==
+             QStandardPaths::writableLocation(QStandardPaths::DesktopLocation))
+      option->text = guiText("桌面");
+    else if (path ==
+             QStandardPaths::writableLocation(QStandardPaths::DownloadLocation))
+      option->text = guiText("下载");
+    else if (path == QStandardPaths::writableLocation(
+                         QStandardPaths::DocumentsLocation))
+      option->text = guiText("文档");
   }
+
 private:
   QFileDialog *m_browser;
 };
@@ -128,12 +138,14 @@ public:
     dialog->installEventFilter(this);
     updateWidth();
   }
+
 protected:
   bool eventFilter(QObject *watched, QEvent *event) override {
     if (event->type() == QEvent::LayoutRequest)
       updateWidth();
     return QObject::eventFilter(watched, event);
   }
+
 private:
   void updateWidth() {
     const int minimumWidth = std::min(640, m_maximumWidth);
@@ -148,15 +160,17 @@ private:
 
 void configureBrowser(QFileDialog *browser, SelectionMode mode) {
   browser->setViewMode(QFileDialog::Detail);
-  browser->setLabelText(QFileDialog::LookIn, QStringLiteral("位置"));
-  browser->setLabelText(QFileDialog::FileName,
-                       mode == SelectionMode::Directory ? QStringLiteral("目录")
-                                                        : QStringLiteral("文件名"));
-  browser->setLabelText(QFileDialog::FileType, QStringLiteral("文件类型"));
-  browser->setLabelText(QFileDialog::Accept,
-                       mode == SelectionMode::SaveFile ? QStringLiteral("保存")
-                                                       : QStringLiteral("选择"));
-  browser->setLabelText(QFileDialog::Reject, QStringLiteral("取消"));
+  bindGuiTranslation(browser, [browser, mode] {
+    browser->setLabelText(QFileDialog::LookIn, guiText("位置"));
+    browser->setLabelText(QFileDialog::FileName,
+                          mode == SelectionMode::Directory ? guiText("目录")
+                                                           : guiText("文件名"));
+    browser->setLabelText(QFileDialog::FileType, guiText("文件类型"));
+    browser->setLabelText(QFileDialog::Accept, mode == SelectionMode::SaveFile
+                                                   ? guiText("保存")
+                                                   : guiText("选择"));
+    browser->setLabelText(QFileDialog::Reject, guiText("取消"));
+  });
   browser->setProxyModel(new FileHeaders(browser));
   browser->setItemDelegate(new FileRows(browser));
   auto font = browser->font();
@@ -179,17 +193,20 @@ void configureBrowser(QFileDialog *browser, SelectionMode mode) {
       tree->header()->setStretchLastSection(false);
       tree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
       for (int section = 1; section < 4; ++section)
-        tree->header()->setSectionResizeMode(section, QHeaderView::ResizeToContents);
+        tree->header()->setSectionResizeMode(section,
+                                             QHeaderView::ResizeToContents);
     }
   }
-  if (auto *sidebar = browser->findChild<QAbstractItemView *>(QStringLiteral("sidebar")))
+  if (auto *sidebar =
+          browser->findChild<QAbstractItemView *>(QStringLiteral("sidebar")))
     sidebar->setMinimumWidth(150);
   if (auto *splitter = browser->findChild<QSplitter *>()) {
     splitter->setHandleWidth(1);
     splitter->setSizes({170, 630});
   }
   // 地址框使用自己的路径模型，需要单独替换缓存的平台文件夹图标。
-  if (auto *locations = browser->findChild<QComboBox *>(QStringLiteral("lookInCombo"))) {
+  if (auto *locations =
+          browser->findChild<QComboBox *>(QStringLiteral("lookInCombo"))) {
     const QIcon folderIcon = ui::icon(ui::Icon::Folder);
     const auto updateIcons = [locations, folderIcon] {
       for (int index = 0; index < locations->count(); ++index)
@@ -197,7 +214,8 @@ void configureBrowser(QFileDialog *browser, SelectionMode mode) {
           locations->setItemIcon(index, folderIcon);
     };
     updateIcons();
-    QObject::connect(browser, &QFileDialog::directoryEntered, locations, updateIcons);
+    QObject::connect(browser, &QFileDialog::directoryEntered, locations,
+                     updateIcons);
     QObject::connect(locations->model(), &QAbstractItemModel::rowsInserted,
                      locations, updateIcons);
     QObject::connect(locations->model(), &QAbstractItemModel::dataChanged,
@@ -208,7 +226,11 @@ void configureBrowser(QFileDialog *browser, SelectionMode mode) {
   }
 
   // Qt 标准文件浏览器的工具按钮名集中适配于此，不在业务页面依赖内部布局。
-  struct Tool { const char *name; ui::Icon icon; const char *tooltip; };
+  struct Tool {
+    const char *name;
+    ui::Icon icon;
+    const char *tooltip;
+  };
   const std::array tools{
       Tool{"backButton", ui::Icon::Back, "后退"},
       Tool{"forwardButton", ui::Icon::Forward, "前进"},
@@ -217,10 +239,11 @@ void configureBrowser(QFileDialog *browser, SelectionMode mode) {
       Tool{"listModeButton", ui::Icon::List, "列表视图"},
       Tool{"detailModeButton", ui::Icon::Details, "详细视图"}};
   for (const auto &tool : tools)
-    if (auto *button = browser->findChild<QToolButton *>(QString::fromLatin1(tool.name))) {
+    if (auto *button =
+            browser->findChild<QToolButton *>(QString::fromLatin1(tool.name))) {
       ui::configureToolButton(button, tool.icon);
-      button->setToolTip(QString::fromUtf8(tool.tooltip));
-      button->setAccessibleName(button->toolTip());
+      setGuiText(button, "toolTip", guiText(tool.tooltip));
+      setGuiText(button, "accessibleName", guiText(tool.tooltip));
     }
   if (auto *buttons = browser->findChild<QDialogButtonBox *>()) {
     // 将 Qt 默认右侧竖排按钮移到底部，文件名和筛选字段可以占满整行。
@@ -228,15 +251,14 @@ void configureBrowser(QFileDialog *browser, SelectionMode mode) {
     if (auto *grid = qobject_cast<QGridLayout *>(browser->layout())) {
       grid->removeWidget(buttons);
       const int columns = grid->columnCount();
-      for (const auto &name : {QStringLiteral("fileNameEdit"),
-                               QStringLiteral("fileTypeCombo")}) {
+      for (const auto &name :
+           {QStringLiteral("fileNameEdit"), QStringLiteral("fileTypeCombo")}) {
         if (auto *field = browser->findChild<QWidget *>(name)) {
           int row = 0, column = 0, rowSpan = 0, columnSpan = 0;
           const int index = grid->indexOf(field);
           if (index < 0)
             continue;
-          grid->getItemPosition(index, &row, &column,
-                                &rowSpan, &columnSpan);
+          grid->getItemPosition(index, &row, &column, &rowSpan, &columnSpan);
           grid->removeWidget(field);
           grid->addWidget(field, row, column, rowSpan, columns - column);
           field->setMinimumHeight(ui::ControlHeight);
@@ -246,28 +268,31 @@ void configureBrowser(QFileDialog *browser, SelectionMode mode) {
     }
     for (auto *button : buttons->findChildren<QPushButton *>()) {
       button->setMinimumHeight(ui::ControlHeight);
-      const bool accept = buttons->buttonRole(button) == QDialogButtonBox::AcceptRole;
+      const bool accept =
+          buttons->buttonRole(button) == QDialogButtonBox::AcceptRole;
       button->setProperty("accent", accept);
-      const auto icon = ui::icon(accept ? (mode == SelectionMode::SaveFile
-                                           ? ui::Icon::Save : ui::Icon::Folder)
-                                     : ui::Icon::Cancel);
-      button->setIcon(accept ? ZzFluentUI::ZzSegoeIconFont::withForegroundColor(
-                                  icon, button->palette().color(QPalette::HighlightedText))
-                            : icon);
+      const auto icon =
+          ui::icon(accept ? (mode == SelectionMode::SaveFile ? ui::Icon::Save
+                                                             : ui::Icon::Folder)
+                          : ui::Icon::Cancel);
+      button->setIcon(
+          accept ? ZzFluentUI::ZzSegoeIconFont::withForegroundColor(
+                       icon, button->palette().color(QPalette::HighlightedText))
+                 : icon);
       button->setIconSize(QSize(ui::IconSize, ui::IconSize));
     }
   }
   if (mode == SelectionMode::Directory) {
-    for (const auto &name : {QStringLiteral("fileTypeLabel"),
-                             QStringLiteral("fileTypeCombo")})
+    for (const auto &name :
+         {QStringLiteral("fileTypeLabel"), QStringLiteral("fileTypeCombo")})
       if (auto *widget = browser->findChild<QWidget *>(name))
         widget->hide();
   }
 
   QList<QUrl> places{QUrl::fromLocalFile(QDir::homePath())};
-  for (const auto location : {QStandardPaths::DesktopLocation,
-                              QStandardPaths::DownloadLocation,
-                              QStandardPaths::DocumentsLocation}) {
+  for (const auto location :
+       {QStandardPaths::DesktopLocation, QStandardPaths::DownloadLocation,
+        QStandardPaths::DocumentsLocation}) {
     const auto path = QStandardPaths::writableLocation(location);
     const auto url = QUrl::fromLocalFile(path);
     if (QDir(path).exists() && !places.contains(url))
@@ -276,17 +301,48 @@ void configureBrowser(QFileDialog *browser, SelectionMode mode) {
   for (const auto &drive : QDir::drives())
     places.append(QUrl::fromLocalFile(drive.absoluteFilePath()));
   browser->setSidebarUrls(places);
-  if (auto *sidebar = browser->findChild<QAbstractItemView *>(QStringLiteral("sidebar")))
+  if (auto *sidebar =
+          browser->findChild<QAbstractItemView *>(QStringLiteral("sidebar")))
     sidebar->setItemDelegate(new PlaceRows(browser, sidebar));
 }
 
-QString selectPath(QWidget *parent, const QString &title, const QString &directory,
-                   const QString &filter, SelectionMode mode) {
+QString selectPath(QWidget *parent, const GuiText &title,
+                   const QString &directory, const QString &filter,
+                   SelectionMode mode, const QString &purpose) {
+  auto *window =
+      parent
+          ? qobject_cast<ZzPureTools::ZzApplicationWindow *>(parent->window())
+          : nullptr;
+  QPointer<GuiWindowShell> shell =
+      window ? GuiWindowShell::attachedTo(*window) : nullptr;
+  const auto settings = shell ? shell->settings() : nullptr;
+  const QString key =
+      QStringLiteral("fileDialog/") +
+      (purpose.isEmpty()
+           ? mode == SelectionMode::SaveFile    ? QStringLiteral("save")
+             : mode == SelectionMode::Directory ? QStringLiteral("directory")
+                                                : QStringLiteral("open")
+           : purpose);
+  QString initial = directory;
+  if (settings) {
+    QString previous = settings->value(key).toString();
+    if (mode == SelectionMode::SaveFile &&
+        !settings->value(QStringLiteral("paths/backup")).toString().isEmpty())
+      previous = settings->value(QStringLiteral("paths/backup")).toString();
+    if (QDir(previous).exists() && !previous.isEmpty()) {
+      if (initial.isEmpty())
+        initial = previous;
+      else if (mode == SelectionMode::SaveFile &&
+               QFileInfo(initial).isRelative())
+        initial = QDir(previous).filePath(initial);
+    }
+  }
   FileIcons icons; // 必须比浏览器活得久：关闭并销毁弹窗后才释放图标提供器。
   QPointer<ZzFluentUI::ZzContentDialog> dialog =
-      new ZzFluentUI::ZzContentDialog(parent != nullptr ? parent->window() : nullptr);
+      new ZzFluentUI::ZzContentDialog(parent != nullptr ? parent->window()
+                                                        : nullptr);
   dialog->setObjectName(QStringLiteral("fileSelectionDialog"));
-  dialog->setTitle(title);
+  setGuiText(dialog, "title", title);
   dialog->setPrimaryButtonVisible(false);
   dialog->setSecondaryButtonVisible(false);
   dialog->setCloseButtonVisible(false);
@@ -294,27 +350,31 @@ QString selectPath(QWidget *parent, const QString &title, const QString &directo
   browser->setObjectName(QStringLiteral("fileSelectionBrowser"));
   // 显式使用 Qt 控件实现，保证三平台都能由框架绘制而不跳到系统文件窗口。
   browser->setOption(QFileDialog::DontUseNativeDialog, true);
-  browser->setAcceptMode(mode == SelectionMode::SaveFile ? QFileDialog::AcceptSave
-                                                       : QFileDialog::AcceptOpen);
+  browser->setAcceptMode(mode == SelectionMode::SaveFile
+                             ? QFileDialog::AcceptSave
+                             : QFileDialog::AcceptOpen);
   browser->setFileMode(mode == SelectionMode::Directory ? QFileDialog::Directory
-                       : mode == SelectionMode::SaveFile ? QFileDialog::AnyFile
-                                                         : QFileDialog::ExistingFile);
-  browser->setOption(QFileDialog::ShowDirsOnly, mode == SelectionMode::Directory);
+                       : mode == SelectionMode::SaveFile
+                           ? QFileDialog::AnyFile
+                           : QFileDialog::ExistingFile);
+  browser->setOption(QFileDialog::ShowDirsOnly,
+                     mode == SelectionMode::Directory);
   browser->setIconProvider(&icons);
-  browser->setNameFilter(filter.isEmpty() ? QStringLiteral("所有文件 (*)") : filter);
-  if (!directory.isEmpty()) {
-    if (QFileInfo(directory).isDir())
-      browser->setDirectory(directory);
+  browser->setNameFilter(filter.isEmpty() ? guiText("所有文件 (*)") : filter);
+  if (!initial.isEmpty()) {
+    if (QFileInfo(initial).isDir())
+      browser->setDirectory(initial);
     else {
-      browser->setDirectory(QFileInfo(directory).absolutePath());
-      browser->selectFile(QFileInfo(directory).fileName());
+      browser->setDirectory(QFileInfo(initial).absolutePath());
+      browser->selectFile(QFileInfo(initial).fileName());
     }
   }
   configureBrowser(browser, mode);
   browser->setWindowFlags(Qt::Widget);
   dialog->setContentWidget(browser);
-  QSize available = parent != nullptr ? parent->window()->size()
-                                     : dialog->screen()->availableGeometry().size();
+  QSize available = parent != nullptr
+                        ? parent->window()->size()
+                        : dialog->screen()->availableGeometry().size();
   const QSize size(std::min(900, available.width() - 40),
                    std::min(640, available.height() - 60));
   new BrowserWidth(dialog, std::max(640, size.width()));
@@ -331,25 +391,48 @@ QString selectPath(QWidget *parent, const QString &title, const QString &directo
   // 父窗口关闭可能销毁弹窗，使用 QPointer 避免关闭后再次释放失效对象。
   dialog->exec();
   delete dialog.data();
+  if (settings && !selected.isEmpty()) {
+    settings->setValue(key, mode == SelectionMode::Directory
+                                ? selected
+                                : QFileInfo(selected).absolutePath());
+    // 最近目录在退出弹窗时保存，即使随后未执行烧录也不会丢失。
+    const auto saved = settings->sync();
+    if (!saved && shell && shell->parent()) {
+      auto *host =
+          qobject_cast<ZzPureTools::ZzApplicationWindow *>(shell->parent());
+      if (host)
+        setGuiStatus(
+            host->statusBar(),
+            guiText("配置保存失败：%1").arg(saved.error().technicalMessage()));
+    }
+  }
   return selected;
 }
 
 } // namespace
 
-QString FileSelectionDialog::getOpenFileName(QWidget *parent, const QString &title,
-                                            const QString &directory,
-                                            const QString &filter) {
-  return selectPath(parent, title, directory, filter, SelectionMode::OpenFile);
+QString FileSelectionDialog::getOpenFileName(QWidget *parent,
+                                             const GuiText &title,
+                                             const QString &directory,
+                                             const QString &filter,
+                                             const QString &purpose) {
+  return selectPath(parent, title, directory, filter, SelectionMode::OpenFile,
+                    purpose);
 }
-QString FileSelectionDialog::getSaveFileName(QWidget *parent, const QString &title,
-                                            const QString &directory,
-                                            const QString &filter) {
-  return selectPath(parent, title, directory, filter, SelectionMode::SaveFile);
+QString FileSelectionDialog::getSaveFileName(QWidget *parent,
+                                             const GuiText &title,
+                                             const QString &directory,
+                                             const QString &filter,
+                                             const QString &purpose) {
+  return selectPath(parent, title, directory, filter, SelectionMode::SaveFile,
+                    purpose);
 }
 QString FileSelectionDialog::getExistingDirectory(QWidget *parent,
-                                                 const QString &title,
-                                                 const QString &directory) {
-  return selectPath(parent, title, directory, {}, SelectionMode::Directory);
+                                                  const GuiText &title,
+                                                  const QString &directory,
+                                                  const QString &purpose) {
+  return selectPath(parent, title, directory, {}, SelectionMode::Directory,
+                    purpose);
 }
 
 } // namespace zzrk::gui
