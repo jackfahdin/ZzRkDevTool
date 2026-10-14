@@ -17,6 +17,10 @@ class QPushButton;
 class QTableWidget;
 class QTableWidgetItem;
 class QToolButton;
+class QStackedLayout;
+namespace ZzFluentUI {
+class ZzInfoBar;
+}
 
 namespace zzrk::gui {
 
@@ -86,6 +90,7 @@ public:
                    bool overallIndeterminate = false,
                    bool operationIndeterminate = false);
   void setStatus(const QString &text);
+  void setError(const QString &text);
   void setBusy(bool busy, bool canStart, bool canCancel);
 
 signals:
@@ -112,6 +117,8 @@ private:
   QLineEdit *m_directoryEdit = nullptr;
   QToolButton *m_chooseDirectoryButton = nullptr;
   QTableWidget *m_table = nullptr;
+  // 0 为清单，1 为空态；仅控制展示，不参与镜像选择和规划。
+  QStackedLayout *m_planStack = nullptr;
   QPushButton *m_chooseImageButton = nullptr;
   QPushButton *m_clearImageButton = nullptr;
   QCheckBox *m_rebootCheckBox = nullptr;
@@ -120,6 +127,7 @@ private:
   QProgressBar *m_overallProgress = nullptr;
   QProgressBar *m_operationProgress = nullptr;
   QLabel *m_status = nullptr;
+  ZzFluentUI::ZzInfoBar *m_errorNotice = nullptr;
   std::vector<PlanRow> m_planRows;
 };
 

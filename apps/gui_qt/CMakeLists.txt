@@ -14,6 +14,8 @@ qt_add_library(
     MainWorkspaceController.hpp
     MainWorkspaceViewModel.cpp
     MainWorkspaceViewModel.hpp
+    WorkspaceUi.cpp
+    WorkspaceUi.hpp
     pages/DevicePage.cpp
     pages/DevicePage.hpp
     pages/ImageDownloadPage.cpp

@@ -16,6 +16,7 @@
 #include <ZzFluentUI/ZzSidePane.h>
 #include <ZzFluentUI/ZzSidePaneEdge.h>
 #include <ZzFluentUI/ZzTabBar.h>
+#include <ZzFluentUI/ZzTabBarAppearance.h>
 #include <ZzFluentUI/ZzTabWidget.h>
 #include <ZzPureTools/ZzApplicationWindow.h>
 #include <ZzPureTools/ZzPageHost.h>
@@ -327,6 +328,10 @@ void GuiWindowShell::configureFixedTabs() {
     return;
   }
   bar->setTearOffEnabled(false);
+  // 标签风格的统一修改入口；固定功能标签不需要浏览器式关闭或拖拽。
+  bar->setAppearance(ZzFluentUI::ZzTabBarAppearance::PivotSlide);
+  for (int index = 0; index < tabs->count(); ++index)
+    tabs->setTabIcon(index, QIcon{});
   bar->setTabTransferEnabled(false);
   if (auto *button = bar->newTabButton(); button != nullptr) {
     button->hide();

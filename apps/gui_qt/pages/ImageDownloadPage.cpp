@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MIT
 
 #include "ImageDownloadPage.hpp"
+#include "WorkspaceUi.hpp"
+#include <ZzFluentUI/ZzInfoBar.h>
 
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFileInfo>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -13,7 +16,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QSignalBlocker>
-#include <QStyle>
+#include <QStackedLayout>
 #include <QTableWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -27,7 +30,19 @@ ImageDownloadPage *ImageDownloadPage::buildUi(QWidget *parent) {
 ImageDownloadPage::ImageDownloadPage(QWidget *parent) : QWidget(parent) {
   setObjectName(QStringLiteral("downloadImagePage"));
   auto *pageLayout = new QVBoxLayout(this);
-  pageLayout->setContentsMargins(10, 10, 10, 10);
+  ui::configurePage(this, pageLayout);
+  ui::addPageHeading(
+      pageLayout, QStringLiteral("下载镜像"),
+      QStringLiteral("选择目标设备，为各分区配置需要烧录的镜像。"));
+
+  // 配置区独立为卡片；修改字段排列只需调整下面的网格坐标。
+  auto *sourceCard = ui::card(this);
+  auto *sourceCardLayout = new QVBoxLayout(sourceCard);
+  sourceCardLayout->setContentsMargins(ui::CardPadding, ui::CardPadding,
+                                       ui::CardPadding, ui::CardPadding);
+  sourceCardLayout->setSpacing(12);
+  sourceCardLayout->addWidget(
+      ui::sectionTitle(QStringLiteral("设备与镜像来源"), sourceCard));
 
   auto *sourceLayout = new QGridLayout;
   sourceLayout->setHorizontalSpacing(8);
@@ -50,10 +65,9 @@ ImageDownloadPage::ImageDownloadPage(QWidget *parent) : QWidget(parent) {
 
   m_readGptButton = new QToolButton(this);
   m_readGptButton->setObjectName(QStringLiteral("readDownloadGptButton"));
-  m_readGptButton->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
+  ui::configureToolButton(m_readGptButton, ui::Icon::Refresh);
   m_readGptButton->setToolTip(QStringLiteral("读取设备 GPT"));
   m_readGptButton->setAccessibleName(QStringLiteral("读取设备 GPT"));
-  m_readGptButton->setFixedSize(30, 30);
   sourceLayout->addWidget(m_readGptButton, 0, 5);
 
   m_layoutPathEdit = new QLineEdit(this);
@@ -64,12 +78,10 @@ ImageDownloadPage::ImageDownloadPage(QWidget *parent) : QWidget(parent) {
   m_chooseParameterButton = new QToolButton(this);
   m_chooseParameterButton->setObjectName(
       QStringLiteral("chooseDownloadParameterButton"));
-  m_chooseParameterButton->setIcon(
-      style()->standardIcon(QStyle::SP_DirOpenIcon));
+  ui::configureToolButton(m_chooseParameterButton, ui::Icon::Folder);
   m_chooseParameterButton->setToolTip(QStringLiteral("选择 parameter.txt"));
   m_chooseParameterButton->setAccessibleName(
       QStringLiteral("选择 parameter.txt"));
-  m_chooseParameterButton->setFixedSize(30, 30);
   sourceLayout->addWidget(new QLabel(QStringLiteral("布局文件"), this), 1, 0);
   sourceLayout->addWidget(m_layoutPathEdit, 1, 1, 1, 4);
   sourceLayout->addWidget(m_chooseParameterButton, 1, 5);
@@ -82,15 +94,37 @@ ImageDownloadPage::ImageDownloadPage(QWidget *parent) : QWidget(parent) {
   m_chooseDirectoryButton = new QToolButton(this);
   m_chooseDirectoryButton->setObjectName(
       QStringLiteral("chooseDownloadDirectoryButton"));
-  m_chooseDirectoryButton->setIcon(
-      style()->standardIcon(QStyle::SP_DirOpenIcon));
+  ui::configureToolButton(m_chooseDirectoryButton, ui::Icon::Folder);
   m_chooseDirectoryButton->setToolTip(QStringLiteral("选择镜像目录"));
   m_chooseDirectoryButton->setAccessibleName(QStringLiteral("选择镜像目录"));
-  m_chooseDirectoryButton->setFixedSize(30, 30);
   sourceLayout->addWidget(new QLabel(QStringLiteral("镜像目录"), this), 2, 0);
   sourceLayout->addWidget(m_directoryEdit, 2, 1, 1, 4);
   sourceLayout->addWidget(m_chooseDirectoryButton, 2, 5);
-  pageLayout->addLayout(sourceLayout);
+  for (auto *control : {static_cast<QWidget *>(m_deviceCombo),
+                        static_cast<QWidget *>(m_layoutCombo),
+                        static_cast<QWidget *>(m_layoutPathEdit),
+                        static_cast<QWidget *>(m_directoryEdit)})
+    control->setMinimumHeight(ui::ControlHeight);
+  sourceCardLayout->addLayout(sourceLayout);
+  pageLayout->addWidget(sourceCard);
+
+  auto *planCard = ui::card(this);
+  auto *planLayout = new QVBoxLayout(planCard);
+  planLayout->setContentsMargins(ui::CardPadding, 12, ui::CardPadding, 12);
+  planLayout->setSpacing(10);
+  auto *planHeader = new QHBoxLayout;
+  planHeader->addWidget(ui::sectionTitle(QStringLiteral("烧录清单"), planCard));
+  planHeader->addStretch();
+  m_chooseImageButton =
+      ui::button(QStringLiteral("选择镜像"), ui::Icon::Folder, this);
+  m_chooseImageButton->setObjectName(
+      QStringLiteral("chooseDownloadImageButton"));
+  m_clearImageButton =
+      ui::button(QStringLiteral("清除"), ui::Icon::Clear, this);
+  m_clearImageButton->setObjectName(QStringLiteral("clearDownloadImageButton"));
+  planHeader->addWidget(m_chooseImageButton);
+  planHeader->addWidget(m_clearImageButton);
+  planLayout->addLayout(planHeader);
 
   m_table = new QTableWidget(0, ColumnCount, this);
   m_table->setObjectName(QStringLiteral("downloadImageTable"));
@@ -100,46 +134,72 @@ ImageDownloadPage::ImageDownloadPage(QWidget *parent) : QWidget(parent) {
        QStringLiteral("镜像文件"), QStringLiteral("格式"),
        QStringLiteral("展开大小"), QStringLiteral("校验"),
        QStringLiteral("状态")});
-  m_table->setAlternatingRowColors(true);
+  ui::configureTable(m_table);
   m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
   m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
   m_table->setSelectionMode(QAbstractItemView::SingleSelection);
   m_table->setShowGrid(false);
   m_table->verticalHeader()->setVisible(false);
-  m_table->verticalHeader()->setDefaultSectionSize(30);
   auto *header = m_table->horizontalHeader();
   for (int column = 0; column < ColumnCount; ++column) {
     header->setSectionResizeMode(column, column == FileColumn
                                              ? QHeaderView::Stretch
                                              : QHeaderView::ResizeToContents);
   }
-  pageLayout->addWidget(m_table, 1);
+  // 空态和表格共用同一块空间，空态不会覆盖或拦截已加载的数据行。
+  auto *planBody = new QWidget(planCard);
+  // 长错误需要额外任务空间时，清单可缩小并滚动，不让空态的最小尺寸撑出页面。
+  planBody->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);
+  m_planStack = new QStackedLayout(planBody);
+  m_planStack->setSizeConstraint(QLayout::SetNoConstraint);
+  m_planStack->setContentsMargins(0, 0, 0, 0);
+  m_planStack->addWidget(m_table);
+  auto *empty = new QWidget(planBody);
+  auto *emptyLayout = new QVBoxLayout(empty);
+  emptyLayout->addStretch();
+  auto *emptyTitle =
+      ui::sectionTitle(QStringLiteral("准备你的烧录清单"), empty);
+  emptyTitle->setAlignment(Qt::AlignCenter);
+  auto *emptyHint = ui::secondaryText(
+      QStringLiteral("读取设备 GPT 或选择 parameter.txt，然后选择镜像目录。"),
+      empty);
+  emptyHint->setAlignment(Qt::AlignCenter);
+  emptyLayout->addWidget(emptyTitle);
+  emptyLayout->addWidget(emptyHint);
+  emptyLayout->addStretch();
+  m_planStack->addWidget(empty);
+  m_planStack->setCurrentIndex(1);
+  planLayout->addWidget(planBody, 1);
+  pageLayout->addWidget(planCard, 1);
+
+  // 任务区固定在清单下方，长清单滚动时仍能看到进度与停止入口。
+  auto *taskCard = ui::card(this);
+  auto *taskLayout = new QVBoxLayout(taskCard);
+  taskLayout->setContentsMargins(ui::CardPadding, 12, ui::CardPadding, 12);
+  taskLayout->setSpacing(6);
+  // 保护错误通知、双进度和按钮的最小空间，剩余高度由清单承担。
+  taskLayout->setSizeConstraint(QLayout::SetMinimumSize);
+  m_status = new QLabel(QStringLiteral("请选择目标设备和分区布局"), taskCard);
+  m_status->setTextFormat(Qt::PlainText);
+  m_status->setObjectName(QStringLiteral("imageDownloadStatus"));
+  m_status->setWordWrap(true);
+  taskLayout->addWidget(m_status);
+  m_errorNotice = ui::addErrorNotice(taskLayout);
+  m_errorNotice->setObjectName(QStringLiteral("imageDownloadErrorNotice"));
 
   auto *actions = new QHBoxLayout;
-  m_chooseImageButton = new QPushButton(QStringLiteral("选择镜像"), this);
-  m_chooseImageButton->setObjectName(
-      QStringLiteral("chooseDownloadImageButton"));
-  m_chooseImageButton->setIcon(style()->standardIcon(QStyle::SP_DirOpenIcon));
-  m_clearImageButton = new QPushButton(QStringLiteral("清除"), this);
-  m_clearImageButton->setObjectName(QStringLiteral("clearDownloadImageButton"));
-  m_clearImageButton->setIcon(
-      style()->standardIcon(QStyle::SP_DialogResetButton));
   m_rebootCheckBox = new QCheckBox(QStringLiteral("完成后重启"), this);
   m_rebootCheckBox->setObjectName(QStringLiteral("downloadRebootCheckBox"));
   m_rebootCheckBox->setChecked(true);
-  m_startButton = new QPushButton(QStringLiteral("开始下载"), this);
+  m_startButton =
+      ui::button(QStringLiteral("开始烧录"), ui::Icon::Flash, this, true);
   m_startButton->setObjectName(QStringLiteral("startImageDownloadButton"));
-  m_startButton->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
-  m_cancelButton = new QPushButton(QStringLiteral("取消"), this);
+  m_cancelButton = ui::button(QStringLiteral("取消"), ui::Icon::Cancel, this);
   m_cancelButton->setObjectName(QStringLiteral("cancelImageDownloadButton"));
-  m_cancelButton->setIcon(style()->standardIcon(QStyle::SP_DialogCancelButton));
-  actions->addWidget(m_chooseImageButton);
-  actions->addWidget(m_clearImageButton);
   actions->addWidget(m_rebootCheckBox);
   actions->addStretch();
   actions->addWidget(m_startButton);
   actions->addWidget(m_cancelButton);
-  pageLayout->addLayout(actions);
 
   m_overallProgress = new QProgressBar(this);
   m_overallProgress->setObjectName(
@@ -151,12 +211,13 @@ ImageDownloadPage::ImageDownloadPage(QWidget *parent) : QWidget(parent) {
       QStringLiteral("operationImageDownloadProgress"));
   m_operationProgress->setRange(0, 100);
   m_operationProgress->setFormat(QStringLiteral("当前分区 %p%"));
-  m_status = new QLabel(QStringLiteral("请选择目标设备和分区布局"), this);
-  m_status->setObjectName(QStringLiteral("imageDownloadStatus"));
-  m_status->setWordWrap(true);
-  pageLayout->addWidget(m_overallProgress);
-  pageLayout->addWidget(m_operationProgress);
-  pageLayout->addWidget(m_status);
+  ui::addProgressRow(taskLayout, QStringLiteral("完整计划"), m_overallProgress,
+                     true);
+  ui::addProgressRow(taskLayout, QStringLiteral("当前分区"),
+                     m_operationProgress);
+  taskLayout->addSpacing(6);
+  taskLayout->addLayout(actions);
+  pageLayout->addWidget(taskCard);
 
   connect(m_deviceCombo, &QComboBox::currentIndexChanged, this,
           &ImageDownloadPage::deviceChanged);
@@ -234,6 +295,7 @@ void ImageDownloadPage::setPlan(std::vector<PlanRow> rows) {
   m_planRows = std::move(rows);
   m_table->clearContents();
   m_table->setRowCount(static_cast<int>(m_planRows.size()));
+  m_planStack->setCurrentIndex(m_planRows.empty() ? 1 : 0);
   const auto makeItem = [](const QString &text) {
     auto *item = new QTableWidgetItem(text);
     item->setFlags(item->flags() & ~Qt::ItemIsEditable);
@@ -250,7 +312,8 @@ void ImageDownloadPage::setPlan(std::vector<PlanRow> rows) {
     m_table->setItem(index, TargetColumn, makeItem(row.target));
     m_table->setItem(index, LbaColumn, makeItem(row.lba));
     m_table->setItem(index, CapacityColumn, makeItem(row.capacity));
-    auto *file = makeItem(row.file);
+    // 只改变显示文字，业务规划仍保存完整路径；鼠标悬停可查看原始路径。
+    auto *file = makeItem(QFileInfo(row.file).fileName());
     file->setToolTip(row.file);
     m_table->setItem(index, FileColumn, file);
     m_table->setItem(index, FormatColumn, makeItem(row.format));
@@ -260,6 +323,9 @@ void ImageDownloadPage::setPlan(std::vector<PlanRow> rows) {
     verify->setCheckState(row.verify ? Qt::Checked : Qt::Unchecked);
     m_table->setItem(index, VerifyColumn, verify);
     m_table->setItem(index, StatusColumn, makeItem(row.status));
+    for (const int column : {LbaColumn, CapacityColumn, ExpandedSizeColumn})
+      m_table->item(index, column)
+          ->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
     ++index;
   }
   if (!m_planRows.empty())
@@ -313,10 +379,24 @@ void ImageDownloadPage::setProgress(const int overall, const int operation,
     m_overallProgress->setValue(overall);
   if (!operationIndeterminate)
     m_operationProgress->setValue(operation);
+  // 修改范围不一定触发 valueChanged，未知总量时也必须更新显示文字。
+  ui::refreshProgressText(m_overallProgress);
+  ui::refreshProgressText(m_operationProgress);
 }
 
 void ImageDownloadPage::setStatus(const QString &text) {
   m_status->setText(text);
+  m_status->show();
+  m_errorNotice->setOpen(false);
+}
+
+void ImageDownloadPage::setError(const QString &text) {
+  // 控制器传入明确的失败结果，禁止根据中文消息内容猜测错误级别。
+  m_status->setText(text);
+  m_status->hide();
+  m_errorNotice->setMessage(text);
+  m_errorNotice->setOpen(true);
+  m_errorNotice->setMinimumHeight(m_errorNotice->heightForWidth(m_errorNotice->width()));
 }
 
 void ImageDownloadPage::setBusy(const bool busy, const bool canStart,
