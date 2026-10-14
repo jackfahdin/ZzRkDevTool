@@ -20,7 +20,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QLocale>
-#include <QMessageBox>
+#include "GuiDialogs.hpp"
 #include <QMetaObject>
 #include <QSignalBlocker>
 #include <QStatusBar>
@@ -1053,7 +1053,7 @@ void MainWorkspaceController::handleInspectionFinished() {
     if (m_statusBar != nullptr)
       setGuiStatus(m_statusBar, guiText("设备详情读取失败"));
     if (m_showModalDialogs)
-      QMessageBox::critical(m_devicePage, guiText("读取失败"), message);
+      dialogs::notify(m_devicePage, guiText("读取失败"), message);
     setPagesBusy(false);
     if (guard == nullptr)
       return;
@@ -1154,7 +1154,7 @@ void MainWorkspaceController::handlePartitionTableFinished() {
     if (m_statusBar != nullptr)
       setGuiStatus(m_statusBar, guiText("GPT 分区表读取失败"));
     if (m_showModalDialogs && m_downloadPage != nullptr) {
-      QMessageBox::critical(m_downloadPage, guiText("读取失败"),
+      dialogs::notify(m_downloadPage, guiText("读取失败"),
                             m_partitionTableStatus);
     }
     setPagesBusy(false);
@@ -1249,7 +1249,7 @@ void MainWorkspaceController::backupSelectedPartition() {
     if (m_statusBar != nullptr)
       setGuiStatus(m_statusBar, message);
     if (m_showModalDialogs)
-      QMessageBox::warning(m_partitionPage, guiText("无法备份"), message);
+      dialogs::notify(m_partitionPage, guiText("无法备份"), message);
     return;
   }
   startPartitionOperation(zzrk::workflow::PartitionOperationPhase::read,
@@ -1277,11 +1277,11 @@ void MainWorkspaceController::writeSelectedPartition() {
     if (m_statusBar != nullptr)
       setGuiStatus(m_statusBar, message);
     if (m_showModalDialogs)
-      QMessageBox::critical(m_partitionPage, guiText("无法写入"), message);
+      dialogs::notify(m_partitionPage, guiText("无法写入"), message);
     return;
   }
   if (m_showModalDialogs) {
-    const auto answer = QMessageBox::warning(
+    const bool confirmed = dialogs::confirm(
         m_partitionPage, guiText("确认写入分区"),
         guiText("端口：%1\n分区：%2\nLBA：%3 - "
                 "%4\n分区容量：%5\n镜像：%6\n回读校验：%"
@@ -1292,8 +1292,8 @@ void MainWorkspaceController::writeSelectedPartition() {
             .arg(dataSizeText(partitionBytes), inputInfo.fileName(),
                  m_partitionPage->verifyWrite() ? guiText("启用")
                                                 : guiText("关闭")),
-        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-    if (answer != QMessageBox::Yes)
+        guiText("写入"));
+    if (!confirmed)
       return;
   }
   startPartitionOperation(zzrk::workflow::PartitionOperationPhase::write,
@@ -1309,7 +1309,7 @@ void MainWorkspaceController::eraseSelectedPartition() {
   const auto partitionBytes =
       (partition->lastLba - partition->firstLba + 1U) * 512U;
   if (m_showModalDialogs) {
-    const auto answer = QMessageBox::critical(
+    const bool confirmed = dialogs::confirm(
         m_partitionPage, guiText("确认擦除分区"),
         guiText("端口：%1\n分区：%2\nLBA：%3 - "
                 "%4\n容量：%5\n\n该分区的全部数据将被擦除，且无法恢复。")
@@ -1317,8 +1317,8 @@ void MainWorkspaceController::eraseSelectedPartition() {
             .arg(partition->firstLba)
             .arg(partition->lastLba)
             .arg(dataSizeText(partitionBytes)),
-        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-    if (answer != QMessageBox::Yes)
+        guiText("擦除"));
+    if (!confirmed)
       return;
   }
   startPartitionOperation(zzrk::workflow::PartitionOperationPhase::erase);
@@ -1441,7 +1441,7 @@ void MainWorkspaceController::handlePartitionOperationFinished() {
                        : guiText("分区操作失败"));
     if (m_showModalDialogs &&
         error->code != zzrk::workflow::DeviceManagementErrorCode::cancelled)
-      QMessageBox::critical(m_partitionPage, guiText("操作失败"), message);
+      dialogs::notify(m_partitionPage, guiText("操作失败"), message);
   } else {
     const auto &success =
         std::get<zzrk::workflow::PartitionOperationSuccess>(result);
@@ -1456,7 +1456,7 @@ void MainWorkspaceController::handlePartitionOperationFinished() {
     if (m_statusBar != nullptr)
       setGuiStatus(m_statusBar, guiText("分区操作完成"));
     if (m_showModalDialogs)
-      QMessageBox::information(m_partitionPage, guiText("操作完成"), message);
+      dialogs::notify(m_partitionPage, guiText("操作完成"), message);
     successValue = true;
   }
   QPointer<MainWorkspaceController> guard{this};
@@ -1611,12 +1611,12 @@ void MainWorkspaceController::startUpgrade() {
     return;
   }
   if (m_showModalDialogs) {
-    const auto answer = QMessageBox::warning(
+    const bool confirmed = dialogs::confirm(
         m_upgradePage, guiText("确认完整升级"),
         guiText("将向端口 %1 的 eMMC 写入 Loader、GPT 和固件中的全部分区。")
             .arg(port),
-        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-    if (answer != QMessageBox::Yes)
+        guiText("开始升级"));
+    if (!confirmed)
       return;
   }
   const auto cancellation =
@@ -1725,7 +1725,7 @@ void MainWorkspaceController::handleUpgradeFinished() {
       setGuiStatus(m_statusBar, guiText("固件升级未完成"));
     if (m_showModalDialogs &&
         error->code != zzrk::workflow::FirmwareUpgradeErrorCode::cancelled)
-      QMessageBox::critical(m_upgradePage, guiText("升级失败"), message);
+      dialogs::notify(m_upgradePage, guiText("升级失败"), message);
   } else {
     const auto &success =
         std::get<zzrk::workflow::FirmwareUpgradeSuccess>(result);
@@ -1748,7 +1748,7 @@ void MainWorkspaceController::handleUpgradeFinished() {
     if (m_statusBar != nullptr)
       setGuiStatus(m_statusBar, guiText("固件升级完成"));
     if (m_showModalDialogs)
-      QMessageBox::information(m_upgradePage, guiText("升级完成"), message);
+      dialogs::notify(m_upgradePage, guiText("升级完成"), message);
   }
   m_progressTracker.reset();
   QPointer<MainWorkspaceController> guard{this};
@@ -2259,15 +2259,15 @@ void MainWorkspaceController::startImageDownload() {
                 zzrk::workflow::ImageDownloadLayoutSource::parameterFile
             ? filesystemPathText(request->parameterPath)
             : guiText("设备当前 GPT");
-    const auto answer = QMessageBox::warning(
+    const bool confirmed = dialogs::confirm(
         m_downloadPage, guiText("确认下载镜像"),
         guiText("端口：%1\n布局：%2\n目标：%3\n完成后重启：%"
                 "4\n\n所选目标的现有数据会被覆盖。")
             .arg(port, layout, targets.join(QStringLiteral("、")),
                  m_downloadPage->rebootCheckBox()->isChecked() ? guiText("是")
                                                                : guiText("否")),
-        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-    if (answer != QMessageBox::Yes)
+        guiText("开始下载"));
+    if (!confirmed)
       return;
   }
   m_pendingDownloadRequest = {
@@ -2438,7 +2438,7 @@ void MainWorkspaceController::handleImageDownloadFinished() {
     }
     if (m_showModalDialogs &&
         error->code != zzrk::workflow::ImageDownloadErrorCode::cancelled)
-      QMessageBox::critical(m_downloadPage, guiText("下载失败"), message);
+      dialogs::notify(m_downloadPage, guiText("下载失败"), message);
   } else {
     const auto &success =
         std::get<zzrk::workflow::ImageDownloadSuccess>(result);
@@ -2452,7 +2452,7 @@ void MainWorkspaceController::handleImageDownloadFinished() {
     m_downloadPage->setStatus(message);
     succeeded = true;
     if (m_showModalDialogs)
-      QMessageBox::information(m_downloadPage, guiText("下载完成"), message);
+      dialogs::notify(m_downloadPage, guiText("下载完成"), message);
   }
   m_preparedDownload.reset();
   QPointer<MainWorkspaceController> guard{this};

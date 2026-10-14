@@ -70,28 +70,23 @@ bool GuiTranslations::install(QString language) {
                    ? QStringLiteral("en")
                    : QStringLiteral("zh_CN");
   }
-  if (language != QStringLiteral("en")) {
-    if (m_translator)
-      QCoreApplication::removeTranslator(m_translator.get());
-    m_translator.reset();
-    m_effectiveLanguage = QStringLiteral("zh_CN");
-    activeTranslations = this;
-    return true;
-  }
+  if (language != QStringLiteral("en"))
+    language = QStringLiteral("zh_CN");
+  // 中文资源补充 Qt 文件浏览器内部提示；业务源文案本身仍使用中文。
   // 先验证新资源，失败时继续使用原语言。相同有效语言不重复发送刷新事件。
-  if (m_translator && m_effectiveLanguage == QStringLiteral("en")) {
+  if (m_translator && m_effectiveLanguage == language) {
     activeTranslations = this;
     return true;
   }
   auto candidate = std::make_unique<QTranslator>();
-  if (!candidate->load(QStringLiteral(":/translations/zzrkdevtool_en.qm")))
+  if (!candidate->load(QStringLiteral(":/translations/zzrkdevtool_%1.qm").arg(language)))
     return false;
   if (!QCoreApplication::installTranslator(candidate.get()))
     return false;
   if (m_translator)
     QCoreApplication::removeTranslator(m_translator.get());
   m_translator = std::move(candidate);
-  m_effectiveLanguage = QStringLiteral("en");
+  m_effectiveLanguage = language;
   activeTranslations = this;
   return true;
 }

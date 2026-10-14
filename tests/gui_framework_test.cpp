@@ -2,6 +2,8 @@
 
 #include "GuiTestHarness.hpp"
 #include "FileSelectionDialog.hpp"
+#include "GuiDialogs.hpp"
+#include "GuiTranslations.hpp"
 #include "GuiWindowShell.hpp"
 #include "MainWorkspaceController.hpp"
 #include "pages/DevicePage.hpp"
@@ -32,6 +34,7 @@
 #include <ZzWindowKit/ZzWindowKitBootstrap.h>
 
 #include <QAbstractButton>
+#include <QAction>
 #include <QApplication>
 #include <QDir>
 #include <QDialogButtonBox>
@@ -44,6 +47,7 @@
 #include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
+#include <QKeyEvent>
 #include <QMessageBox>
 #include <QPointer>
 #include <QProcess>
@@ -173,6 +177,179 @@ void checkFilePickers(QWidget *window, ZzFluentUI::ZzThemeController *theme) {
              !QFileInfo::exists(savePath),
          "save picker returns a new path without writing the file");
   theme->setMode(originalMode);
+}
+
+void checkFileOperationDialogs(QWidget *window) {
+  expect(QCoreApplication::testAttribute(Qt::AA_DontUseNativeDialogs),
+         "application disables native dialogs before Qt can show a file message");
+  // 只操作测试临时文件，验证外观桥接不能把取消映射成删除/覆盖。
+  QTemporaryDir fixture;
+  const QString path = fixture.filePath(QStringLiteral("待删除 固件.img"));
+  QFile image(path);
+  expect(image.open(QIODevice::WriteOnly) && image.write("firmware") == 8,
+         "file operation fixture creates an image");
+  image.close();
+  QTimer::singleShot(0, window, [&] {
+    auto *picker = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+    auto *browser = picker != nullptr ? picker->findChild<QFileDialog *>() : nullptr;
+    auto *tree = browser != nullptr ? browser->findChild<QTreeView *>("treeView") : nullptr;
+    auto *remove = browser != nullptr ? browser->findChild<QAction *>("qt_delete_action") : nullptr;
+    expect(tree != nullptr && remove != nullptr, "file browser offers its delete operation");
+    if (!tree || !remove) {
+      if (picker)
+        picker->reject();
+      return;
+    }
+    QModelIndex selected;
+    waitFor([&] {
+      for (int row = 0; row < tree->model()->rowCount(tree->rootIndex()); ++row) {
+        const auto index = tree->model()->index(row, 0, tree->rootIndex());
+        if (index.data().toString() == QFileInfo(path).fileName()) {
+          selected = index;
+          return true;
+        }
+      }
+      return false;
+    });
+    expect(selected.isValid(), "delete fixture is selected in the real file model");
+    tree->selectionModel()->setCurrentIndex(
+        selected, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    remove->setEnabled(true); // 与 Qt 打开右键菜单后的操作状态一致。
+    const auto respond = [&](bool confirm) {
+      // 桥接异步进入 Fluent 弹窗，因此等待实际可见的确认窗口。
+      auto *poll = new QTimer(picker);
+      poll->setInterval(10);
+      QObject::connect(poll, &QTimer::timeout, picker, [=] {
+        auto *modal = QApplication::activeModalWidget();
+        auto *content = qobject_cast<ZzFluentUI::ZzContentDialog *>(modal);
+        if (content == picker || modal == nullptr)
+          return;
+        poll->stop();
+        expect(content != nullptr, "Qt file delete confirmation uses the Fluent host");
+        if (content) {
+          expect(content->text().contains(QFileInfo(path).fileName()),
+                 "delete confirmation retains the target file name");
+          expect(content->defaultButton() == ZzFluentUI::ZzContentDialogButton::Close,
+                 "delete confirmation defaults to cancellation");
+          const auto screenshots = qEnvironmentVariable("ZZRK_GUI_SCREENSHOT_DIR");
+          if (!screenshots.isEmpty() && !confirm) {
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+            expect(content->grab().save(QDir(screenshots).filePath("file-delete-confirmation.png")),
+                   "delete confirmation screenshot is saved");
+          }
+          if (confirm)
+            content->done(static_cast<int>(ZzFluentUI::ZzContentDialogResult::Primary));
+          else {
+            QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+            QApplication::sendEvent(content, &escape);
+          }
+        } else if (auto *legacy = qobject_cast<QMessageBox *>(modal)) {
+          legacy->button(QMessageBox::No)->click();
+        }
+      });
+      poll->start();
+      QTimer::singleShot(2000, poll, [poll] { poll->stop(); });
+    };
+    respond(false);
+    remove->trigger();
+    expect(QFileInfo::exists(path), "Escape cancels file deletion");
+    respond(true);
+    remove->trigger();
+    expect(waitFor([&] { return !QFileInfo::exists(path); }),
+           "only explicit confirmation deletes the temporary file");
+    picker->reject();
+  });
+  expect(zzrk::gui::FileSelectionDialog::getOpenFileName(
+             window, QStringLiteral("选择镜像"), fixture.path()).isEmpty(),
+         "closing the browser after deletion returns no selection");
+
+  expect(image.open(QIODevice::WriteOnly) && image.write("original") == 8,
+         "overwrite fixture recreates an existing image");
+  image.close();
+  for (const bool confirm : {false, true}) {
+    QTimer::singleShot(0, window, [&, confirm] {
+      auto *picker = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+      auto *browser = picker ? picker->findChild<QFileDialog *>() : nullptr;
+      expect(browser != nullptr, "save browser is available for overwrite testing");
+      if (!browser)
+        return;
+      browser->selectFile(path);
+      auto *poll = new QTimer(picker);
+      poll->setInterval(10);
+      QObject::connect(poll, &QTimer::timeout, picker, [=] {
+        auto *modal = QApplication::activeModalWidget();
+        if (modal == picker || !modal)
+          return;
+        poll->stop();
+        auto *content = qobject_cast<ZzFluentUI::ZzContentDialog *>(modal);
+        expect(content != nullptr, "overwrite confirmation uses the Fluent host");
+        if (content) {
+          expect(content->text().contains(QFileInfo(path).fileName()),
+                 "overwrite confirmation retains the target file");
+          if (confirm)
+            content->done(static_cast<int>(ZzFluentUI::ZzContentDialogResult::Primary));
+          else {
+            QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+            QApplication::sendEvent(content, &enter);
+          }
+        } else if (auto *legacy = qobject_cast<QMessageBox *>(modal)) {
+          legacy->button(QMessageBox::No)->click();
+        }
+      });
+      poll->start();
+      QMetaObject::invokeMethod(browser, "accept", Qt::DirectConnection);
+      if (picker->isVisible())
+        picker->reject();
+    });
+    const auto result = zzrk::gui::FileSelectionDialog::getSaveFileName(
+        window, QStringLiteral("保存镜像"), path);
+    expect(result == (confirm ? path : QString{}),
+           "overwrite only returns the existing path after explicit confirmation");
+    expect(image.open(QIODevice::ReadOnly) && image.readAll() == "original",
+           "choosing a save path never modifies the existing file");
+    image.close();
+  }
+}
+
+void checkMessageDialogs(QWidget *window) {
+  using namespace zzrk::gui;
+  // Escape/Enter 必须取消；按钮明确确认才返回 true。
+  for (const auto key : {Qt::Key_Escape, Qt::Key_Return, Qt::Key_unknown}) {
+    QTimer::singleShot(0, window, [key] {
+      auto *dialog = qobject_cast<ZzFluentUI::ZzContentDialog *>(QApplication::activeModalWidget());
+      expect(dialog != nullptr, "business confirmation uses the framework");
+      if (!dialog)
+        return;
+      if (key == Qt::Key_unknown)
+        dialog->findChild<QPushButton *>("zzContentDialogPrimaryButton")->click();
+      else {
+        QKeyEvent event(QEvent::KeyPress, key, Qt::NoModifier);
+        QApplication::sendEvent(dialog, &event);
+      }
+    });
+    expect(dialogs::confirm(window, guiText("确认写入分区"), guiText("继续")) ==
+               (key == Qt::Key_unknown),
+           "business confirmation requires an explicit positive action");
+  }
+  QTimer::singleShot(0, window, [] {
+    auto *dialog = qobject_cast<ZzFluentUI::ZzContentDialog *>(QApplication::activeModalWidget());
+    expect(dialog != nullptr && dialog->text().contains("<固件>.img"),
+           "notification retains literal file names");
+    if (!dialog)
+      return;
+    const auto *label = dialog->findChild<QLabel *>("zzContentDialogText");
+    expect(label && label->textFormat() == Qt::PlainText,
+           "notification cannot interpret file names as markup");
+    auto *translations = GuiTranslations::active();
+    translations->install("en");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::LanguageChange);
+    expect(dialog->title() == "Operation failed" && dialog->closeButtonText() == "OK",
+           "visible notification updates with the current language");
+    translations->install("zh_CN");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::LanguageChange);
+    dialog->reject();
+  });
+  dialogs::notify(window, guiText("操作失败"), QStringLiteral("<固件>.img"));
 }
 
 bool saveVisualEvidence(ZzPureTools::ZzPureApplication &application,
@@ -1224,6 +1401,8 @@ int main(int argc, char **argv) {
              "theme switching preserves the application style object");
       QObject::disconnect(snapshotConnection);
       checkFilePickers(window, themeController);
+      checkFileOperationDialogs(window);
+      checkMessageDialogs(window);
     }
 
     auto *buttonTitleBar = window->titleBar();
@@ -1359,12 +1538,16 @@ int main(int argc, char **argv) {
     QString confirmationText;
     controller->setShowModalDialogs(true);
     QTimer::singleShot(0, application, [&] {
-      auto *confirmation =
-          qobject_cast<QMessageBox *>(application->activeModalWidget());
-      if (confirmation == nullptr)
+      auto *confirmation = qobject_cast<ZzFluentUI::ZzContentDialog *>(
+          application->activeModalWidget());
+      expect(confirmation != nullptr, "destructive download confirmation uses the Fluent host");
+      if (confirmation == nullptr) {
+        if (auto *legacy = qobject_cast<QMessageBox *>(application->activeModalWidget()))
+          legacy->done(QMessageBox::Cancel);
         return;
+      }
       confirmationText = confirmation->text();
-      confirmation->done(QMessageBox::Cancel);
+      confirmation->reject();
     });
     if (startButton != nullptr)
       startButton->click();

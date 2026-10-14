@@ -12,6 +12,7 @@
 | 顶部标签样式 | `GuiWindowShell.cpp` 的 `configureFixedTabs()` |
 | 标题栏的应用与页面名称 | `GuiWindowShell.cpp` 的 `updateWindowTitle()` |
 | 文件、目录选择与备份保存弹窗 | `FileSelectionDialog.cpp` |
+| 业务通知、确认及 Qt 文件提示桥接 | `GuiDialogs.cpp` |
 | 下载页配置字段、清单、任务区的排列 | `pages/ImageDownloadPage.cpp` 构造函数 |
 | 设备列表及可展开原始信息 | `pages/DevicePage.cpp` 构造函数 |
 | 完整升级的固件、计划和任务分区 | `pages/FullUpgradePage.cpp` 构造函数 |
@@ -63,6 +64,14 @@ bar->setAppearance(ZzFluentUI::ZzTabBarAppearance::PivotSlide);
 按钮位于底部，表头与常用位置使用中文；图标通过 `WorkspaceUi.cpp` 统一映射为 Segoe 线性字形。字体、行高和按钮高度沿用公共视觉参数，不设置第二套主题颜色。`BrowserWidth` 为文件浏览提供比普通提示框更宽的范围，并处理框架主题刷新时的宽度约束。
 
 Qt 工具按钮和输入字段的控件名只在 `configureBrowser()` 中适配。升级 Qt 后如内部布局变化，应检查工具图标及底部按钮排列；不要在各业务页面直接查找这些控件。目录模式仅返回目录，保存模式仅选择路径，实际备份仍由业务流程执行，并保持输出文件不覆盖规则。
+
+文件浏览器的删除、覆盖保存、文件或目录不存在等提示由 Qt 内部生成。应用初始化时设置 `AA_DontUseNativeDialogs`，避免 macOS 在普通显示事件前打开系统提示。`dialogs::adaptFileMessages()` 为每个浏览器安装独立桥接，只处理它的 QObject 子链中的 `QMessageBox`：原窗口不显示到屏幕，改由框架 `ZzContentDialog` 展示，用户操作通过点击原按钮传回 Qt。不要只调用 `done(1)` 或自行删除文件，否则会丢失 Qt 的 `clickedButton` 和校验逻辑。内部提示的中文源翻译在 `translations/zzrkdevtool_zh_CN.ts`，不需要额外安装系统 Qt 翻译包。
+
+## 通知和操作确认
+
+业务提示统一调用 `dialogs::notify(parent, title, text)`；需要用户确认的操作调用 `dialogs::confirm(parent, title, text, action)`，例如写入、擦除和开始升级。它们复用框架的无边框对话框、主题和遮罩，源文案通过 `GuiText` 保留即时翻译信息。不要在页面中新增 `QMessageBox` 或重复拼装框架提示窗口。
+
+危险操作默认选择取消，Enter、Escape 和关闭都不会执行操作；只有用户点击操作按钮才返回确认。正文和标题使用纯文本，文件名中的尖括号不被解释为 HTML。弹窗使用 `QPointer` 管理，父窗口关闭后不会继续访问已经销毁的窗口。
 
 ## 编译和视觉检查
 

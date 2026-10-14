@@ -15,8 +15,7 @@
 #include <QSignalBlocker>
 #include <QUrl>
 #include <QVBoxLayout>
-#include <ZzFluentUI/ZzContentDialog.h>
-#include <ZzFluentUI/ZzContentDialogResult.h>
+#include "GuiDialogs.hpp"
 #include <ZzFluentUI/ZzThemeController.h>
 
 namespace zzrk::gui {
@@ -170,15 +169,9 @@ SettingsPage::SettingsPage(std::shared_ptr<GuiSettingsStore> settings,
     }
   });
   connect(m_reset, &QPushButton::clicked, this, [this] {
-    ZzFluentUI::ZzContentDialog dialog(window());
-    dialog.setTitle(guiText("恢复默认设置"));
-    dialog.setText(
-        guiText("重置界面偏好和镜像配置草稿，保留当前配置目录。是否继续？"));
-    dialog.setPrimaryButtonText(guiText("恢复默认"));
-    dialog.setPrimaryButtonVisible(true);
-    dialog.setCloseButtonText(guiText("取消"));
-    dialog.exec();
-    if (dialog.dialogResult() != ZzFluentUI::ZzContentDialogResult::Primary ||
+    if (!dialogs::confirm(this, guiText("恢复默认设置"),
+                          guiText("重置界面偏好和镜像配置草稿，保留当前配置目录。是否继续？"),
+                          guiText("恢复默认")) ||
         !m_settings)
       return;
     // 模态确认期间仍会处理热插拔和后台完成事件，确认后再次检查实际忙碌状态。

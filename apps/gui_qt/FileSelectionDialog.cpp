@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "FileSelectionDialog.hpp"
+#include "GuiDialogs.hpp"
 #include "GuiSettings.hpp"
 #include "GuiTranslations.hpp"
 #include "GuiWindowShell.hpp"
@@ -347,6 +348,7 @@ QString selectPath(QWidget *parent, const GuiText &title,
   dialog->setSecondaryButtonVisible(false);
   dialog->setCloseButtonVisible(false);
   auto *browser = new QFileDialog(dialog);
+  dialogs::adaptFileMessages(browser);
   browser->setObjectName(QStringLiteral("fileSelectionBrowser"));
   // 显式使用 Qt 控件实现，保证三平台都能由框架绘制而不跳到系统文件窗口。
   browser->setOption(QFileDialog::DontUseNativeDialog, true);
