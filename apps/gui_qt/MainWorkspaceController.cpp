@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 
-#include "MainWorkspaceController.hpp"
+#include "GuiTranslations.hpp"
+
 #include "FileSelectionDialog.hpp"
+#include "MainWorkspaceController.hpp"
 #include "WorkspaceUi.hpp"
 #include "pages/DevicePage.hpp"
 #include "pages/FullUpgradePage.hpp"
@@ -83,7 +85,7 @@ QString devicePortText(const zzrk::transport::UsbDeviceInfo &device) {
                                  : QString::fromStdString(device.portPath);
 }
 
-QString deviceModeText(const zzrk::transport::DeviceMode mode) {
+GuiText deviceModeText(const zzrk::transport::DeviceMode mode) {
   switch (mode) {
   case zzrk::transport::DeviceMode::Adb:
     return QStringLiteral("ADB");
@@ -92,9 +94,9 @@ QString deviceModeText(const zzrk::transport::DeviceMode mode) {
   case zzrk::transport::DeviceMode::Loader:
     return QStringLiteral("Loader");
   case zzrk::transport::DeviceMode::Unknown:
-    return QStringLiteral("未知");
+    return guiText("未知");
   }
-  return QStringLiteral("未知");
+  return guiText("未知");
 }
 
 bool isSupportedFlashDevice(const zzrk::transport::UsbDeviceInfo &device) {
@@ -120,7 +122,7 @@ deviceRows(const zzrk::transport::ScanResult &result) {
     const QString port = devicePortText(device);
     rows.push_back({
         .key = QStringLiteral("%1|%2").arg(device.busNumber).arg(port),
-        .status = QStringLiteral("已连接"),
+        .status = guiText("已连接"),
         .mode = deviceModeText(device.mode),
         .deviceId = QStringLiteral("%1:%2")
                         .arg(device.vendorId, 4, 16, QLatin1Char('0'))
@@ -166,7 +168,7 @@ QString asciiBytes(const std::array<std::byte, Size> &bytes) {
   return QString::fromLatin1(text);
 }
 
-QString payloadFormatText(const zzrk::image::PayloadFormat format) {
+GuiText payloadFormatText(const zzrk::image::PayloadFormat format) {
   switch (format) {
   case zzrk::image::PayloadFormat::androidSparse:
     return QStringLiteral("Android Sparse");
@@ -200,101 +202,132 @@ pageRowKind(const zzrk::workflow::ImageDownloadItemKind kind) {
   return ImageDownloadPage::RowKind::partition;
 }
 
-QString imageDownloadStageText(const zzrk::workflow::ImageDownloadStage stage) {
+GuiText imageDownloadStageText(const zzrk::workflow::ImageDownloadStage stage) {
   using zzrk::workflow::ImageDownloadStage;
   switch (stage) {
   case ImageDownloadStage::inspectFiles:
-    return QStringLiteral("检查镜像");
+    return guiText("检查镜像");
   case ImageDownloadStage::verifyFiles:
-    return QStringLiteral("校验 MD5");
+    return guiText("校验 MD5");
   case ImageDownloadStage::selectDevice:
-    return QStringLiteral("选择设备");
+    return guiText("选择设备");
   case ImageDownloadStage::enterMaskrom:
-    return QStringLiteral("进入 Maskrom");
+    return guiText("进入 Maskrom");
   case ImageDownloadStage::waitForMaskrom:
-    return QStringLiteral("等待 Maskrom");
+    return guiText("等待 Maskrom");
   case ImageDownloadStage::downloadLoader:
-    return QStringLiteral("下载 RAM Loader");
+    return guiText("下载 RAM Loader");
   case ImageDownloadStage::waitForRamLoader:
-    return QStringLiteral("等待 RAM Loader");
+    return guiText("等待 RAM Loader");
   case ImageDownloadStage::checkRamLoader:
-    return QStringLiteral("检查 RAM Loader");
+    return guiText("检查 RAM Loader");
   case ImageDownloadStage::checkStorage:
-    return QStringLiteral("检查 eMMC");
+    return guiText("检查 eMMC");
   case ImageDownloadStage::validateLayout:
-    return QStringLiteral("核对 GPT");
+    return guiText("核对 GPT");
   case ImageDownloadStage::erase:
-    return QStringLiteral("擦除");
+    return guiText("擦除");
   case ImageDownloadStage::write:
-    return QStringLiteral("写入");
+    return guiText("写入");
   case ImageDownloadStage::verify:
-    return QStringLiteral("回读校验");
+    return guiText("回读校验");
   case ImageDownloadStage::reset:
-    return QStringLiteral("复位设备");
+    return guiText("复位设备");
   }
-  return QStringLiteral("处理");
+  return guiText("处理");
 }
 
-QString
+GuiText firmwareUpgradeStageText(zzrk::workflow::FirmwareUpgradeStage stage) {
+  using Stage = zzrk::workflow::FirmwareUpgradeStage;
+  switch (stage) {
+  case Stage::parseImage:
+    return guiText("解析固件");
+  case Stage::verifyImage:
+    return guiText("校验 MD5");
+  case Stage::planImage:
+    return guiText("生成升级计划");
+  case Stage::selectDevice:
+    return guiText("选择设备");
+  case Stage::enterMaskrom:
+    return guiText("进入 Maskrom");
+  case Stage::waitForMaskrom:
+    return guiText("等待 Maskrom");
+  case Stage::downloadLoader:
+    return guiText("下载 RAM Loader");
+  case Stage::waitForRamLoader:
+    return guiText("等待 RAM Loader");
+  case Stage::checkRamLoader:
+    return guiText("检查 RAM Loader");
+  case Stage::checkStorage:
+    return guiText("检查 eMMC");
+  case Stage::flash:
+    return guiText("烧录固件");
+  case Stage::reset:
+    return guiText("复位设备");
+  }
+  return guiText("处理");
+}
+
+GuiText
 imageDownloadErrorText(const zzrk::workflow::ImageDownloadError &error) {
   using zzrk::workflow::ImageDownloadErrorCode;
-  QString reason;
+  GuiText reason;
   switch (error.code) {
   case ImageDownloadErrorCode::cancelled:
-    reason = QStringLiteral("操作已取消");
+    reason = guiText("操作已取消");
     break;
   case ImageDownloadErrorCode::invalidRequest:
-    reason = QStringLiteral("下载计划不完整");
+    reason = guiText("下载计划不完整");
     break;
   case ImageDownloadErrorCode::imageInvalid:
-    reason = QStringLiteral("镜像格式无效或与 RK3588 不匹配");
+    reason = guiText("镜像格式无效或与 RK3588 不匹配");
     break;
   case ImageDownloadErrorCode::digestFailed:
-    reason = QStringLiteral("无法计算镜像 MD5");
+    reason = guiText("无法计算镜像 MD5");
     break;
   case ImageDownloadErrorCode::digestChanged:
-    reason = QStringLiteral("镜像在执行前发生变化");
+    reason = guiText("镜像在执行前发生变化");
     break;
   case ImageDownloadErrorCode::layoutInvalid:
-    reason = QStringLiteral("分区布局无效");
+    reason = guiText("分区布局无效");
     break;
   case ImageDownloadErrorCode::scanFailed:
   case ImageDownloadErrorCode::deviceNotFound:
   case ImageDownloadErrorCode::deviceAmbiguous:
   case ImageDownloadErrorCode::deviceUnsupported:
-    reason = QStringLiteral("目标 USB 设备不可用");
+    reason = guiText("目标 USB 设备不可用");
     break;
   case ImageDownloadErrorCode::loaderRequired:
-    reason = QStringLiteral("Maskrom 模式必须选择 MiniLoaderAll.bin");
+    reason = guiText("Maskrom 模式必须选择 MiniLoaderAll.bin");
     break;
   case ImageDownloadErrorCode::openFailed:
-    reason = QStringLiteral("无法打开 RockUSB 接口");
+    reason = guiText("无法打开 RockUSB 接口");
     break;
   case ImageDownloadErrorCode::loaderResetFailed:
   case ImageDownloadErrorCode::reenumerationTimedOut:
   case ImageDownloadErrorCode::loaderDownloadFailed:
   case ImageDownloadErrorCode::loaderNotReady:
-    reason = QStringLiteral("RAM Loader 准备失败");
+    reason = guiText("RAM Loader 准备失败");
     break;
   case ImageDownloadErrorCode::wrongChip:
-    reason = QStringLiteral("目标芯片不是 RK3588");
+    reason = guiText("目标芯片不是 RK3588");
     break;
   case ImageDownloadErrorCode::storageCheckFailed:
   case ImageDownloadErrorCode::storageNotEmmc:
   case ImageDownloadErrorCode::deviceTooSmall:
-    reason = QStringLiteral("eMMC 检查失败或空间不足");
+    reason = guiText("eMMC 检查失败或空间不足");
     break;
   case ImageDownloadErrorCode::deviceLayoutChanged:
-    reason = QStringLiteral("设备 GPT 在准备后发生变化");
+    reason = guiText("设备 GPT 在准备后发生变化");
     break;
   case ImageDownloadErrorCode::flashFailed:
-    reason = QStringLiteral("镜像写入或回读校验失败");
+    reason = guiText("镜像写入或回读校验失败");
     break;
   case ImageDownloadErrorCode::resetFailed:
-    reason = QStringLiteral("镜像已写入，但设备复位失败");
+    reason = guiText("镜像已写入，但设备复位失败");
     break;
   case ImageDownloadErrorCode::closeFailed:
-    reason = QStringLiteral("无法释放 RockUSB 接口");
+    reason = guiText("无法释放 RockUSB 接口");
     break;
   }
   if (!error.target.empty()) {
@@ -304,79 +337,79 @@ imageDownloadErrorText(const zzrk::workflow::ImageDownloadError &error) {
   return reason;
 }
 
-QString
+GuiText
 deviceManagementErrorText(const zzrk::workflow::DeviceManagementError &error) {
   using zzrk::workflow::DeviceManagementErrorCode;
-  QString reason;
+  GuiText reason;
   switch (error.code) {
   case DeviceManagementErrorCode::cancelled:
-    reason = QStringLiteral("操作已取消");
+    reason = guiText("操作已取消");
     break;
   case DeviceManagementErrorCode::scanFailed:
   case DeviceManagementErrorCode::deviceNotFound:
   case DeviceManagementErrorCode::deviceAmbiguous:
-    reason = QStringLiteral("目标 USB 设备不可用");
+    reason = guiText("目标 USB 设备不可用");
     break;
   case DeviceManagementErrorCode::deviceUnsupported:
-    reason = QStringLiteral("分区管理只支持已验证的 RK3588 Loader 模式");
+    reason = guiText("分区管理只支持已验证的 RK3588 Loader 模式");
     break;
   case DeviceManagementErrorCode::openFailed:
-    reason = QStringLiteral("无法打开 RockUSB 接口");
+    reason = guiText("无法打开 RockUSB 接口");
     break;
   case DeviceManagementErrorCode::chipInfoFailed:
-    reason = QStringLiteral("读取 ChipInfo 失败");
+    reason = guiText("读取 ChipInfo 失败");
     break;
   case DeviceManagementErrorCode::capabilityFailed:
-    reason = QStringLiteral("读取 Capability 失败");
+    reason = guiText("读取 Capability 失败");
     break;
   case DeviceManagementErrorCode::flashInfoFailed:
-    reason = QStringLiteral("读取 FlashInfo 失败");
+    reason = guiText("读取 FlashInfo 失败");
     break;
   case DeviceManagementErrorCode::flashIdFailed:
-    reason = QStringLiteral("读取 FlashID 失败");
+    reason = guiText("读取 FlashID 失败");
     break;
   case DeviceManagementErrorCode::storageNotEmmc:
-    reason = QStringLiteral("目标存储不是 eMMC");
+    reason = guiText("目标存储不是 eMMC");
     break;
   case DeviceManagementErrorCode::gptFailed:
-    reason = QStringLiteral("读取或校验 GPT 失败");
+    reason = guiText("读取或校验 GPT 失败");
     break;
   case DeviceManagementErrorCode::partitionNotFound:
   case DeviceManagementErrorCode::partitionAmbiguous:
-    reason = QStringLiteral("目标分区不存在或名称不唯一");
+    reason = guiText("目标分区不存在或名称不唯一");
     break;
   case DeviceManagementErrorCode::inputInvalid:
-    reason = QStringLiteral("输入镜像无效");
+    reason = guiText("输入镜像无效");
     break;
   case DeviceManagementErrorCode::inputTooLarge:
-    reason = QStringLiteral("输入镜像大于目标分区");
+    reason = guiText("输入镜像大于目标分区");
     break;
   case DeviceManagementErrorCode::inputOpenFailed:
   case DeviceManagementErrorCode::inputReadFailed:
-    reason = QStringLiteral("读取输入镜像失败");
+    reason = guiText("读取输入镜像失败");
     break;
   case DeviceManagementErrorCode::outputExists:
-    reason = QStringLiteral("输出文件已存在，未覆盖");
+    reason = guiText("输出文件已存在，未覆盖");
     break;
   case DeviceManagementErrorCode::outputOpenFailed:
   case DeviceManagementErrorCode::outputWriteFailed:
   case DeviceManagementErrorCode::outputFinalizeFailed:
-    reason = QStringLiteral("保存分区备份失败");
+    reason = guiText("保存分区备份失败");
     break;
   case DeviceManagementErrorCode::readFailed:
-    reason = QStringLiteral("读取 eMMC 分区失败");
+    reason = guiText("读取 eMMC 分区失败");
     break;
   case DeviceManagementErrorCode::writeFailed:
-    reason = QStringLiteral("写入 eMMC 分区失败");
+    reason = guiText("写入 eMMC 分区失败");
     break;
   case DeviceManagementErrorCode::verifyFailed:
-    reason = QStringLiteral("分区回读校验失败");
+    reason = guiText("分区回读校验失败");
     break;
   case DeviceManagementErrorCode::eraseFailed:
-    reason = QStringLiteral("擦除 eMMC 分区失败");
+    reason = guiText("擦除 eMMC 分区失败");
     break;
   case DeviceManagementErrorCode::closeFailed:
-    reason = QStringLiteral("无法释放 RockUSB 接口");
+    reason = guiText("无法释放 RockUSB 接口");
     break;
   }
   if (!error.target.empty()) {
@@ -386,53 +419,53 @@ deviceManagementErrorText(const zzrk::workflow::DeviceManagementError &error) {
   return reason;
 }
 
-QString workflowErrorText(const zzrk::workflow::FirmwareUpgradeError &error) {
+GuiText workflowErrorText(const zzrk::workflow::FirmwareUpgradeError &error) {
   using zzrk::workflow::FirmwareUpgradeErrorCode;
-  QString reason;
+  GuiText reason;
   switch (error.code) {
   case FirmwareUpgradeErrorCode::cancelled:
-    reason = QStringLiteral("操作已取消");
+    reason = guiText("操作已取消");
     break;
   case FirmwareUpgradeErrorCode::imageInvalid:
-    reason = QStringLiteral("固件格式无效");
+    reason = guiText("固件格式无效");
     break;
   case FirmwareUpgradeErrorCode::digestFailed:
-    reason = QStringLiteral("固件 MD5 校验失败");
+    reason = guiText("固件 MD5 校验失败");
     break;
   case FirmwareUpgradeErrorCode::planInvalid:
-    reason = QStringLiteral("无法生成完整升级计划");
+    reason = guiText("无法生成完整升级计划");
     break;
   case FirmwareUpgradeErrorCode::scanFailed:
   case FirmwareUpgradeErrorCode::deviceNotFound:
   case FirmwareUpgradeErrorCode::deviceAmbiguous:
   case FirmwareUpgradeErrorCode::deviceUnsupported:
-    reason = QStringLiteral("目标 USB 设备不可用");
+    reason = guiText("目标 USB 设备不可用");
     break;
   case FirmwareUpgradeErrorCode::openFailed:
-    reason = QStringLiteral("无法打开 RockUSB 接口");
+    reason = guiText("无法打开 RockUSB 接口");
     break;
   case FirmwareUpgradeErrorCode::loaderResetFailed:
   case FirmwareUpgradeErrorCode::reenumerationTimedOut:
   case FirmwareUpgradeErrorCode::loaderDownloadFailed:
   case FirmwareUpgradeErrorCode::loaderNotReady:
-    reason = QStringLiteral("RAM Loader 准备失败");
+    reason = guiText("RAM Loader 准备失败");
     break;
   case FirmwareUpgradeErrorCode::wrongChip:
-    reason = QStringLiteral("目标芯片不是 RK3588");
+    reason = guiText("目标芯片不是 RK3588");
     break;
   case FirmwareUpgradeErrorCode::storageCheckFailed:
   case FirmwareUpgradeErrorCode::storageNotEmmc:
   case FirmwareUpgradeErrorCode::deviceTooSmall:
-    reason = QStringLiteral("eMMC 检查失败");
+    reason = guiText("eMMC 检查失败");
     break;
   case FirmwareUpgradeErrorCode::flashFailed:
-    reason = QStringLiteral("固件写入或回读校验失败");
+    reason = guiText("固件写入或回读校验失败");
     break;
   case FirmwareUpgradeErrorCode::resetFailed:
-    reason = QStringLiteral("固件已写入，但设备复位失败");
+    reason = guiText("固件已写入，但设备复位失败");
     break;
   case FirmwareUpgradeErrorCode::closeFailed:
-    reason = QStringLiteral("无法释放 RockUSB 接口");
+    reason = guiText("无法释放 RockUSB 接口");
     break;
   }
   if (!error.target.empty())
@@ -441,19 +474,19 @@ QString workflowErrorText(const zzrk::workflow::FirmwareUpgradeError &error) {
   return reason;
 }
 
-QString partitionPhaseText(zzrk::workflow::PartitionOperationPhase phase) {
+GuiText partitionPhaseText(zzrk::workflow::PartitionOperationPhase phase) {
   using zzrk::workflow::PartitionOperationPhase;
   switch (phase) {
   case PartitionOperationPhase::read:
-    return QStringLiteral("备份");
+    return guiText("备份");
   case PartitionOperationPhase::write:
-    return QStringLiteral("写入");
+    return guiText("写入");
   case PartitionOperationPhase::verify:
-    return QStringLiteral("校验");
+    return guiText("校验");
   case PartitionOperationPhase::erase:
-    return QStringLiteral("擦除");
+    return guiText("擦除");
   }
-  return QStringLiteral("操作");
+  return guiText("操作");
 }
 
 zzrk::workflow::ImageDownloadError
@@ -561,11 +594,10 @@ MainWorkspaceController::attachWorkspace(ZzFluentUI::ZzTabWidget *tabs,
                                          QStatusBar *statusBar,
                                          ImageDownloadPage *downloadPage) {
   if (m_shuttingDown) {
-    return workspaceFailure(QStringLiteral("工作区控制器正在关闭"));
+    return workspaceFailure(guiText("工作区控制器正在关闭"));
   }
   if (tabs == nullptr || statusBar == nullptr || downloadPage == nullptr) {
-    return workspaceFailure(
-        QStringLiteral("工作区标签、状态栏和下载页面不能为空"));
+    return workspaceFailure(guiText("工作区标签、状态栏和下载页面不能为空"));
   }
   m_tabs = tabs;
   m_tabs->setObjectName(QStringLiteral("mainTabs"));
@@ -577,8 +609,8 @@ MainWorkspaceController::attachWorkspace(ZzFluentUI::ZzTabWidget *tabs,
   }
   auto deviceInstance = std::move(deviceResult).value();
   auto *devicePage = qobject_cast<DevicePage *>(deviceInstance->view());
-  if (tabs->addTab(devicePage, QStringLiteral("设备")) < 0) {
-    return workspaceFailure(QStringLiteral("无法加入设备页面标签"));
+  if (tabs->addTab(devicePage, guiText("设备")) < 0) {
+    return workspaceFailure(guiText("无法加入设备页面标签"));
   }
 
   auto upgradeResult = createFixedPage<FullUpgradePage>(tabs);
@@ -587,8 +619,8 @@ MainWorkspaceController::attachWorkspace(ZzFluentUI::ZzTabWidget *tabs,
   }
   auto upgradeInstance = std::move(upgradeResult).value();
   auto *upgradePage = qobject_cast<FullUpgradePage *>(upgradeInstance->view());
-  if (tabs->addTab(upgradePage, QStringLiteral("完整升级")) < 0) {
-    return workspaceFailure(QStringLiteral("无法加入完整升级页面标签"));
+  if (tabs->addTab(upgradePage, guiText("完整升级")) < 0) {
+    return workspaceFailure(guiText("无法加入完整升级页面标签"));
   }
 
   auto partitionResult = createFixedPage<PartitionPage>(tabs);
@@ -598,8 +630,8 @@ MainWorkspaceController::attachWorkspace(ZzFluentUI::ZzTabWidget *tabs,
   auto partitionInstance = std::move(partitionResult).value();
   auto *partitionPage =
       qobject_cast<PartitionPage *>(partitionInstance->view());
-  if (tabs->addTab(partitionPage, QStringLiteral("分区")) < 0) {
-    return workspaceFailure(QStringLiteral("无法加入分区页面标签"));
+  if (tabs->addTab(partitionPage, guiText("分区")) < 0) {
+    return workspaceFailure(guiText("无法加入分区页面标签"));
   }
 
   m_devicePageInstance = std::move(deviceInstance);
@@ -608,17 +640,17 @@ MainWorkspaceController::attachWorkspace(ZzFluentUI::ZzTabWidget *tabs,
   QPointer<MainWorkspaceController> guard{this};
   attachPages(downloadPage, devicePage, upgradePage, partitionPage);
   if (guard == nullptr) {
-    return workspaceFailure(QStringLiteral("工作区控制器在页面装配期间被销毁"));
+    return workspaceFailure(guiText("工作区控制器在页面装配期间被销毁"));
   }
 
   QWidget *const host = statusBar;
   m_connectionText =
       host->findChild<QLabel *>(QStringLiteral("connectionStatusText"));
   if (m_connectionText == nullptr) {
-    m_connectionText = new QLabel(QStringLiteral("正在检测设备..."), host);
+    m_connectionText = guiLabel(guiText("正在检测设备..."), host);
     m_connectionText->setObjectName(QStringLiteral("connectionStatusText"));
     m_connectionText->setProperty("hotplugAvailable", true);
-    m_connectionText->setAccessibleName(QStringLiteral("连接状态"));
+    setGuiText(m_connectionText, "accessibleName", guiText("连接状态"));
   }
 
   m_refreshButton =
@@ -627,13 +659,13 @@ MainWorkspaceController::attachWorkspace(ZzFluentUI::ZzTabWidget *tabs,
     m_refreshButton = new QToolButton(host);
     m_refreshButton->setObjectName(QStringLiteral("refreshButton"));
     ui::configureToolButton(m_refreshButton, ui::Icon::Refresh);
-    m_refreshButton->setToolTip(QStringLiteral("立即刷新设备列表"));
-    m_refreshButton->setAccessibleName(QStringLiteral("刷新设备列表"));
+    setGuiText(m_refreshButton, "toolTip", guiText("立即刷新设备列表"));
+    setGuiText(m_refreshButton, "accessibleName", guiText("刷新设备列表"));
   }
 
   m_lastScanText = host->findChild<QLabel *>(QStringLiteral("lastScanText"));
   if (m_lastScanText == nullptr) {
-    m_lastScanText = new QLabel(QStringLiteral("尚未扫描"), host);
+    m_lastScanText = guiLabel(guiText("尚未扫描"), host);
     m_lastScanText->setObjectName(QStringLiteral("lastScanText"));
   }
 
@@ -649,7 +681,7 @@ MainWorkspaceController::attachWorkspace(ZzFluentUI::ZzTabWidget *tabs,
     m_statusBar->addWidget(m_connectionText, 1);
     m_statusBar->addPermanentWidget(m_refreshButton);
     m_statusBar->addPermanentWidget(m_lastScanText);
-    m_statusBar->showMessage(QStringLiteral("准备就绪"));
+    setGuiStatus(m_statusBar, guiText("准备就绪"));
   }
   startMonitoring();
   QTimer::singleShot(0, this, &MainWorkspaceController::refreshDevices);
@@ -779,7 +811,7 @@ void MainWorkspaceController::refreshDevices() {
     m_refreshButton->setEnabled(false);
   }
   if (m_statusBar != nullptr) {
-    m_statusBar->showMessage(QStringLiteral("正在扫描 USB 设备..."));
+    setGuiStatus(m_statusBar, guiText("正在扫描 USB 设备..."));
   }
   if (m_viewModel == nullptr) {
     return;
@@ -826,13 +858,13 @@ void MainWorkspaceController::handleDeviceMonitoringError(
   }
   if (m_connectionText != nullptr) {
     m_connectionText->setProperty("hotplugAvailable", false);
-    m_connectionText->setText(QStringLiteral("设备热插拔检测不可用"));
+    setGuiText(m_connectionText, "text", guiText("设备热插拔检测不可用"));
     m_connectionText->setToolTip(m_deviceMonitoringError);
   }
   if (m_statusBar != nullptr) {
-    m_statusBar->showMessage(
-        QStringLiteral("设备热插拔检测不可用：%1；请使用手动刷新")
-            .arg(m_deviceMonitoringError));
+    setGuiStatus(m_statusBar,
+                 guiText("设备热插拔检测不可用：%1；请使用手动刷新")
+                     .arg(m_deviceMonitoringError));
   }
   emit deviceMonitoringError(m_deviceMonitoringError);
 }
@@ -897,21 +929,21 @@ void MainWorkspaceController::applyScanResult(
       m_downloadPage->deviceCombo()->setCurrentIndex(restored);
   }
   if (m_lastScanText != nullptr) {
-    m_lastScanText->setText(QStringLiteral("更新于 %1")
-                                .arg(QDateTime::currentDateTime().toString(
-                                    QStringLiteral("HH:mm:ss"))));
+    setGuiText(m_lastScanText, "text",
+               guiText("更新于 %1")
+                   .arg(QDateTime::currentDateTime().toString(
+                       QStringLiteral("HH:mm:ss"))));
   }
   if (m_connectionText != nullptr) {
     const auto count = static_cast<qulonglong>(result.devices.size());
-    m_connectionText->setText(
+    setGuiText(
+        m_connectionText, "text",
         result.error.has_value()
             ? (count == 0U
-                   ? QStringLiteral("设备扫描失败")
-                   : QStringLiteral("已检测到 %1 台设备（结果可能不完整）")
-                         .arg(count))
-            : (count == 0U
-                   ? QStringLiteral("未检测到 Rockchip 设备")
-                   : QStringLiteral("已连接 %1 台 Rockchip 设备").arg(count)));
+                   ? guiText("设备扫描失败")
+                   : guiText("已检测到 %1 台设备（结果可能不完整）").arg(count))
+            : (count == 0U ? guiText("未检测到 Rockchip 设备")
+                           : guiText("已连接 %1 台 Rockchip 设备").arg(count)));
   }
   QPointer<MainWorkspaceController> guard{this};
   emit devicesChanged(result);
@@ -942,7 +974,7 @@ void MainWorkspaceController::handleDeviceSelectionChanged() {
     setDevicePartitionTable(nullptr);
     if (guard == nullptr)
       return;
-    m_partitionTableStatus = QStringLiteral("尚未读取分区表");
+    m_partitionTableStatus = guiText("尚未读取分区表");
     clearPartitionTable();
     if (guard == nullptr)
       return;
@@ -956,9 +988,9 @@ void MainWorkspaceController::handleDeviceSelectionChanged() {
       return;
   }
   if (port.isEmpty()) {
-    m_devicePage->setInspection(QStringLiteral("请选择 Loader 设备"));
+    m_devicePage->setInspection(guiText("请选择 Loader 设备"));
   } else if (!selectedDeviceManageable()) {
-    m_devicePage->setInspection(QStringLiteral("当前模式不支持详情与分区操作"));
+    m_devicePage->setInspection(guiText("当前模式不支持详情与分区操作"));
   }
   updateDownloadControls();
   if (guard == nullptr)
@@ -981,7 +1013,7 @@ void MainWorkspaceController::clearDeviceInspection() {
       return;
   }
   if (m_devicePage != nullptr) {
-    m_devicePage->setInspection(QStringLiteral("尚未读取详情"));
+    m_devicePage->setInspection(guiText("尚未读取详情"));
   }
 }
 
@@ -991,9 +1023,9 @@ void MainWorkspaceController::inspectSelectedDevice() {
   const QString port = selectedPortPath();
   if (port.isEmpty())
     return;
-  m_devicePage->setInspection(QStringLiteral("正在读取设备详情..."));
+  m_devicePage->setInspection(guiText("正在读取设备详情..."));
   if (m_statusBar != nullptr)
-    m_statusBar->showMessage(QStringLiteral("正在读取设备详情"));
+    setGuiStatus(m_statusBar, guiText("正在读取设备详情"));
   const auto backend = m_backend;
   m_inspectionWatcher.setFuture(QtConcurrent::run([backend, port] {
     try {
@@ -1016,12 +1048,12 @@ void MainWorkspaceController::handleInspectionFinished() {
     clearDeviceInspection();
     if (guard == nullptr)
       return;
-    const QString message = deviceManagementErrorText(*error);
+    const GuiText message = deviceManagementErrorText(*error);
     m_devicePage->setInspection(message);
     if (m_statusBar != nullptr)
-      m_statusBar->showMessage(QStringLiteral("设备详情读取失败"));
+      setGuiStatus(m_statusBar, guiText("设备详情读取失败"));
     if (m_showModalDialogs)
-      QMessageBox::critical(m_devicePage, QStringLiteral("读取失败"), message);
+      QMessageBox::critical(m_devicePage, guiText("读取失败"), message);
     setPagesBusy(false);
     if (guard == nullptr)
       return;
@@ -1042,20 +1074,20 @@ void MainWorkspaceController::handleInspectionFinished() {
   const auto sectors = inspection.flashInfo.legacy.sectorCount;
   const auto &usb = inspection.interfaceInfo;
   m_devicePage->setInspection(
-      QStringLiteral("端口 %1，详情读取完成").arg(port),
+      guiText("端口 %1，详情读取完成").arg(port),
       hexBytes(inspection.chipInfo.bytes),
       hexBytes(inspection.capability.rawBytes),
       QStringLiteral("%1 [%2]").arg(asciiBytes(inspection.flashId.rawBytes),
                                     hexBytes(inspection.flashId.rawBytes)),
-      QStringLiteral("%1（%2 扇区）")
+      guiText("%1（%2 扇区）")
           .arg(dataSizeText(static_cast<std::uint64_t>(sectors) * 512U))
           .arg(sectors),
-      QStringLiteral("原始 %1；块 %2，页 %3，ECC %4")
+      guiText("原始 %1；块 %2，页 %3，ECC %4")
           .arg(hexBytes(inspection.flashInfo.rawBytes))
           .arg(inspection.flashInfo.legacy.blockSizeCode)
           .arg(inspection.flashInfo.legacy.pageSizeCode)
           .arg(inspection.flashInfo.legacy.eccBits),
-      QStringLiteral("接口 %1/%2；IN 0x%3 (%4 B)，OUT 0x%5 (%6 B)")
+      guiText("接口 %1/%2；IN 0x%3 (%4 B)，OUT 0x%5 (%6 B)")
           .arg(usb.interfaceNumber)
           .arg(usb.alternateSetting)
           .arg(usb.bulkInEndpoint, 2, 16, QLatin1Char('0'))
@@ -1064,7 +1096,7 @@ void MainWorkspaceController::handleInspectionFinished() {
           .arg(usb.bulkOutMaxPacketSize)
           .toUpper());
   if (m_statusBar != nullptr)
-    m_statusBar->showMessage(QStringLiteral("设备详情已更新"));
+    setGuiStatus(m_statusBar, guiText("设备详情已更新"));
   setPagesBusy(false);
   if (guard == nullptr)
     return;
@@ -1080,7 +1112,7 @@ void MainWorkspaceController::readSelectedDevicePartitions() {
   const QString port = selectedPortPath();
   if (port.isEmpty())
     return;
-  m_partitionTableStatus = QStringLiteral("正在读取并校验 GPT...");
+  m_partitionTableStatus = guiText("正在读取并校验 GPT...");
   if (m_partitionPage != nullptr) {
     m_partitionPage->setStatus(m_partitionTableStatus);
     m_partitionPage->setProgress(0, true);
@@ -1088,7 +1120,7 @@ void MainWorkspaceController::readSelectedDevicePartitions() {
   if (m_downloadPage != nullptr)
     m_downloadPage->setStatus(m_partitionTableStatus);
   if (m_statusBar != nullptr)
-    m_statusBar->showMessage(QStringLiteral("正在读取 GPT 分区表"));
+    setGuiStatus(m_statusBar, guiText("正在读取 GPT 分区表"));
   const auto backend = m_backend;
   m_partitionTableWatcher.setFuture(QtConcurrent::run([backend, port] {
     try {
@@ -1120,9 +1152,9 @@ void MainWorkspaceController::handlePartitionTableFinished() {
     if (m_downloadPage != nullptr)
       m_downloadPage->setError(m_partitionTableStatus);
     if (m_statusBar != nullptr)
-      m_statusBar->showMessage(QStringLiteral("GPT 分区表读取失败"));
+      setGuiStatus(m_statusBar, guiText("GPT 分区表读取失败"));
     if (m_showModalDialogs && m_downloadPage != nullptr) {
-      QMessageBox::critical(m_downloadPage, QStringLiteral("读取失败"),
+      QMessageBox::critical(m_downloadPage, guiText("读取失败"),
                             m_partitionTableStatus);
     }
     setPagesBusy(false);
@@ -1151,7 +1183,7 @@ void MainWorkspaceController::handlePartitionTableFinished() {
   }
   const auto backup = zzrk::storage::toString(partitions.table.backupStatus);
   m_partitionTableStatus =
-      QStringLiteral("端口 %1：%2 个分区，eMMC %3，备份 GPT %4")
+      guiText("端口 %1：%2 个分区，eMMC %3，备份 GPT %4")
           .arg(QString::fromStdString(partitions.device.portPath))
           .arg(static_cast<qulonglong>(partitions.table.partitions.size()))
           .arg(dataSizeText(partitions.deviceSectors * 512U))
@@ -1171,7 +1203,7 @@ void MainWorkspaceController::handlePartitionTableFinished() {
     m_partitionPage->setStatus(m_partitionTableStatus);
   }
   if (m_statusBar != nullptr)
-    m_statusBar->showMessage(QStringLiteral("GPT 分区表已更新"));
+    setGuiStatus(m_statusBar, guiText("GPT 分区表已更新"));
   setPagesBusy(false);
   if (guard == nullptr)
     return;
@@ -1193,7 +1225,7 @@ void MainWorkspaceController::clearPartitionTable() {
   if (m_partitionPage != nullptr) {
     m_partitionPage->clearPartitions();
     m_partitionPage->setProgress(0);
-    m_partitionPage->setStatus(QStringLiteral("尚未读取分区表"));
+    m_partitionPage->setStatus(guiText("尚未读取分区表"));
   }
   updatePartitionControls();
   if (guard == nullptr)
@@ -1207,19 +1239,17 @@ void MainWorkspaceController::backupSelectedPartition() {
   if (!partition.has_value())
     return;
   const QString path = FileSelectionDialog::getSaveFileName(
-      m_partitionPage, QStringLiteral("备份分区"),
+      m_partitionPage, guiText("备份分区"),
       partition->name + QStringLiteral(".img"),
-      QStringLiteral("分区镜像 (*.img);;所有文件 (*)"));
+      guiText("分区镜像 (*.img);;所有文件 (*)"), QStringLiteral("backup"));
   if (path.isEmpty())
     return;
   if (QFileInfo::exists(path)) {
-    const QString message =
-        QStringLiteral("输出文件已存在，备份不会覆盖该文件。");
+    const GuiText message = guiText("输出文件已存在，备份不会覆盖该文件。");
     if (m_statusBar != nullptr)
-      m_statusBar->showMessage(message);
+      setGuiStatus(m_statusBar, message);
     if (m_showModalDialogs)
-      QMessageBox::warning(m_partitionPage, QStringLiteral("无法备份"),
-                           message);
+      QMessageBox::warning(m_partitionPage, guiText("无法备份"), message);
     return;
   }
   startPartitionOperation(zzrk::workflow::PartitionOperationPhase::read,
@@ -1233,8 +1263,9 @@ void MainWorkspaceController::writeSelectedPartition() {
   if (!partition.has_value())
     return;
   const QString path = FileSelectionDialog::getOpenFileName(
-      m_partitionPage, QStringLiteral("选择分区镜像"), {},
-      QStringLiteral("分区镜像 (*.img *.bin);;所有文件 (*)"));
+      m_partitionPage, guiText("选择分区镜像"), {},
+      guiText("分区镜像 (*.img *.bin);;所有文件 (*)"),
+      QStringLiteral("partition"));
   if (path.isEmpty())
     return;
   const auto partitionBytes =
@@ -1242,26 +1273,25 @@ void MainWorkspaceController::writeSelectedPartition() {
   const QFileInfo inputInfo{path};
   if (inputInfo.size() <= 0 ||
       static_cast<qulonglong>(inputInfo.size()) > partitionBytes) {
-    const QString message = QStringLiteral("镜像大小无效或超过目标分区容量。");
+    const GuiText message = guiText("镜像大小无效或超过目标分区容量。");
     if (m_statusBar != nullptr)
-      m_statusBar->showMessage(message);
+      setGuiStatus(m_statusBar, message);
     if (m_showModalDialogs)
-      QMessageBox::critical(m_partitionPage, QStringLiteral("无法写入"),
-                            message);
+      QMessageBox::critical(m_partitionPage, guiText("无法写入"), message);
     return;
   }
   if (m_showModalDialogs) {
     const auto answer = QMessageBox::warning(
-        m_partitionPage, QStringLiteral("确认写入分区"),
-        QStringLiteral(
-            "端口：%1\n分区：%2\nLBA：%3 - %4\n分区容量：%5\n"
-            "镜像：%6\n回读校验：%7\n\n该操作会覆盖目标分区现有数据。")
+        m_partitionPage, guiText("确认写入分区"),
+        guiText("端口：%1\n分区：%2\nLBA：%3 - "
+                "%4\n分区容量：%5\n镜像：%6\n回读校验：%"
+                "7\n\n该操作会覆盖目标分区现有数据。")
             .arg(selectedPortPath(), partition->name)
             .arg(partition->firstLba)
             .arg(partition->lastLba)
             .arg(dataSizeText(partitionBytes), inputInfo.fileName(),
-                 m_partitionPage->verifyWrite() ? QStringLiteral("启用")
-                                                : QStringLiteral("关闭")),
+                 m_partitionPage->verifyWrite() ? guiText("启用")
+                                                : guiText("关闭")),
         QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
     if (answer != QMessageBox::Yes)
       return;
@@ -1280,9 +1310,9 @@ void MainWorkspaceController::eraseSelectedPartition() {
       (partition->lastLba - partition->firstLba + 1U) * 512U;
   if (m_showModalDialogs) {
     const auto answer = QMessageBox::critical(
-        m_partitionPage, QStringLiteral("确认擦除分区"),
-        QStringLiteral("端口：%1\n分区：%2\nLBA：%3 - %4\n容量：%5\n\n"
-                       "该分区的全部数据将被擦除，且无法恢复。")
+        m_partitionPage, guiText("确认擦除分区"),
+        guiText("端口：%1\n分区：%2\nLBA：%3 - "
+                "%4\n容量：%5\n\n该分区的全部数据将被擦除，且无法恢复。")
             .arg(selectedPortPath(), partition->name)
             .arg(partition->firstLba)
             .arg(partition->lastLba)
@@ -1311,10 +1341,10 @@ void MainWorkspaceController::startPartitionOperation(
   cancellation->store(false);
   m_partitionPage->setProgress(0);
   m_partitionPage->setStatus(
-      QStringLiteral("正在%1分区 %2...")
+      guiText("正在%1分区 %2...")
           .arg(partitionPhaseText(phase), partition->name));
   if (m_statusBar != nullptr)
-    m_statusBar->showMessage(QStringLiteral("分区操作进行中"));
+    setGuiStatus(m_statusBar, guiText("分区操作进行中"));
   const auto backend = m_backend;
   const bool verify = m_partitionPage->verifyWrite();
   QPointer<MainWorkspaceController> guard{this};
@@ -1372,7 +1402,7 @@ void MainWorkspaceController::handlePartitionOperationProgress(
                 100U, progress.completedBytes * 100U / progress.totalBytes));
   m_partitionPage->setProgress(percent, progress.totalBytes == 0U);
   m_partitionPage->setStatus(
-      QStringLiteral("正在%1分区 %2：%3 / %4")
+      guiText("正在%1分区 %2：%3 / %4")
           .arg(partitionPhaseText(progress.phase),
                QString::fromStdString(progress.partition),
                dataSizeText(progress.completedBytes),
@@ -1386,7 +1416,7 @@ void MainWorkspaceController::cancelPartitionOperation() {
       m_partitionPage == nullptr)
     return;
   cancellation->store(true);
-  m_partitionPage->setStatus(QStringLiteral("正在等待当前 USB 分块完成..."));
+  m_partitionPage->setStatus(guiText("正在等待当前 USB 分块完成..."));
   updatePartitionControls();
 }
 
@@ -1398,37 +1428,35 @@ void MainWorkspaceController::handlePartitionOperationFinished() {
   m_partitionPage->setProgress(0);
   if (const auto *error =
           std::get_if<zzrk::workflow::DeviceManagementError>(&result)) {
-    const QString message = deviceManagementErrorText(*error);
+    const GuiText message = deviceManagementErrorText(*error);
     if (error->code == zzrk::workflow::DeviceManagementErrorCode::cancelled)
       m_partitionPage->setStatus(message);
     else
       m_partitionPage->setError(message);
     if (m_statusBar != nullptr)
-      m_statusBar->showMessage(
-          error->code == zzrk::workflow::DeviceManagementErrorCode::cancelled
-              ? QStringLiteral("分区操作已取消")
-              : QStringLiteral("分区操作失败"));
+      setGuiStatus(m_statusBar,
+                   error->code ==
+                           zzrk::workflow::DeviceManagementErrorCode::cancelled
+                       ? guiText("分区操作已取消")
+                       : guiText("分区操作失败"));
     if (m_showModalDialogs &&
         error->code != zzrk::workflow::DeviceManagementErrorCode::cancelled)
-      QMessageBox::critical(m_partitionPage, QStringLiteral("操作失败"),
-                            message);
+      QMessageBox::critical(m_partitionPage, guiText("操作失败"), message);
   } else {
     const auto &success =
         std::get<zzrk::workflow::PartitionOperationSuccess>(result);
     m_partitionPage->setProgress(100);
-    const QString message =
-        QStringLiteral("%1完成：分区 %2，处理 %3%4")
+    const GuiText message =
+        guiText("%1完成：分区 %2，处理 %3%4")
             .arg(partitionPhaseText(success.phase),
                  QString::fromStdString(success.partition),
                  dataSizeText(success.bytesProcessed),
-                 success.verified ? QStringLiteral("，回读校验通过")
-                                  : QString{});
+                 success.verified ? guiText("，回读校验通过") : GuiText{});
     m_partitionPage->setStatus(message);
     if (m_statusBar != nullptr)
-      m_statusBar->showMessage(QStringLiteral("分区操作完成"));
+      setGuiStatus(m_statusBar, guiText("分区操作完成"));
     if (m_showModalDialogs)
-      QMessageBox::information(m_partitionPage, QStringLiteral("操作完成"),
-                               message);
+      QMessageBox::information(m_partitionPage, guiText("操作完成"), message);
     successValue = true;
   }
   QPointer<MainWorkspaceController> guard{this};
@@ -1462,8 +1490,9 @@ void MainWorkspaceController::chooseFirmwareImage() {
       m_upgradeWatcher.isRunning())
     return;
   const QString path = FileSelectionDialog::getOpenFileName(
-      m_upgradePage, QStringLiteral("选择 Rockchip 固件"), {},
-      QStringLiteral("Rockchip 固件 (*.img);;所有文件 (*)"));
+      m_upgradePage, guiText("选择 Rockchip 固件"), {},
+      guiText("Rockchip 固件 (*.img);;所有文件 (*)"),
+      QStringLiteral("firmware"));
   if (!path.isEmpty())
     loadFirmwareImage(path);
 }
@@ -1476,9 +1505,10 @@ void MainWorkspaceController::loadFirmwareImage(const QString &path) {
   m_preparedUpgrade.reset();
   m_progressTracker.reset();
   m_firmwarePath = path;
+  emit preferencesChanged();
   m_upgradePage->setFirmwarePath(path);
   m_upgradePage->setPlanPreview({});
-  m_upgradePage->setStatus(QStringLiteral("正在解析固件并校验 MD5..."));
+  m_upgradePage->setStatus(guiText("正在解析固件并校验 MD5..."));
   m_upgradePage->setOverallProgress(0, true);
   m_upgradePage->setOperationProgress(0, true);
   const auto backend = m_backend;
@@ -1503,13 +1533,14 @@ void MainWorkspaceController::handlePrepareFinished() {
   auto result = m_prepareWatcher.result();
   if (const auto *error =
           std::get_if<zzrk::workflow::FirmwareUpgradeError>(&result)) {
+    m_startUpgradeAfterPreparation = false;
     m_preparedUpgrade.reset();
     m_upgradePage->setPlanPreview({});
     m_upgradePage->setOverallProgress(0);
     m_upgradePage->setOperationProgress(0);
     m_upgradePage->setError(workflowErrorText(*error));
     if (m_statusBar != nullptr)
-      m_statusBar->showMessage(QStringLiteral("固件预检失败"));
+      setGuiStatus(m_statusBar, guiText("固件预检失败"));
     QPointer<MainWorkspaceController> guard{this};
     setPagesBusy(false);
     if (guard == nullptr)
@@ -1523,28 +1554,31 @@ void MainWorkspaceController::handlePrepareFinished() {
   m_preparedUpgrade =
       std::get<zzrk::workflow::PreparedFirmwareUpgrade>(std::move(result));
   const auto &prepared = *m_preparedUpgrade;
-  QStringList lines;
-  lines << QStringLiteral("目标：%1 / %2")
-               .arg(QString::fromStdString(prepared.plan.targetChip),
-                    QString::fromStdString(prepared.plan.targetModel));
-  lines << QStringLiteral("最低 eMMC 扇区：%1；分区数据：%2 字节")
-               .arg(prepared.plan.minimumDeviceSectors)
-               .arg(prepared.plan.totalPartitionBytes);
-  lines << QStringLiteral("步骤：%1；MD5：%2")
-               .arg(prepared.plan.steps.size())
-               .arg(QString::fromLatin1(prepared.md5.data()));
-  for (const auto &step : prepared.plan.steps) {
-    if (!step.target.empty())
-      lines << QStringLiteral("- %1（%2 字节）")
-                   .arg(QString::fromStdString(step.target))
-                   .arg(step.outputSize);
-  }
-  m_upgradePage->setPlanPreview(lines.join(QLatin1Char('\n')));
+  // 仅从已生成的计划刷新显示，切换语言不重新读取镜像或校验 MD5。
+  m_upgradePage->setPlanPreview(GuiText([prepared] {
+    QStringList lines;
+    lines << guiText("目标：%1 / %2")
+                 .arg(QString::fromStdString(prepared.plan.targetChip),
+                      QString::fromStdString(prepared.plan.targetModel));
+    lines << guiText("最低 eMMC 扇区：%1；分区数据：%2 字节")
+                 .arg(prepared.plan.minimumDeviceSectors)
+                 .arg(prepared.plan.totalPartitionBytes);
+    lines << guiText("步骤：%1；MD5：%2")
+                 .arg(prepared.plan.steps.size())
+                 .arg(QString::fromLatin1(prepared.md5.data()));
+    for (const auto &step : prepared.plan.steps) {
+      if (!step.target.empty())
+        lines << guiText("- %1（%2 字节）")
+                     .arg(QString::fromStdString(step.target))
+                     .arg(step.outputSize);
+    }
+    return lines.join(QLatin1Char('\n'));
+  }));
   m_upgradePage->setOverallProgress(0);
   m_upgradePage->setOperationProgress(0);
-  m_upgradePage->setStatus(QStringLiteral("固件预检通过"));
+  m_upgradePage->setStatus(guiText("固件预检通过"));
   if (m_statusBar != nullptr)
-    m_statusBar->showMessage(QStringLiteral("升级计划已生成"));
+    setGuiStatus(m_statusBar, guiText("升级计划已生成"));
   QPointer<MainWorkspaceController> guard{this};
   setPagesBusy(false);
   if (guard == nullptr)
@@ -1556,21 +1590,30 @@ void MainWorkspaceController::handlePrepareFinished() {
   if (guard == nullptr)
     return;
   emit firmwarePreparationCompleted(true);
+  if (guard != nullptr && m_startUpgradeAfterPreparation) {
+    m_startUpgradeAfterPreparation = false;
+    startUpgrade();
+  }
 }
 
 void MainWorkspaceController::startUpgrade() {
-  if (m_upgradePage == nullptr || !m_preparedUpgrade.has_value() ||
-      m_prepareWatcher.isRunning() || m_upgradeWatcher.isRunning() ||
-      usbOperationRunning())
+  if (m_upgradePage == nullptr || m_prepareWatcher.isRunning() ||
+      m_upgradeWatcher.isRunning() || usbOperationRunning())
     return;
   const QString port = selectedPortPath();
   if (port.isEmpty() || !selectedDeviceFlashable())
     return;
+  if (!m_preparedUpgrade.has_value()) {
+    if (!QFileInfo(m_firmwarePath).isFile())
+      return;
+    m_startUpgradeAfterPreparation = true;
+    loadFirmwareImage(m_firmwarePath);
+    return;
+  }
   if (m_showModalDialogs) {
     const auto answer = QMessageBox::warning(
-        m_upgradePage, QStringLiteral("确认完整升级"),
-        QStringLiteral(
-            "将向端口 %1 的 eMMC 写入 Loader、GPT 和固件中的全部分区。")
+        m_upgradePage, guiText("确认完整升级"),
+        guiText("将向端口 %1 的 eMMC 写入 Loader、GPT 和固件中的全部分区。")
             .arg(port),
         QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
     if (answer != QMessageBox::Yes)
@@ -1587,9 +1630,9 @@ void MainWorkspaceController::startUpgrade() {
     return;
   m_upgradePage->setOverallProgress(0);
   m_upgradePage->setOperationProgress(0, true);
-  m_upgradePage->setStatus(QStringLiteral("正在启动完整升级..."));
+  m_upgradePage->setStatus(guiText("正在启动完整升级..."));
   if (m_statusBar != nullptr)
-    m_statusBar->showMessage(QStringLiteral("固件升级进行中"));
+    setGuiStatus(m_statusBar, guiText("固件升级进行中"));
   const auto prepared = *m_preparedUpgrade;
   const auto verifyMode = m_upgradePage->verifyMode();
   m_progressTracker.emplace(prepared.plan, verifyMode);
@@ -1600,8 +1643,8 @@ void MainWorkspaceController::startUpgrade() {
       .reboot = m_upgradePage->rebootAfterFlash(),
       .prepareOnly = false};
   const auto backend = m_backend;
-  m_upgradeWatcher.setFuture(
-      QtConcurrent::run([guard, backend, request, prepared, cancellation]() mutable {
+  m_upgradeWatcher.setFuture(QtConcurrent::run(
+      [guard, backend, request, prepared, cancellation]() mutable {
         const auto progress =
             [guard](const zzrk::workflow::FirmwareUpgradeEvent &event) {
               if (guard != nullptr)
@@ -1634,7 +1677,7 @@ void MainWorkspaceController::cancelUpgrade() {
       m_upgradePage == nullptr)
     return;
   cancellation->store(true);
-  m_upgradePage->setStatus(QStringLiteral("正在等待当前 USB 分块完成..."));
+  m_upgradePage->setStatus(guiText("正在等待当前 USB 分块完成..."));
   updateUpgradeControls();
 }
 
@@ -1654,13 +1697,11 @@ void MainWorkspaceController::handleUpgradeProgress(
     if (guard == nullptr)
       return;
   }
-  const auto stageText = zzrk::workflow::toString(event.stage);
-  const QString stage = QString::fromLatin1(
-      stageText.data(), static_cast<qsizetype>(stageText.size()));
+  const GuiText stage = firmwareUpgradeStageText(event.stage);
   m_upgradePage->setStatus(
-      event.target.empty() ? stage
-                           : QStringLiteral("%1：%2").arg(
-                                 stage, QString::fromStdString(event.target)));
+      event.target.empty()
+          ? stage
+          : GuiText("%1：%2").arg(stage, QString::fromStdString(event.target)));
   emit upgradeProgressChanged(snapshot.overallPercent,
                               snapshot.operationPercent);
 }
@@ -1675,16 +1716,16 @@ void MainWorkspaceController::handleUpgradeFinished() {
       m_viewModel != nullptr ? m_viewModel->operationProgress() : 0);
   if (const auto *error =
           std::get_if<zzrk::workflow::FirmwareUpgradeError>(&result)) {
-    const QString message = workflowErrorText(*error);
+    const GuiText message = workflowErrorText(*error);
     if (error->code == zzrk::workflow::FirmwareUpgradeErrorCode::cancelled)
       m_upgradePage->setStatus(message);
     else
       m_upgradePage->setError(message);
     if (m_statusBar != nullptr)
-      m_statusBar->showMessage(QStringLiteral("固件升级未完成"));
+      setGuiStatus(m_statusBar, guiText("固件升级未完成"));
     if (m_showModalDialogs &&
         error->code != zzrk::workflow::FirmwareUpgradeErrorCode::cancelled)
-      QMessageBox::critical(m_upgradePage, QStringLiteral("升级失败"), message);
+      QMessageBox::critical(m_upgradePage, guiText("升级失败"), message);
   } else {
     const auto &success =
         std::get<zzrk::workflow::FirmwareUpgradeSuccess>(result);
@@ -1700,16 +1741,14 @@ void MainWorkspaceController::handleUpgradeFinished() {
       if (guard == nullptr)
         return;
     }
-    const QString message =
-        QStringLiteral("升级完成：%1 字节，已校验 %2 个分区")
-            .arg(success.partitionBytesWritten)
-            .arg(success.partitionsVerified);
+    const GuiText message = guiText("升级完成：%1 字节，已校验 %2 个分区")
+                                .arg(success.partitionBytesWritten)
+                                .arg(success.partitionsVerified);
     m_upgradePage->setStatus(message);
     if (m_statusBar != nullptr)
-      m_statusBar->showMessage(QStringLiteral("固件升级完成"));
+      setGuiStatus(m_statusBar, guiText("固件升级完成"));
     if (m_showModalDialogs)
-      QMessageBox::information(m_upgradePage, QStringLiteral("升级完成"),
-                               message);
+      QMessageBox::information(m_upgradePage, guiText("升级完成"), message);
   }
   m_progressTracker.reset();
   QPointer<MainWorkspaceController> guard{this};
@@ -1726,9 +1765,9 @@ void MainWorkspaceController::updateUpgradeControls() {
   if (m_upgradePage == nullptr)
     return;
   const bool busy = usbOperationRunning();
-  const bool canStart = m_preparedUpgrade.has_value() &&
-                        selectedDeviceFlashable() &&
-                        !selectedPortPath().isEmpty();
+  const bool canStart =
+      (m_preparedUpgrade.has_value() || QFileInfo(m_firmwarePath).isFile()) &&
+      selectedDeviceFlashable() && !selectedPortPath().isEmpty();
   const auto cancellation =
       m_viewModel != nullptr ? m_viewModel->upgradeCancellation() : nullptr;
   m_upgradePage->setBusy(busy, canStart,
@@ -1768,7 +1807,7 @@ void MainWorkspaceController::handleDownloadDeviceChanged() {
     m_viewModel->setDownloadLayoutPort({});
     if (guard == nullptr)
       return;
-    m_downloadPage->layoutPathEdit()->clear();
+    setGuiText(m_downloadPage->layoutPathEdit(), "text", {});
     rebuildDownloadTable();
     if (guard == nullptr)
       return;
@@ -1793,7 +1832,7 @@ void MainWorkspaceController::handleDownloadLayoutChanged() {
       if (guard == nullptr)
         return;
     }
-    m_downloadPage->layoutPathEdit()->clear();
+    setGuiText(m_downloadPage->layoutPathEdit(), "text", {});
   } else if (m_devicePartitions.has_value() &&
              QString::fromStdString(m_devicePartitions->device.portPath) ==
                  downloadPortPath()) {
@@ -1810,7 +1849,7 @@ void MainWorkspaceController::handleDownloadLayoutChanged() {
       if (guard == nullptr)
         return;
     }
-    m_downloadPage->layoutPathEdit()->clear();
+    setGuiText(m_downloadPage->layoutPathEdit(), "text", {});
   }
   QPointer<MainWorkspaceController> guard{this};
   rebuildDownloadTable();
@@ -1834,8 +1873,9 @@ void MainWorkspaceController::chooseDownloadParameter() {
   if (m_downloadPage == nullptr)
     return;
   const QString path = FileSelectionDialog::getOpenFileName(
-      m_downloadPage, QStringLiteral("选择 parameter.txt"), {},
-      QStringLiteral("Rockchip parameter (parameter.txt *.txt);;所有文件 (*)"));
+      m_downloadPage, guiText("选择 parameter.txt"), {},
+      guiText("Rockchip parameter (parameter.txt *.txt);;所有文件 (*)"),
+      QStringLiteral("parameter"));
   if (!path.isEmpty())
     loadDownloadParameter(path);
 }
@@ -1849,9 +1889,8 @@ void MainWorkspaceController::loadDownloadParameter(const QString &path) {
   auto parsed = zzrk::image::parseRockchipParameterFile(parameterPath);
   if (const auto *error =
           std::get_if<zzrk::image::FirmwareImageError>(&parsed)) {
-    m_downloadPage->setStatus(
-        QStringLiteral("parameter.txt 解析失败（错误 %1）")
-            .arg(static_cast<int>(error->code)));
+    m_downloadPage->setStatus(guiText("parameter.txt 解析失败（错误 %1）")
+                                  .arg(static_cast<int>(error->code)));
     return;
   }
   {
@@ -1859,6 +1898,8 @@ void MainWorkspaceController::loadDownloadParameter(const QString &path) {
     m_downloadPage->layoutCombo()->setCurrentIndex(1);
   }
   m_downloadParameterPath = parameterPath;
+  m_downloadDraftRestored = false;
+  emit preferencesChanged();
   m_downloadLayout =
       std::get<zzrk::image::RockchipParameterLayout>(std::move(parsed));
   QPointer<MainWorkspaceController> guard{this};
@@ -1867,11 +1908,11 @@ void MainWorkspaceController::loadDownloadParameter(const QString &path) {
     if (guard == nullptr)
       return;
   }
-  m_downloadPage->layoutPathEdit()->setText(path);
+  setGuiText(m_downloadPage->layoutPathEdit(), "text", path);
   if (m_downloadDirectoryPath.empty()) {
     m_downloadDirectoryPath = parameterPath.parent_path();
-    m_downloadPage->directoryEdit()->setText(
-        filesystemPathText(m_downloadDirectoryPath));
+    setGuiText(m_downloadPage->directoryEdit(), "text",
+               filesystemPathText(m_downloadDirectoryPath));
   }
   rebuildDownloadTable();
   if (guard == nullptr)
@@ -1880,7 +1921,7 @@ void MainWorkspaceController::loadDownloadParameter(const QString &path) {
   if (guard == nullptr)
     return;
   m_downloadPage->setStatus(
-      QStringLiteral("已加载 parameter.txt，共 %1 个分区")
+      guiText("已加载 parameter.txt，共 %1 个分区")
           .arg(static_cast<qulonglong>(m_downloadLayout->partitions.size())));
 }
 
@@ -1888,8 +1929,8 @@ void MainWorkspaceController::chooseDownloadDirectory() {
   if (m_downloadPage == nullptr)
     return;
   const QString path = FileSelectionDialog::getExistingDirectory(
-      m_downloadPage, QStringLiteral("选择镜像目录"),
-      m_downloadPage->directoryEdit()->text());
+      m_downloadPage, guiText("选择镜像目录"),
+      m_downloadPage->directoryEdit()->text(), QStringLiteral("images"));
   if (!path.isEmpty())
     loadDownloadDirectory(path);
 }
@@ -1901,11 +1942,13 @@ void MainWorkspaceController::loadDownloadDirectory(const QString &path) {
     return;
   const QDir directory{path};
   if (!directory.exists()) {
-    m_downloadPage->setStatus(QStringLiteral("镜像目录不存在"));
+    m_downloadPage->setStatus(guiText("镜像目录不存在"));
     return;
   }
   m_downloadDirectoryPath = filesystemPath(directory.absolutePath());
-  m_downloadPage->directoryEdit()->setText(directory.absolutePath());
+  m_downloadDraftRestored = false;
+  emit preferencesChanged();
+  setGuiText(m_downloadPage->directoryEdit(), "text", directory.absolutePath());
   matchDownloadDirectory();
 }
 
@@ -1952,7 +1995,7 @@ void MainWorkspaceController::matchDownloadDirectory() {
   if (guard == nullptr)
     return;
   m_downloadPage->setStatus(
-      QStringLiteral("已匹配 %1 个可下载目标")
+      guiText("已匹配 %1 个可下载目标")
           .arg(static_cast<qulonglong>(m_validDownloadImages.size())));
 }
 
@@ -2011,6 +2054,7 @@ void MainWorkspaceController::assignDownloadImage(
   }
   if (rebuild)
     rebuildDownloadTable();
+  emit preferencesChanged();
 }
 
 void MainWorkspaceController::rebuildDownloadTable() {
@@ -2027,17 +2071,17 @@ void MainWorkspaceController::rebuildDownloadTable() {
   rows.reserve(
       static_cast<std::size_t>(1 + (parameterLayout ? 1 : 0) + partitionRows));
   const auto addRow = [&](const zzrk::workflow::ImageDownloadItemKind kind,
-                          const std::string &target, const QString &lba,
+                          const std::string &target, const GuiText &lba,
                           const std::uint64_t capacity, const bool forced) {
     QString file = QStringLiteral("-");
-    QString format = QStringLiteral("-");
+    GuiText format = QStringLiteral("-");
     QString expanded = QStringLiteral("-");
-    QString status = QStringLiteral("未选择");
+    GuiText status = guiText("未选择");
     if (kind == zzrk::workflow::ImageDownloadItemKind::partitionTable) {
       file = filesystemPathText(m_downloadParameterPath);
       format = payloadFormatText(zzrk::image::PayloadFormat::rockchipParameter);
       expanded = dataSizeText(67U * 512U);
-      status = QStringLiteral("就绪");
+      status = guiText("就绪");
     } else if (const auto found = m_downloadImages.find(target);
                found != m_downloadImages.end()) {
       file = filesystemPathText(found->second);
@@ -2057,8 +2101,8 @@ void MainWorkspaceController::rebuildDownloadTable() {
         }
       }
       status = m_validDownloadImages.contains(target)
-                   ? QStringLiteral("就绪")
-                   : QStringLiteral("镜像无效或超过分区容量");
+                   ? guiText("就绪")
+                   : guiText("镜像无效或超过分区容量");
     }
     rows.push_back({
         .kind = pageRowKind(kind),
@@ -2081,7 +2125,7 @@ void MainWorkspaceController::rebuildDownloadTable() {
          QStringLiteral("64"), 0U, false);
   if (parameterLayout)
     addRow(zzrk::workflow::ImageDownloadItemKind::partitionTable, "GPT",
-           QStringLiteral("主 / 备"), 67U * 512U, true);
+           guiText("主 / 备"), 67U * 512U, true);
   if (m_downloadLayout.has_value()) {
     for (const auto &partition : m_downloadLayout->partitions) {
       const std::uint64_t capacity =
@@ -2109,13 +2153,14 @@ void MainWorkspaceController::chooseSelectedDownloadImage() {
   const std::string target = selected->target.toStdString();
   const QString path = FileSelectionDialog::getOpenFileName(
       m_downloadPage,
-      target == "Loader" ? QStringLiteral("选择 MiniLoaderAll.bin")
-                         : QStringLiteral("选择分区镜像"),
+      target == "Loader" ? guiText("选择 MiniLoaderAll.bin")
+                         : guiText("选择分区镜像"),
       m_downloadPage->directoryEdit()->text(),
       target == "Loader"
-          ? QStringLiteral(
-                "Rockchip Loader (MiniLoaderAll.bin *.bin);;所有文件 (*)")
-          : QStringLiteral("分区镜像 (*.img *.bin);;所有文件 (*)"));
+          ? guiText("Rockchip Loader (MiniLoaderAll.bin *.bin);;所有文件 (*)")
+          : guiText("分区镜像 (*.img *.bin);;所有文件 (*)"),
+      target == "Loader" ? QStringLiteral("loader")
+                         : QStringLiteral("downloadImage"));
   if (!path.isEmpty())
     assignDownloadImage(target, filesystemPath(path));
 }
@@ -2136,6 +2181,7 @@ void MainWorkspaceController::clearSelectedDownloadImage() {
   m_downloadSelections.erase(target);
   m_downloadVerifications.erase(target);
   m_validDownloadImages.erase(target);
+  emit preferencesChanged();
   rebuildDownloadTable();
   if (guard == nullptr)
     return;
@@ -2204,7 +2250,7 @@ void MainWorkspaceController::startImageDownload() {
       targets << QStringLiteral("Loader");
     if (request->layoutSource ==
         zzrk::workflow::ImageDownloadLayoutSource::parameterFile) {
-      targets << QStringLiteral("主/备 GPT");
+      targets << guiText("主/备 GPT");
     }
     for (const auto &partition : request->partitions)
       targets << QString::fromStdString(partition.target);
@@ -2212,15 +2258,14 @@ void MainWorkspaceController::startImageDownload() {
         request->layoutSource ==
                 zzrk::workflow::ImageDownloadLayoutSource::parameterFile
             ? filesystemPathText(request->parameterPath)
-            : QStringLiteral("设备当前 GPT");
+            : guiText("设备当前 GPT");
     const auto answer = QMessageBox::warning(
-        m_downloadPage, QStringLiteral("确认下载镜像"),
-        QStringLiteral("端口：%1\n布局：%2\n目标：%3\n完成后重启：%4\n\n"
-                       "所选目标的现有数据会被覆盖。")
+        m_downloadPage, guiText("确认下载镜像"),
+        guiText("端口：%1\n布局：%2\n目标：%3\n完成后重启：%"
+                "4\n\n所选目标的现有数据会被覆盖。")
             .arg(port, layout, targets.join(QStringLiteral("、")),
-                 m_downloadPage->rebootCheckBox()->isChecked()
-                     ? QStringLiteral("是")
-                     : QStringLiteral("否")),
+                 m_downloadPage->rebootCheckBox()->isChecked() ? guiText("是")
+                                                               : guiText("否")),
         QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
     if (answer != QMessageBox::Yes)
       return;
@@ -2230,7 +2275,7 @@ void MainWorkspaceController::startImageDownload() {
       .reboot = m_downloadPage->rebootCheckBox()->isChecked()};
   m_preparedDownload.reset();
   m_downloadPage->setProgress(0, 0, true, true);
-  m_downloadPage->setStatus(QStringLiteral("正在检查镜像并计算 MD5..."));
+  m_downloadPage->setStatus(guiText("正在检查镜像并计算 MD5..."));
   const auto backend = m_backend;
   m_downloadPrepareWatcher.setFuture(
       QtConcurrent::run([backend, request = *request] {
@@ -2266,7 +2311,7 @@ void MainWorkspaceController::handleDownloadPrepareFinished() {
     return;
   }
   if (usbOperationRunning()) {
-    m_downloadPage->setStatus(QStringLiteral("另一个 USB 操作正在运行"));
+    m_downloadPage->setStatus(guiText("另一个 USB 操作正在运行"));
     QPointer<MainWorkspaceController> guard{this};
     updateDownloadControls();
     if (guard == nullptr)
@@ -2285,7 +2330,7 @@ void MainWorkspaceController::handleDownloadPrepareFinished() {
   }
   cancellation->store(false);
   m_downloadPage->setProgress(0, 0, false, true);
-  m_downloadPage->setStatus(QStringLiteral("正在启动镜像下载..."));
+  m_downloadPage->setStatus(guiText("正在启动镜像下载..."));
   const auto backend = m_backend;
   const auto request = m_pendingDownloadRequest;
   QPointer<MainWorkspaceController> guard{this};
@@ -2325,7 +2370,7 @@ void MainWorkspaceController::cancelImageDownload() {
       m_downloadPage == nullptr)
     return;
   cancellation->store(true);
-  m_downloadPage->setStatus(QStringLiteral("正在等待当前 USB 分块完成..."));
+  m_downloadPage->setStatus(guiText("正在等待当前 USB 分块完成..."));
   updateDownloadControls();
 }
 
@@ -2343,11 +2388,11 @@ void MainWorkspaceController::handleDownloadProgress(
   const int overall = percent(event.completedPlanBytes, event.totalPlanBytes);
   m_downloadPage->setProgress(overall, operation, false,
                               event.totalBytes == 0U);
-  const QString stage = imageDownloadStageText(event.stage);
+  const GuiText stage = imageDownloadStageText(event.stage);
   m_downloadPage->setStatus(
-      event.target.empty() ? stage
-                           : QStringLiteral("%1：%2").arg(
-                                 stage, QString::fromStdString(event.target)));
+      event.target.empty()
+          ? stage
+          : GuiText("%1：%2").arg(stage, QString::fromStdString(event.target)));
   if (event.itemIndex.has_value() && m_preparedDownload.has_value() &&
       *event.itemIndex < m_preparedDownload->items.size()) {
     const QString target = QString::fromStdString(
@@ -2355,7 +2400,7 @@ void MainWorkspaceController::handleDownloadProgress(
     m_downloadPage->setTargetStatus(
         target, event.totalBytes == 0U
                     ? stage
-                    : QStringLiteral("%1 %2%").arg(stage).arg(operation));
+                    : GuiText("%1 %2%").arg(stage).arg(operation));
   }
   QPointer<MainWorkspaceController> guard{this};
   if (m_viewModel != nullptr) {
@@ -2376,7 +2421,7 @@ void MainWorkspaceController::handleImageDownloadFinished() {
   bool succeeded = false;
   if (const auto *error =
           std::get_if<zzrk::workflow::ImageDownloadError>(&result)) {
-    const QString message = imageDownloadErrorText(*error);
+    const GuiText message = imageDownloadErrorText(*error);
     if (error->code == zzrk::workflow::ImageDownloadErrorCode::cancelled)
       m_downloadPage->setStatus(message);
     else
@@ -2388,28 +2433,26 @@ void MainWorkspaceController::handleImageDownloadFinished() {
       m_downloadPage->setTargetStatus(
           target,
           error->code == zzrk::workflow::ImageDownloadErrorCode::cancelled
-              ? QStringLiteral("已取消")
-              : QStringLiteral("失败"));
+              ? guiText("已取消")
+              : guiText("失败"));
     }
     if (m_showModalDialogs &&
         error->code != zzrk::workflow::ImageDownloadErrorCode::cancelled)
-      QMessageBox::critical(m_downloadPage, QStringLiteral("下载失败"),
-                            message);
+      QMessageBox::critical(m_downloadPage, guiText("下载失败"), message);
   } else {
     const auto &success =
         std::get<zzrk::workflow::ImageDownloadSuccess>(result);
     m_downloadPage->setProgress(100, 100);
-    m_downloadPage->setSelectedTargetsStatus(QStringLiteral("完成"));
-    const QString message =
-        QStringLiteral("下载完成：写入 %1 项，校验 %2 项，共 %3")
+    m_downloadPage->setSelectedTargetsStatus(guiText("完成"));
+    const GuiText message =
+        guiText("下载完成：写入 %1 项，校验 %2 项，共 %3")
             .arg(success.itemsWritten)
             .arg(success.itemsVerified)
             .arg(dataSizeText(success.partitionBytesWritten));
     m_downloadPage->setStatus(message);
     succeeded = true;
     if (m_showModalDialogs)
-      QMessageBox::information(m_downloadPage, QStringLiteral("下载完成"),
-                               message);
+      QMessageBox::information(m_downloadPage, guiText("下载完成"), message);
   }
   m_preparedDownload.reset();
   QPointer<MainWorkspaceController> guard{this};
@@ -2463,7 +2506,7 @@ void MainWorkspaceController::setDevicePartitionTable(
         if (guard == nullptr)
           return;
       }
-      m_downloadPage->layoutPathEdit()->clear();
+      setGuiText(m_downloadPage->layoutPathEdit(), "text", {});
       rebuildDownloadTable();
     }
     return;
@@ -2489,16 +2532,19 @@ void MainWorkspaceController::setDevicePartitionTable(
     if (guard == nullptr)
       return;
   }
-  m_downloadPage->layoutPathEdit()->setText(
-      QStringLiteral("%1 / 设备 GPT").arg(port));
+  setGuiText(m_downloadPage->layoutPathEdit(), "text",
+             guiText("%1 / 设备 GPT").arg(port));
   rebuildDownloadTable();
   if (guard == nullptr)
     return;
-  matchDownloadDirectory();
+  if (m_downloadDraftRestored)
+    revalidateDownloadDraft();
+  else
+    matchDownloadDirectory();
   if (guard == nullptr)
     return;
   m_downloadPage->setStatus(
-      QStringLiteral("已读取设备 GPT，共 %1 个分区")
+      guiText("已读取设备 GPT，共 %1 个分区")
           .arg(static_cast<qulonglong>(m_downloadLayout->partitions.size())));
 }
 
@@ -2507,8 +2553,8 @@ MainWorkspaceController::devicePartitionTable() const noexcept {
   return m_devicePartitions;
 }
 
-const QString &MainWorkspaceController::partitionTableStatus() const noexcept {
-  return m_partitionTableStatus;
+QString MainWorkspaceController::partitionTableStatus() const {
+  return m_partitionTableStatus.translated();
 }
 
 void MainWorkspaceController::shutdown() noexcept {

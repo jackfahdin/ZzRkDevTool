@@ -24,7 +24,8 @@ namespace zzrk::gui::test {
 class GuiTestHarness final {
 public:
   [[nodiscard]] static std::unique_ptr<GuiTestHarness> create(
-      std::shared_ptr<IGuiOperationBackend> backend = {});
+      std::shared_ptr<IGuiOperationBackend> backend = {},
+      std::shared_ptr<GuiSettingsStore> settings = {});
 
   ~GuiTestHarness();
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "DevicePage.hpp"
+#include "GuiTranslations.hpp"
 #include "WorkspaceUi.hpp"
 
 #include <QAbstractItemView>
@@ -13,6 +14,7 @@
 #include <QTableWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <algorithm>
 
 namespace zzrk::gui {
 namespace {
@@ -35,14 +37,32 @@ DevicePage::DevicePage(QWidget *parent) : QWidget(parent) {
   auto *listLayout = new QVBoxLayout(listCard);
   listLayout->setContentsMargins(ui::CardPadding, ui::CardPadding,
                                  ui::CardPadding, ui::CardPadding);
-  listLayout->addWidget(
-      ui::sectionTitle(QStringLiteral("已连接设备"), listCard));
+  listLayout->addWidget(ui::sectionTitle(guiText("已连接设备"), listCard));
   m_table = new QTableWidget(0, ColumnCount, this);
   m_table->setObjectName(QStringLiteral("deviceTable"));
-  m_table->setHorizontalHeaderLabels(
-      {QStringLiteral("状态"), QStringLiteral("设备模式"),
-       QStringLiteral("VID:PID"), QStringLiteral("总线"),
-       QStringLiteral("端口路径"), QStringLiteral("USB 版本")});
+  bindGuiTranslation(m_table, [this] {
+    const QSignalBlocker blocker(m_table);
+    const bool sorting = m_table->isSortingEnabled();
+    m_table->setSortingEnabled(false);
+    // 排序后按设备键定位文案，不重建行，保留当前选择和排序。
+    for (int row = 0; row < m_table->rowCount(); ++row) {
+      auto *status = m_table->item(row, StatusColumn);
+      if (!status)
+        continue;
+      const auto found = std::find_if(m_rows.begin(), m_rows.end(),
+                                      [status](const DeviceRow &device) {
+                                        return device.key == status->toolTip();
+                                      });
+      if (found != m_rows.end()) {
+        status->setText(found->status.translated());
+        m_table->item(row, ModeColumn)->setText(found->mode.translated());
+      }
+    }
+    m_table->setSortingEnabled(sorting);
+    m_table->setHorizontalHeaderLabels(
+        {guiText("状态"), guiText("设备模式"), QStringLiteral("VID:PID"),
+         guiText("总线"), guiText("端口路径"), guiText("USB 版本")});
+  });
   ui::configureTable(m_table);
   m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
   m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -67,20 +87,19 @@ DevicePage::DevicePage(QWidget *parent) : QWidget(parent) {
   details->setVerticalSpacing(12);
   details->setColumnStretch(1, 1);
   details->setColumnStretch(3, 1);
-  m_inspectButton =
-      ui::button(QStringLiteral("读取详情"), ui::Icon::Info, group);
+  m_inspectButton = ui::button(guiText("读取详情"), ui::Icon::Info, group);
   m_inspectButton->setObjectName(QStringLiteral("inspectDeviceButton"));
-  m_status = new QLabel(QStringLiteral("请选择 Loader 设备"), group);
+  m_status = guiLabel(guiText("请选择 Loader 设备"), group);
   m_status->setObjectName(QStringLiteral("deviceDetailStatus"));
   m_status->setWordWrap(true);
   m_status->setTextFormat(Qt::PlainText);
   auto *actions = new QHBoxLayout;
-  actions->addWidget(ui::sectionTitle(QStringLiteral("所选设备详情"), group));
+  actions->addWidget(ui::sectionTitle(guiText("所选设备详情"), group));
   actions->addStretch();
   actions->addWidget(m_inspectButton);
   details->addLayout(actions, 0, 0, 1, 4);
   details->addWidget(m_status, 1, 0, 1, 4);
-  const auto addDetail = [group, details](const QString &name, QLabel *&value,
+  const auto addDetail = [group, details](const GuiText &name, QLabel *&value,
                                           int row, int column,
                                           const QString &objectName) {
     details->addWidget(ui::secondaryText(name, group), row, column);
@@ -91,14 +110,14 @@ DevicePage::DevicePage(QWidget *parent) : QWidget(parent) {
     value->setTextFormat(Qt::PlainText);
     details->addWidget(value, row, column + 1);
   };
-  addDetail(QStringLiteral("芯片信息"), m_chipInfo, 2, 0,
+  addDetail(guiText("芯片信息"), m_chipInfo, 2, 0,
             QStringLiteral("chipInfoValue"));
-  addDetail(QStringLiteral("eMMC 容量"), m_capacity, 2, 2,
+  addDetail(guiText("eMMC 容量"), m_capacity, 2, 2,
             QStringLiteral("capacityValue"));
 
   // 原始协议字段保留在可展开区域，日常使用先展示芯片与容量。
   auto *advancedButton = new QToolButton(group);
-  advancedButton->setText(QStringLiteral("原始设备信息"));
+  setGuiText(advancedButton, "text", guiText("原始设备信息"));
   advancedButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
   advancedButton->setArrowType(Qt::RightArrow);
   advancedButton->setCheckable(true);
@@ -111,7 +130,7 @@ DevicePage::DevicePage(QWidget *parent) : QWidget(parent) {
   advancedLayout->setColumnStretch(1, 1);
   advancedLayout->setColumnStretch(3, 1);
   const auto addRaw = [advanced, advancedLayout](
-                          const QString &name, QLabel *&value, int row,
+                          const GuiText &name, QLabel *&value, int row,
                           int column, const QString &objectName) {
     advancedLayout->addWidget(ui::secondaryText(name, advanced), row, column);
     value = new QLabel(QStringLiteral("-"), advanced);
@@ -127,7 +146,7 @@ DevicePage::DevicePage(QWidget *parent) : QWidget(parent) {
          QStringLiteral("flashIdValue"));
   addRaw(QStringLiteral("FlashInfo"), m_flashInfo, 1, 0,
          QStringLiteral("flashInfoValue"));
-  addRaw(QStringLiteral("USB 接口"), m_usbInterface, 1, 2,
+  addRaw(guiText("USB 接口"), m_usbInterface, 1, 2,
          QStringLiteral("usbInterfaceValue"));
   details->addWidget(advanced, 4, 0, 1, 4);
   advanced->hide();
@@ -160,17 +179,18 @@ void DevicePage::selectPort(const QString &port) {
 }
 void DevicePage::setDevices(std::vector<DeviceRow> devices) {
   const QSignalBlocker blocker{m_table};
+  m_rows = devices;
   const QString selected = selectedPortPath();
   m_table->setSortingEnabled(false);
   m_table->clearContents();
   m_table->setRowCount(static_cast<int>(devices.size()));
   int row = 0;
   for (const auto &device : devices) {
-    auto *status = item(device.status);
+    auto *status = item(device.status.translated());
     status->setData(Qt::UserRole, device.portPath);
     status->setToolTip(device.key);
     m_table->setItem(row, StatusColumn, status);
-    m_table->setItem(row, ModeColumn, item(device.mode));
+    m_table->setItem(row, ModeColumn, item(device.mode.translated()));
     m_table->setItem(row, DeviceIdColumn, item(device.deviceId));
     m_table->setItem(row, BusColumn, item(device.bus));
     m_table->setItem(row, PortColumn, item(device.portPath));
@@ -182,20 +202,21 @@ void DevicePage::setDevices(std::vector<DeviceRow> devices) {
   if (m_table->currentRow() < 0 && m_table->rowCount() > 0)
     m_table->selectRow(0);
 }
-void DevicePage::setInspection(const QString &status, const QString &chipInfo,
-                               const QString &capability,
-                               const QString &flashId, const QString &capacity,
-                               const QString &flashInfo,
-                               const QString &usbInterface) {
-  m_status->setText(status);
-  m_chipInfo->setText(chipInfo.isEmpty() ? QStringLiteral("-") : chipInfo);
-  m_capability->setText(capability.isEmpty() ? QStringLiteral("-")
-                                             : capability);
-  m_flashId->setText(flashId.isEmpty() ? QStringLiteral("-") : flashId);
-  m_capacity->setText(capacity.isEmpty() ? QStringLiteral("-") : capacity);
-  m_flashInfo->setText(flashInfo.isEmpty() ? QStringLiteral("-") : flashInfo);
-  m_usbInterface->setText(usbInterface.isEmpty() ? QStringLiteral("-")
-                                                 : usbInterface);
+void DevicePage::setInspection(const GuiText &status, const GuiText &chipInfo,
+                               const GuiText &capability,
+                               const GuiText &flashId, const GuiText &capacity,
+                               const GuiText &flashInfo,
+                               const GuiText &usbInterface) {
+  setGuiText(m_status, "text", status);
+  setGuiText(m_chipInfo, "text", chipInfo.isEmpty() ? GuiText("-") : chipInfo);
+  setGuiText(m_capability, "text",
+             capability.isEmpty() ? GuiText("-") : capability);
+  setGuiText(m_flashId, "text", flashId.isEmpty() ? GuiText("-") : flashId);
+  setGuiText(m_capacity, "text", capacity.isEmpty() ? GuiText("-") : capacity);
+  setGuiText(m_flashInfo, "text",
+             flashInfo.isEmpty() ? GuiText("-") : flashInfo);
+  setGuiText(m_usbInterface, "text",
+             usbInterface.isEmpty() ? GuiText("-") : usbInterface);
 }
 void DevicePage::setBusy(const bool busy, const bool canInspect) {
   m_table->setEnabled(!busy);

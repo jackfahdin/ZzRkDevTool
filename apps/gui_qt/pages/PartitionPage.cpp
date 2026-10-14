@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "PartitionPage.hpp"
+#include "GuiTranslations.hpp"
 #include "WorkspaceUi.hpp"
 #include <ZzFluentUI/ZzInfoBar.h>
 
@@ -45,24 +46,26 @@ PartitionPage::PartitionPage(QWidget *parent) : QWidget(parent) {
   tableLayout->setContentsMargins(ui::CardPadding, ui::CardPadding,
                                   ui::CardPadding, ui::CardPadding);
   auto *toolbar = new QHBoxLayout;
-  toolbar->addWidget(ui::sectionTitle(QStringLiteral("设备分区表"), tableCard));
+  toolbar->addWidget(ui::sectionTitle(guiText("设备分区表"), tableCard));
   toolbar->addStretch();
   m_readButton = new QToolButton(this);
   m_readButton->setObjectName(QStringLiteral("readPartitionsButton"));
   ui::configureToolButton(m_readButton, ui::Icon::Refresh);
-  m_readButton->setToolTip(QStringLiteral("重新读取并校验 GPT"));
-  m_readButton->setAccessibleName(QStringLiteral("读取 GPT 分区表"));
+  setGuiText(m_readButton, "toolTip", guiText("重新读取并校验 GPT"));
+  setGuiText(m_readButton, "accessibleName", guiText("读取 GPT 分区表"));
   toolbar->addWidget(m_readButton);
   tableLayout->addLayout(toolbar);
   tableLayout->addWidget(ui::secondaryText(
-      QStringLiteral("目标设备：在“设备”页选中的 Loader 设备"), tableCard));
+      guiText("目标设备：在“设备”页选中的 Loader 设备"), tableCard));
 
   m_table = new QTableWidget(0, Count, this);
   m_table->setObjectName(QStringLiteral("partitionTable"));
-  m_table->setHorizontalHeaderLabels(
-      {QStringLiteral("分区名"), QStringLiteral("起始 LBA"),
-       QStringLiteral("结束 LBA"), QStringLiteral("扇区数"),
-       QStringLiteral("容量"), QStringLiteral("属性")});
+  bindGuiTranslation(m_table, [this] {
+    const QSignalBlocker blocker(m_table);
+    m_table->setHorizontalHeaderLabels({guiText("分区名"), guiText("起始 LBA"),
+                                        guiText("结束 LBA"), guiText("扇区数"),
+                                        guiText("容量"), guiText("属性")});
+  });
   ui::configureTable(m_table);
   m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
   m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -84,21 +87,19 @@ PartitionPage::PartitionPage(QWidget *parent) : QWidget(parent) {
   taskLayout->setSizeConstraint(QLayout::SetMinimumSize);
 
   auto *actions = new QHBoxLayout;
-  m_verifyWriteCheckBox =
-      new QCheckBox(QStringLiteral("写入后逐块回读校验"), this);
+  m_verifyWriteCheckBox = guiCheckBox(guiText("写入后逐块回读校验"), this);
   m_verifyWriteCheckBox->setObjectName(
       QStringLiteral("verifyPartitionWriteCheckBox"));
   m_verifyWriteCheckBox->setChecked(true);
-  m_backupButton = ui::button(QStringLiteral("备份分区"), ui::Icon::Save, this);
+  m_backupButton = ui::button(guiText("备份分区"), ui::Icon::Save, this);
   m_backupButton->setObjectName(QStringLiteral("backupPartitionButton"));
-  m_writeButton =
-      ui::button(QStringLiteral("写入镜像"), ui::Icon::Flash, this, true);
+  m_writeButton = ui::button(guiText("写入镜像"), ui::Icon::Flash, this, true);
   m_writeButton->setObjectName(QStringLiteral("writePartitionButton"));
   // 擦除独立放置，不与强调色的写入操作紧挨，原有确认流程仍由控制器负责。
-  m_eraseButton = ui::button(QStringLiteral("擦除分区"), ui::Icon::Clear, this);
+  m_eraseButton = ui::button(guiText("擦除分区"), ui::Icon::Clear, this);
   m_eraseButton->setObjectName(QStringLiteral("erasePartitionButton"));
-  m_eraseButton->setToolTip(QStringLiteral("危险操作：擦除所选分区的数据"));
-  m_cancelButton = ui::button(QStringLiteral("取消"), ui::Icon::Cancel, this);
+  setGuiText(m_eraseButton, "toolTip", guiText("危险操作：擦除所选分区的数据"));
+  m_cancelButton = ui::button(guiText("取消"), ui::Icon::Cancel, this);
   m_cancelButton->setObjectName(QStringLiteral("cancelPartitionButton"));
   actions->addWidget(m_eraseButton);
   actions->addStretch();
@@ -109,15 +110,15 @@ PartitionPage::PartitionPage(QWidget *parent) : QWidget(parent) {
   m_progress = new QProgressBar(this);
   m_progress->setObjectName(QStringLiteral("partitionProgress"));
   m_progress->setRange(0, 100);
-  m_progress->setFormat(QStringLiteral("当前操作 %p%"));
-  m_status = new QLabel(QStringLiteral("尚未读取分区表"), this);
+  setGuiText(m_progress, "format", guiText("当前操作 %p%"));
+  m_status = guiLabel(guiText("尚未读取分区表"), this);
   m_status->setObjectName(QStringLiteral("partitionStatus"));
   m_status->setWordWrap(true);
   m_status->setTextFormat(Qt::PlainText);
   taskLayout->addWidget(m_status);
   m_errorNotice = ui::addErrorNotice(taskLayout);
   m_errorNotice->setObjectName(QStringLiteral("partitionErrorNotice"));
-  ui::addProgressRow(taskLayout, QStringLiteral("当前操作"), m_progress);
+  ui::addProgressRow(taskLayout, guiText("当前操作"), m_progress);
   taskLayout->addWidget(m_verifyWriteCheckBox);
   taskLayout->addLayout(actions);
   layout->addWidget(taskCard);
@@ -189,17 +190,18 @@ void PartitionPage::setProgress(int percent, bool indeterminate) {
     m_progress->setValue(percent);
   ui::refreshProgressText(m_progress);
 }
-void PartitionPage::setStatus(const QString &text) {
-  m_status->setText(text);
+void PartitionPage::setStatus(const GuiText &text) {
+  setGuiText(m_status, "text", text);
   m_status->show();
   m_errorNotice->setOpen(false);
 }
-void PartitionPage::setError(const QString &text) {
-  m_status->setText(text);
+void PartitionPage::setError(const GuiText &text) {
+  setGuiText(m_status, "text", text);
   m_status->hide();
-  m_errorNotice->setMessage(text);
+  setGuiText(m_errorNotice, "message", text);
   m_errorNotice->setOpen(true);
-  m_errorNotice->setMinimumHeight(m_errorNotice->heightForWidth(m_errorNotice->width()));
+  m_errorNotice->setMinimumHeight(
+      m_errorNotice->heightForWidth(m_errorNotice->width()));
 }
 void PartitionPage::setBusy(bool busy, bool canRead, bool canOperate,
                             bool canCancel) {

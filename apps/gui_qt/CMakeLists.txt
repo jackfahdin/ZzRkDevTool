@@ -12,12 +12,21 @@ qt_add_library(
     GuiWindowShell.hpp
     MainWorkspaceController.cpp
     MainWorkspaceController.hpp
+    MainWorkspaceSettings.cpp
     MainWorkspaceViewModel.cpp
     MainWorkspaceViewModel.hpp
     WorkspaceUi.cpp
     WorkspaceUi.hpp
     FileSelectionDialog.cpp
     FileSelectionDialog.hpp
+    GuiSettings.cpp
+    GuiSettings.hpp
+    GuiTranslations.cpp
+    GuiTranslations.hpp
+    SettingsLocationDialog.cpp
+    SettingsLocationDialog.hpp
+    pages/SettingsPage.cpp
+    pages/SettingsPage.hpp
     pages/DevicePage.cpp
     pages/DevicePage.hpp
     pages/ImageDownloadPage.cpp
@@ -50,6 +59,11 @@ target_link_libraries(
 target_include_directories(zzrk_gui_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 set_target_properties(zzrk_gui_support PROPERTIES AUTOMOC ON)
 add_library(zzrk::gui ALIAS zzrk_gui_support)
+find_package(Qt6 REQUIRED COMPONENTS LinguistTools)
+qt_add_lrelease(zzrk_gui_support TS_FILES translations/zzrkdevtool_en.ts
+                QM_FILES_OUTPUT_VARIABLE gui_qm)
+qt_add_resources(zzrk_gui_support gui_translations PREFIX /translations
+                 BASE "${CMAKE_CURRENT_BINARY_DIR}" FILES ${gui_qm})
 
 qt_add_executable(
     ZzRkDevTool

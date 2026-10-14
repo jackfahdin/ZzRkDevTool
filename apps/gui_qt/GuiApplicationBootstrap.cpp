@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 
+#include "GuiTranslations.hpp"
+
 #include "GuiApplicationBootstrap.hpp"
 #include "GuiWindowShell.hpp"
 #include "WorkspaceUi.hpp"
@@ -63,7 +65,7 @@ ZzCore::ZzResult<ZzPureTools::ZzApplicationWindow *> buildGuiApplication(
           std::unique_ptr<ZzPureTools::ZzPageInstance>;
       return ZzCore::ZzResult<PageInstance>::failure(ZzCore::ZzError(
           ZzCore::ZzErrorCode::InvalidState,
-          QStringLiteral("下载镜像页面需要已装配的 GUI 窗口壳层")));
+          guiText("下载镜像页面需要已装配的 GUI 窗口壳层")));
     }
     return shell->createInitialDownloadPage(pageParent);
   };
@@ -75,7 +77,7 @@ ZzCore::ZzResult<ZzPureTools::ZzApplicationWindow *> buildGuiApplication(
 
   ZzPureTools::ZzNavigationNode node{
       initialRoute, QStringLiteral("ZzRkDevTool"),
-      QStringLiteral("下载镜像"),
+      guiText("下载镜像"),
       ZzFluentUI::ZzIconDescriptor::fromFontIcon(
           ZzFluentUI::ZzFontIcon::Download)};
   auto navigationResult = builder.addNavigationNode(std::move(node));
@@ -92,15 +94,16 @@ ZzCore::ZzResult<ZzPureTools::ZzApplicationWindow *> buildGuiApplication(
 
   auto setupResult = builder.setWindowSetupCallback(
       [backend = options.backend, showModalDialogs = options.showModalDialogs,
+       settings = options.settings,
        initialWindow](ZzPureTools::ZzApplicationWindow &window) {
         window.setWindowTitle(QStringLiteral("ZzRkDevTool"));
         window.setWindowIcon(ui::icon(ui::Icon::Device));
         window.setMinimumSize(800, 700);
         window.resize(980, 820);
-        window.statusBar()->showMessage(QStringLiteral("准备就绪"));
+        window.statusBar()->showMessage(guiText("准备就绪"));
 
         auto attached = GuiWindowShell::attach(
-            window, backend, showModalDialogs);
+            window, backend, showModalDialogs, settings);
         if (!attached) {
           return attached;
         }
@@ -122,7 +125,7 @@ ZzCore::ZzResult<ZzPureTools::ZzApplicationWindow *> buildGuiApplication(
   if (initialWindow->isNull()) {
     return ZzCore::ZzResult<ZzPureTools::ZzApplicationWindow *>::failure(
         ZzCore::ZzError(ZzCore::ZzErrorCode::InvalidState,
-                        QStringLiteral("Builder 未返回初始 GUI 窗口")));
+                        guiText("Builder 未返回初始 GUI 窗口")));
   }
   return ZzCore::ZzResult<ZzPureTools::ZzApplicationWindow *>::success(
       initialWindow->data());
