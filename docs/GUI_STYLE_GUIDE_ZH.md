@@ -12,7 +12,7 @@
 | 顶部标签样式 | `GuiWindowShell.cpp` 的 `configureFixedTabs()` |
 | 下载页配置字段、清单、任务区的排列 | `pages/ImageDownloadPage.cpp` 构造函数 |
 | 设备列表及可展开原始信息 | `pages/DevicePage.cpp` 构造函数 |
-| 完整升级的固件、计划、历史和任务分区 | `pages/FullUpgradePage.cpp` 构造函数 |
+| 完整升级的固件、计划和任务分区 | `pages/FullUpgradePage.cpp` 构造函数 |
 | 分区表与操作按钮位置 | `pages/PartitionPage.cpp` 构造函数 |
 
 表中 `pages/` 路径均位于 `apps/gui_qt/` 下。

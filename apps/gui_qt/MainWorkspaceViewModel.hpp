@@ -2,15 +2,11 @@
 
 #pragma once
 
-#include <zzrk/workflow/FirmwareUpgradeReport.hpp>
-
 #include <QObject>
 #include <QString>
 
 #include <atomic>
-#include <cstdint>
 #include <memory>
-#include <unordered_map>
 
 namespace zzrk::gui {
 
@@ -59,21 +55,10 @@ public:
     [[nodiscard]] int operationProgress() const noexcept;
     void setProgress(int overallPercent, int operationPercent);
 
-    using HistoryReports = std::unordered_map<
-        std::uint64_t, zzrk::workflow::FirmwareUpgradeReport>;
-
-    [[nodiscard]] const HistoryReports &historyReports() const noexcept;
-    void setHistoryReports(HistoryReports reports);
-    void setHistoryReport(std::uint64_t id,
-                          zzrk::workflow::FirmwareUpgradeReport report);
-    void removeHistoryReport(std::uint64_t id);
-    void clearHistoryReports();
-
 signals:
     void deviceSelectionChanged();
     void busyChanged(bool busy);
     void progressChanged(int overallPercent, int operationPercent);
-    void historyChanged();
 
 private:
     QString m_selectedPortPath;
@@ -86,7 +71,6 @@ private:
     bool m_busy = false;
     int m_overallProgress = 0;
     int m_operationProgress = 0;
-    HistoryReports m_historyReports;
 };
 
 } // namespace zzrk::gui

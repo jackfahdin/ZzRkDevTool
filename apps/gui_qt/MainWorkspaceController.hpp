@@ -154,7 +154,6 @@ private slots:
   void handlePrepareFinished();
   void startUpgrade();
   void cancelUpgrade();
-  void exportSelectedReport();
   void handleDownloadDeviceChanged();
   void handleDownloadLayoutChanged();
   void handleDownloadPlanChanged();
@@ -193,10 +192,6 @@ private:
   void handleUpgradeProgress(const zzrk::workflow::FirmwareUpgradeEvent &event);
   void handleUpgradeFinished();
   void updateUpgradeControls();
-  void beginHistoryEntry(const QString &portPath);
-  void finishHistoryEntry(const QString &result, const QString &detail,
-                          zzrk::workflow::FirmwareUpgradeReport report);
-  void updateReportExportControls();
 
   std::shared_ptr<IGuiOperationBackend> m_backend;
   std::shared_ptr<MainWorkspaceLifecycle> m_lifecycle;
@@ -238,10 +233,6 @@ private:
   std::optional<zzrk::workflow::DevicePartitionTable> m_devicePartitions;
   std::optional<zzrk::workflow::PreparedFirmwareUpgrade> m_preparedUpgrade;
   std::optional<UpgradeProgressTracker> m_progressTracker;
-  std::shared_ptr<zzrk::workflow::FirmwareUpgradeReportBuilder>
-      m_activeReportBuilder;
-  std::uint64_t m_nextReportId = 1U;
-  int m_activeHistoryRow = -1;
   QString m_firmwarePath;
   zzrk::workflow::PartitionOperationPhase m_partitionOperationPhase{
       zzrk::workflow::PartitionOperationPhase::read};
