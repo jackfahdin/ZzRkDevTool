@@ -31,8 +31,6 @@ enum class Icon { Folder, Refresh, Flash, Cancel, Clear, Save, Info, Device };
 [[nodiscard]] QIcon icon(Icon role);
 
 void configurePage(QWidget *page, QVBoxLayout *layout);
-void addPageHeading(QVBoxLayout *layout, const QString &title,
-                    const QString &description);
 [[nodiscard]] QWidget *card(QWidget *parent);
 [[nodiscard]] QLabel *sectionTitle(const QString &text, QWidget *parent);
 [[nodiscard]] QLabel *secondaryText(const QString &text, QWidget *parent);

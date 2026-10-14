@@ -73,13 +73,6 @@ protected:
       const int margin = compact ? 12 : PageMargin;
       m_layout->setContentsMargins(margin, margin, margin, margin);
       m_layout->setSpacing(compact ? 10 : SectionSpacing);
-      if (auto *description =
-              m_page->findChild<QLabel *>(QStringLiteral("pageDescription")))
-        description->setVisible(!compact);
-      // 小窗口顶部标签已说明当前功能，收起重复的大标题以保护任务按钮空间。
-      if (auto *title =
-              m_page->findChild<QLabel *>(QStringLiteral("pageTitle")))
-        title->setVisible(!compact);
       for (auto *child : m_page->findChildren<QWidget *>())
         if (auto *surface = dynamic_cast<Surface *>(child))
           surface->setCompact(compact);
@@ -171,19 +164,6 @@ void configurePage(QWidget *page, QVBoxLayout *layout) {
   layout->setContentsMargins(PageMargin, PageMargin, PageMargin, PageMargin);
   layout->setSpacing(SectionSpacing);
   new PageDensity(page, layout);
-}
-
-void addPageHeading(QVBoxLayout *layout, const QString &title,
-                    const QString &description) {
-  auto *heading = new QVBoxLayout;
-  heading->setSpacing(4);
-  auto *pageTitle = label(title, layout->parentWidget(), 22, QFont::DemiBold);
-  pageTitle->setObjectName(QStringLiteral("pageTitle"));
-  heading->addWidget(pageTitle);
-  auto *subtitle = secondaryText(description, layout->parentWidget());
-  subtitle->setObjectName(QStringLiteral("pageDescription"));
-  heading->addWidget(subtitle);
-  layout->addLayout(heading);
 }
 
 QWidget *card(QWidget *parent) { return new Surface(parent); }

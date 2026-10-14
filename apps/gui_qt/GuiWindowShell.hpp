@@ -52,6 +52,7 @@ private:
 
   [[nodiscard]] ZzCore::ZzResult<void> initialize();
   void configureFixedTabs();
+  void updateWindowTitle();
 
   QPointer<ZzPureTools::ZzApplicationWindow> window_;
   std::shared_ptr<IGuiOperationBackend> backend_;

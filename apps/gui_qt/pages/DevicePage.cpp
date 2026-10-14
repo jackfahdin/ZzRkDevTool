@@ -31,9 +31,6 @@ DevicePage::DevicePage(QWidget *parent) : QWidget(parent) {
   setObjectName(QStringLiteral("devicePage"));
   auto *layout = new QVBoxLayout(this);
   ui::configurePage(this, layout);
-  ui::addPageHeading(
-      layout, QStringLiteral("设备"),
-      QStringLiteral("查看已连接的 Rockchip 设备，选择后读取芯片与存储信息。"));
   auto *listCard = ui::card(this);
   auto *listLayout = new QVBoxLayout(listCard);
   listLayout->setContentsMargins(ui::CardPadding, ui::CardPadding,
