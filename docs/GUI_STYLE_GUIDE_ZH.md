@@ -11,6 +11,7 @@
 | 全部业务图标 | `WorkspaceUi.cpp` 的 `icon()` |
 | 顶部标签样式 | `GuiWindowShell.cpp` 的 `configureFixedTabs()` |
 | 标题栏的应用与页面名称 | `GuiWindowShell.cpp` 的 `updateWindowTitle()` |
+| 文件、目录选择与备份保存弹窗 | `FileSelectionDialog.cpp` |
 | 下载页配置字段、清单、任务区的排列 | `pages/ImageDownloadPage.cpp` 构造函数 |
 | 设备列表及可展开原始信息 | `pages/DevicePage.cpp` 构造函数 |
 | 完整升级的固件、计划和任务分区 | `pages/FullUpgradePage.cpp` 构造函数 |
@@ -53,6 +54,14 @@ bar->setAppearance(ZzFluentUI::ZzTabBarAppearance::PivotSlide);
 - 错误通知使用框架 `ZzInfoBar`，通过明确的 `setError()` 调用呈现失败；用户取消属于普通状态，不猜测消息中是否包含“失败”。
 - `NoticeSizing` 随窗口宽度更新换行高度。长错误需要更多空间时，下载清单自动缩小，保证错误文字和操作按钮完整可见。
 - 颜色从框架调色板获取，不在页面中维护第二套主题。
+
+## 文件选择弹窗
+
+业务入口统一调用 `FileSelectionDialog`，包括固件、独立镜像、parameter.txt、镜像目录及备份保存位置。窗口由框架 `ZzContentDialog` 承载，目录浏览仍使用 Qt 的非原生 `QFileDialog`，保持文件筛选、导航、路径补全和打开/保存校验行为。
+
+按钮位于底部，表头与常用位置使用中文；图标通过 `WorkspaceUi.cpp` 统一映射为 Segoe 线性字形。字体、行高和按钮高度沿用公共视觉参数，不设置第二套主题颜色。`BrowserWidth` 为文件浏览提供比普通提示框更宽的范围，并处理框架主题刷新时的宽度约束。
+
+Qt 工具按钮和输入字段的控件名只在 `configureBrowser()` 中适配。升级 Qt 后如内部布局变化，应检查工具图标及底部按钮排列；不要在各业务页面直接查找这些控件。目录模式仅返回目录，保存模式仅选择路径，实际备份仍由业务流程执行，并保持输出文件不覆盖规则。
 
 ## 编译和视觉检查
 

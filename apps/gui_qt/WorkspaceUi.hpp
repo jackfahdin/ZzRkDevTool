@@ -27,7 +27,8 @@ inline constexpr int TableRowHeight = 38;
 inline constexpr int IconSize = 18;
 
 // 页面只使用操作语义，不关心字体码点，便于以后统一更换图标。
-enum class Icon { Folder, Refresh, Flash, Cancel, Clear, Save, Info, Device };
+enum class Icon { Folder, Refresh, Flash, Cancel, Clear, Save, Info, Device,
+                  File, Back, Forward, Up, NewFolder, List, Details };
 [[nodiscard]] QIcon icon(Icon role);
 
 void configurePage(QWidget *page, QVBoxLayout *layout);

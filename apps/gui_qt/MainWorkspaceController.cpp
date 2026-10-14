@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "MainWorkspaceController.hpp"
+#include "FileSelectionDialog.hpp"
 #include "WorkspaceUi.hpp"
 #include "pages/DevicePage.hpp"
 #include "pages/FullUpgradePage.hpp"
@@ -13,7 +14,6 @@
 #include <QComboBox>
 #include <QDateTime>
 #include <QDir>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QLabel>
 #include <QLineEdit>
@@ -1206,7 +1206,7 @@ void MainWorkspaceController::backupSelectedPartition() {
   const auto partition = m_partitionPage->selectedPartition();
   if (!partition.has_value())
     return;
-  const QString path = QFileDialog::getSaveFileName(
+  const QString path = FileSelectionDialog::getSaveFileName(
       m_partitionPage, QStringLiteral("备份分区"),
       partition->name + QStringLiteral(".img"),
       QStringLiteral("分区镜像 (*.img);;所有文件 (*)"));
@@ -1232,7 +1232,7 @@ void MainWorkspaceController::writeSelectedPartition() {
   const auto partition = m_partitionPage->selectedPartition();
   if (!partition.has_value())
     return;
-  const QString path = QFileDialog::getOpenFileName(
+  const QString path = FileSelectionDialog::getOpenFileName(
       m_partitionPage, QStringLiteral("选择分区镜像"), {},
       QStringLiteral("分区镜像 (*.img *.bin);;所有文件 (*)"));
   if (path.isEmpty())
@@ -1461,7 +1461,7 @@ void MainWorkspaceController::chooseFirmwareImage() {
   if (m_upgradePage == nullptr || m_prepareWatcher.isRunning() ||
       m_upgradeWatcher.isRunning())
     return;
-  const QString path = QFileDialog::getOpenFileName(
+  const QString path = FileSelectionDialog::getOpenFileName(
       m_upgradePage, QStringLiteral("选择 Rockchip 固件"), {},
       QStringLiteral("Rockchip 固件 (*.img);;所有文件 (*)"));
   if (!path.isEmpty())
@@ -1833,7 +1833,7 @@ void MainWorkspaceController::handleDownloadPlanChanged() {
 void MainWorkspaceController::chooseDownloadParameter() {
   if (m_downloadPage == nullptr)
     return;
-  const QString path = QFileDialog::getOpenFileName(
+  const QString path = FileSelectionDialog::getOpenFileName(
       m_downloadPage, QStringLiteral("选择 parameter.txt"), {},
       QStringLiteral("Rockchip parameter (parameter.txt *.txt);;所有文件 (*)"));
   if (!path.isEmpty())
@@ -1887,7 +1887,7 @@ void MainWorkspaceController::loadDownloadParameter(const QString &path) {
 void MainWorkspaceController::chooseDownloadDirectory() {
   if (m_downloadPage == nullptr)
     return;
-  const QString path = QFileDialog::getExistingDirectory(
+  const QString path = FileSelectionDialog::getExistingDirectory(
       m_downloadPage, QStringLiteral("选择镜像目录"),
       m_downloadPage->directoryEdit()->text());
   if (!path.isEmpty())
@@ -2107,7 +2107,7 @@ void MainWorkspaceController::chooseSelectedDownloadImage() {
       selected->kind == ImageDownloadPage::RowKind::partitionTable)
     return;
   const std::string target = selected->target.toStdString();
-  const QString path = QFileDialog::getOpenFileName(
+  const QString path = FileSelectionDialog::getOpenFileName(
       m_downloadPage,
       target == "Loader" ? QStringLiteral("选择 MiniLoaderAll.bin")
                          : QStringLiteral("选择分区镜像"),
