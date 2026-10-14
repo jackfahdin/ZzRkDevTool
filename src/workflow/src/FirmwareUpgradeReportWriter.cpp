@@ -160,7 +160,9 @@ class JsonWriter final {
 #else
     gmtime_r(&seconds, &brokenDown);
 #endif
-    std::array<char, 32> buffer{};
+    // printf widths are minimums: six signed int date fields, milliseconds,
+    // separators and the terminator can require up to 78 bytes.
+    std::array<char, 80> buffer{};
     std::snprintf(buffer.data(), buffer.size(),
                   "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
                   brokenDown.tm_year + 1900, brokenDown.tm_mon + 1,
