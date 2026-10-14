@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "MainWorkspaceController.hpp"
+#include "WorkspaceUi.hpp"
 #include "pages/DevicePage.hpp"
 #include "pages/FullUpgradePage.hpp"
 #include "pages/ImageDownloadPage.hpp"
@@ -22,7 +23,6 @@
 #include <QMetaObject>
 #include <QSignalBlocker>
 #include <QStatusBar>
-#include <QStyle>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -627,11 +627,9 @@ MainWorkspaceController::attachWorkspace(ZzFluentUI::ZzTabWidget *tabs,
   if (m_refreshButton == nullptr) {
     m_refreshButton = new QToolButton(host);
     m_refreshButton->setObjectName(QStringLiteral("refreshButton"));
-    m_refreshButton->setIcon(
-        host->style()->standardIcon(QStyle::SP_BrowserReload));
+    ui::configureToolButton(m_refreshButton, ui::Icon::Refresh);
     m_refreshButton->setToolTip(QStringLiteral("立即刷新设备列表"));
     m_refreshButton->setAccessibleName(QStringLiteral("刷新设备列表"));
-    m_refreshButton->setFixedSize(30, 30);
   }
 
   m_lastScanText = host->findChild<QLabel *>(QStringLiteral("lastScanText"));
@@ -1123,9 +1121,9 @@ void MainWorkspaceController::handlePartitionTableFinished() {
     if (guard == nullptr)
       return;
     if (m_partitionPage != nullptr)
-      m_partitionPage->setStatus(m_partitionTableStatus);
+      m_partitionPage->setError(m_partitionTableStatus);
     if (m_downloadPage != nullptr)
-      m_downloadPage->setStatus(m_partitionTableStatus);
+      m_downloadPage->setError(m_partitionTableStatus);
     if (m_statusBar != nullptr)
       m_statusBar->showMessage(QStringLiteral("GPT 分区表读取失败"));
     if (m_showModalDialogs && m_downloadPage != nullptr) {
@@ -1406,7 +1404,10 @@ void MainWorkspaceController::handlePartitionOperationFinished() {
   if (const auto *error =
           std::get_if<zzrk::workflow::DeviceManagementError>(&result)) {
     const QString message = deviceManagementErrorText(*error);
-    m_partitionPage->setStatus(message);
+    if (error->code == zzrk::workflow::DeviceManagementErrorCode::cancelled)
+      m_partitionPage->setStatus(message);
+    else
+      m_partitionPage->setError(message);
     if (m_statusBar != nullptr)
       m_statusBar->showMessage(
           error->code == zzrk::workflow::DeviceManagementErrorCode::cancelled
@@ -1511,7 +1512,7 @@ void MainWorkspaceController::handlePrepareFinished() {
     m_upgradePage->setPlanPreview({});
     m_upgradePage->setOverallProgress(0);
     m_upgradePage->setOperationProgress(0);
-    m_upgradePage->setStatus(workflowErrorText(*error));
+    m_upgradePage->setError(workflowErrorText(*error));
     if (m_statusBar != nullptr)
       m_statusBar->showMessage(QStringLiteral("固件预检失败"));
     QPointer<MainWorkspaceController> guard{this};
@@ -1697,7 +1698,10 @@ void MainWorkspaceController::handleUpgradeFinished() {
   if (const auto *error =
           std::get_if<zzrk::workflow::FirmwareUpgradeError>(&result)) {
     const QString message = workflowErrorText(*error);
-    m_upgradePage->setStatus(message);
+    if (error->code == zzrk::workflow::FirmwareUpgradeErrorCode::cancelled)
+      m_upgradePage->setStatus(message);
+    else
+      m_upgradePage->setError(message);
     if (m_statusBar != nullptr)
       m_statusBar->showMessage(QStringLiteral("固件升级未完成"));
     QPointer<MainWorkspaceController> guard{this};
@@ -2371,7 +2375,7 @@ void MainWorkspaceController::handleDownloadPrepareFinished() {
   if (const auto *error =
           std::get_if<zzrk::workflow::ImageDownloadError>(&result)) {
     m_downloadPage->setProgress(0, 0);
-    m_downloadPage->setStatus(imageDownloadErrorText(*error));
+    m_downloadPage->setError(imageDownloadErrorText(*error));
     QPointer<MainWorkspaceController> guard{this};
     updateDownloadControls();
     if (guard == nullptr)
@@ -2494,7 +2498,10 @@ void MainWorkspaceController::handleImageDownloadFinished() {
   if (const auto *error =
           std::get_if<zzrk::workflow::ImageDownloadError>(&result)) {
     const QString message = imageDownloadErrorText(*error);
-    m_downloadPage->setStatus(message);
+    if (error->code == zzrk::workflow::ImageDownloadErrorCode::cancelled)
+      m_downloadPage->setStatus(message);
+    else
+      m_downloadPage->setError(message);
     if (error->itemIndex.has_value() && m_preparedDownload.has_value() &&
         *error->itemIndex < m_preparedDownload->items.size()) {
       const QString target = QString::fromStdString(

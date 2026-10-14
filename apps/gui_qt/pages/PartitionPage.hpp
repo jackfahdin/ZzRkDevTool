@@ -15,6 +15,9 @@ class QProgressBar;
 class QPushButton;
 class QTableWidget;
 class QToolButton;
+namespace ZzFluentUI {
+class ZzInfoBar;
+}
 
 namespace zzrk::gui {
 
@@ -36,6 +39,7 @@ public:
   void clearPartitions();
   void setProgress(int percent, bool indeterminate = false);
   void setStatus(const QString &text);
+  void setError(const QString &text);
   void setBusy(bool busy, bool canRead, bool canOperate, bool canCancel);
 
 signals:
@@ -58,6 +62,7 @@ private:
   QPushButton *m_cancelButton = nullptr;
   QProgressBar *m_progress = nullptr;
   QLabel *m_status = nullptr;
+  ZzFluentUI::ZzInfoBar *m_errorNotice = nullptr;
   std::vector<PartitionRow> m_partitions;
 };
 

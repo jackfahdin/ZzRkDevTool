@@ -10,6 +10,7 @@
 
 #include <ZzFluentUI/ZzActivityBar.h>
 #include <ZzFluentUI/ZzFluentTitleBar.h>
+#include <ZzFluentUI/ZzInfoBar.h>
 #include <ZzFluentUI/ZzNavigationPane.h>
 #include <ZzFluentUI/ZzSidePane.h>
 #include <ZzFluentUI/ZzTabBar.h>
@@ -101,19 +102,112 @@ bool saveVisualEvidence(ZzPureTools::ZzPureApplication &application,
                            const QString &fileName) {
     themeController->setMode(mode);
     window.resize(size);
-    QApplication::processEvents();
+    // 主题、紧凑布局和通知的高度会依次发出 LayoutRequest；等布局完成再抓图。
+    for (int frame = 0; frame < 3; ++frame) {
+      QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+      QApplication::processEvents();
+    }
+    // 主题切换不能让表格保留局部样式表缓存的旧背景色。
+    for (auto *table : window.findChildren<QTableWidget *>())
+      expect(table->palette().color(QPalette::Base) ==
+                 window.palette().color(QPalette::Base),
+             "data tables inherit the current framework theme after switching");
+    for (auto *notice : window.findChildren<ZzFluentUI::ZzInfoBar *>()) {
+      if (notice->isVisible()) {
+        expect(notice->height() >= notice->heightForWidth(notice->width()),
+               "visible error notices retain enough height at minimum window size");
+        if (const auto *next = notice->parentWidget()->findChild<QLabel *>(
+                QStringLiteral("overallImageDownloadProgressPercent"))) {
+          const bool separated = next->y() > notice->geometry().bottom();
+          if (!separated)
+            std::cerr << "Notice layout: height=" << notice->height()
+                      << " required=" << notice->heightForWidth(notice->width())
+                      << " bottom=" << notice->geometry().bottom()
+                      << " next=" << next->y() << '\n';
+          expect(separated, "error notice does not overlap progress at minimum size");
+        }
+      }
+    }
+    for (const auto &name : {QStringLiteral("startImageDownloadButton"),
+                             QStringLiteral("cancelImageDownloadButton"),
+                             QStringLiteral("startUpgradeButton"),
+                             QStringLiteral("cancelUpgradeButton"),
+                             QStringLiteral("writePartitionButton"),
+                             QStringLiteral("cancelPartitionButton")}) {
+      if (auto *button = window.findChild<QAbstractButton *>(name);
+          button != nullptr && button->isVisible()) {
+        auto *page = button->parentWidget();
+        while (page != nullptr && page->objectName() != QStringLiteral("downloadImagePage") &&
+               page->objectName() != QStringLiteral("fullUpgradePage") &&
+               page->objectName() != QStringLiteral("partitionPage"))
+          page = page->parentWidget();
+        expect(page != nullptr && page->rect().contains(
+                   QRect(button->mapTo(page, QPoint{}), button->size())),
+               "task buttons stay fully inside the visible page at minimum size");
+      }
+    }
     const QPixmap image = window.grab();
     return image.size() == size &&
            image.save(QDir(outputDirectory).filePath(fileName), "PNG");
   };
 
-  const bool saved =
+  bool saved =
       capture(QSize(980, 820), ZzFluentUI::ZzThemeMode::Light,
               QStringLiteral("zzrk-gui-980x820-light.png")) &&
       capture(window.minimumSize(), ZzFluentUI::ZzThemeMode::Light,
               QStringLiteral("zzrk-gui-minimum-800x700-light.png")) &&
       capture(QSize(980, 820), ZzFluentUI::ZzThemeMode::Dark,
               QStringLiteral("zzrk-gui-980x820-dark.png"));
+  // 假后端截图覆盖全部页面和空态，不连接真实硬件，也不执行额外烧录。
+  if (auto *tabs = window.findChild<ZzFluentUI::ZzTabWidget *>(QStringLiteral("mainTabs"))) {
+    const int originalIndex = tabs->currentIndex();
+    for (int index = 0; index < tabs->count(); ++index) {
+      tabs->setCurrentIndex(index);
+      saved = capture(QSize(980, 820), ZzFluentUI::ZzThemeMode::Light,
+                      QStringLiteral("page-%1-light.png").arg(index)) && saved;
+      saved = capture(QSize(980, 820), ZzFluentUI::ZzThemeMode::Dark,
+                      QStringLiteral("page-%1-dark.png").arg(index)) && saved;
+      saved = capture(QSize(800, 700), ZzFluentUI::ZzThemeMode::Light,
+                      QStringLiteral("page-%1-minimum.png").arg(index)) && saved;
+    }
+    tabs->setCurrentIndex(originalIndex);
+    if (auto *download = window.findChild<zzrk::gui::ImageDownloadPage *>(
+            QStringLiteral("downloadImagePage"))) {
+      const auto *status = download->findChild<QLabel *>(QStringLiteral("imageDownloadStatus"));
+      const auto *notice = download->findChild<ZzFluentUI::ZzInfoBar *>(
+          QStringLiteral("imageDownloadErrorNotice"));
+      const QString originalStatus = status->text();
+      const bool wasError = notice->isOpen();
+      tabs->setCurrentIndex(0);
+      const QString path = QStringLiteral("/home/zz/firmware/") +
+                           QStringLiteral("rk3588s-android12-validation-").repeated(4) +
+                           QStringLiteral("<b>update</b>.img");
+      download->setError(QStringLiteral("镜像写入或回读校验失败（%1）").arg(path));
+      saved = capture(QSize(980, 820), ZzFluentUI::ZzThemeMode::Light,
+                      QStringLiteral("download-long-error-wide.png")) && saved;
+      saved = capture(QSize(800, 700), ZzFluentUI::ZzThemeMode::Light,
+                      QStringLiteral("download-long-error-minimum.png")) && saved;
+      for (const auto *text : notice->findChildren<QLabel *>())
+        expect(text->textFormat() == Qt::PlainText,
+               "raw paths in error notices are rendered as plain text");
+      if (wasError)
+        download->setError(originalStatus);
+      else
+        download->setStatus(originalStatus);
+      tabs->setCurrentIndex(originalIndex);
+    }
+    // 使用独立展示页捕获空态，不清空或重建真实工作区已有的清单。
+    themeController->setMode(ZzFluentUI::ZzThemeMode::Light);
+    auto empty = std::unique_ptr<zzrk::gui::ImageDownloadPage>(
+        zzrk::gui::ImageDownloadPage::buildUi(nullptr));
+    empty->setBusy(false, false, false);
+    empty->resize(980, 740);
+    empty->show();
+    QApplication::processEvents();
+    saved = empty->grab().save(
+        QDir(outputDirectory).filePath(QStringLiteral("download-empty-light.png")),
+        "PNG") && saved;
+  }
   themeController->setMode(originalMode);
   window.resize(originalSize);
   QApplication::processEvents();
@@ -848,7 +942,7 @@ int main(int argc, char **argv) {
   auto *tabs =
       window->findChild<ZzFluentUI::ZzTabWidget *>(QStringLiteral("mainTabs"));
   auto *downloadView =
-      window->findChild<QWidget *>(QStringLiteral("downloadImagePage"));
+      window->findChild<zzrk::gui::ImageDownloadPage *>(QStringLiteral("downloadImagePage"));
   expect(tabs != nullptr && controller->mainTabs() == tabs,
          "controller stores the framework main tabs");
   expect(controller->connectionStatusText() != nullptr,
@@ -1212,6 +1306,28 @@ int main(int argc, char **argv) {
                    QStringLiteral("镜像写入或回读校验失败（boot_a）") &&
                bootStatus == QStringLiteral("失败"),
            "failed image execution marks the matching plan row");
+    const auto *notice = downloadView->findChild<ZzFluentUI::ZzInfoBar *>(
+        QStringLiteral("imageDownloadErrorNotice"));
+    expect(notice != nullptr && downloadStatus != nullptr && notice->isOpen() &&
+               notice->severity() == ZzFluentUI::ZzInfoBar::Error &&
+               notice->message() == downloadStatus->text(),
+           "typed download failure exposes its exact message in the framework notice");
+    // 未知总量与正常进度之间切换时，两个百分比都必须正确更新。
+    downloadView->setProgress(0, 0, true, true);
+    const auto *overallText = downloadView->findChild<QLabel *>(
+        QStringLiteral("overallImageDownloadProgressPercent"));
+    const auto *operationText = downloadView->findChild<QLabel *>(
+        QStringLiteral("operationImageDownloadProgressPercent"));
+    expect(overallText != nullptr && operationText != nullptr &&
+               overallText->text() == QStringLiteral("进行中") &&
+               operationText->text() == QStringLiteral("进行中"),
+           "unknown progress totals show activity for both scopes");
+    downloadView->setProgress(42, 76);
+    expect(overallText != nullptr && operationText != nullptr &&
+               overallText->text() == QStringLiteral("42%") &&
+               operationText->text() == QStringLiteral("76%"),
+           "overall and current partition percentages remain independently visible");
+    downloadView->setProgress(0, 0);
   }
   const auto upgradeCancellation =
       controller->viewModel()->upgradeCancellation();

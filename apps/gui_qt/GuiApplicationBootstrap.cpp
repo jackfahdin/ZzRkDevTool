@@ -2,6 +2,7 @@
 
 #include "GuiApplicationBootstrap.hpp"
 #include "GuiWindowShell.hpp"
+#include "WorkspaceUi.hpp"
 
 #include <zzrk/logging/Logging.hpp>
 
@@ -18,7 +19,6 @@
 #include <QIcon>
 #include <QPointer>
 #include <QStatusBar>
-#include <QStyle>
 
 #include <memory>
 #include <string>
@@ -94,8 +94,7 @@ ZzCore::ZzResult<ZzPureTools::ZzApplicationWindow *> buildGuiApplication(
       [backend = options.backend, showModalDialogs = options.showModalDialogs,
        initialWindow](ZzPureTools::ZzApplicationWindow &window) {
         window.setWindowTitle(QStringLiteral("ZzRkDevTool"));
-        window.setWindowIcon(
-            window.style()->standardIcon(QStyle::SP_DriveHDIcon));
+        window.setWindowIcon(ui::icon(ui::Icon::Device));
         window.setMinimumSize(800, 700);
         window.resize(980, 820);
         window.statusBar()->showMessage(QStringLiteral("准备就绪"));

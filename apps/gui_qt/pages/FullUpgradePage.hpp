@@ -19,6 +19,9 @@ class QProgressBar;
 class QPushButton;
 class QTableWidget;
 class QToolButton;
+namespace ZzFluentUI {
+class ZzInfoBar;
+}
 
 namespace zzrk::gui {
 
@@ -47,6 +50,7 @@ public:
   void setOverallProgress(int percent, bool indeterminate = false);
   void setOperationProgress(int percent, bool indeterminate = false);
   void setStatus(const QString &text);
+  void setError(const QString &text);
   void setHistoryEntry(int row, const HistoryEntry &entry);
   void updateHistoryResult(int row, const QString &result,
                            const QString &detail = {},
@@ -55,8 +59,7 @@ public:
   [[nodiscard]] std::optional<std::uint64_t> removeLastHistoryEntry();
   [[nodiscard]] int historyCount() const;
   void selectHistoryRow(int row);
-  void setBusy(bool busy, bool canStart, bool canCancel,
-               bool canExportReport);
+  void setBusy(bool busy, bool canStart, bool canCancel, bool canExportReport);
 
 signals:
   void chooseFirmwareRequested();
@@ -78,6 +81,7 @@ private:
   QProgressBar *m_overallProgress = nullptr;
   QProgressBar *m_operationProgress = nullptr;
   QLabel *m_status = nullptr;
+  ZzFluentUI::ZzInfoBar *m_errorNotice = nullptr;
   QTableWidget *m_historyTable = nullptr;
   QToolButton *m_exportReportButton = nullptr;
 };
