@@ -394,12 +394,13 @@ int main() {
     auto *choose = window->findChild<QPushButton *>(
         QStringLiteral("chooseDownloadImageButton"));
     QTimer::singleShot(0, &application, [&] {
-      auto *dialog =
-          qobject_cast<QFileDialog *>(application.activeModalWidget());
+      auto *modal = application.activeModalWidget();
+      auto *dialog = modal != nullptr ? modal->findChild<QFileDialog *>() : nullptr;
       if (dialog == nullptr) {
         std::cerr << "FAIL: image chooser dialog did not open\n";
         failed = true;
-        application.exit(EXIT_FAILURE);
+        if (auto *outer = qobject_cast<QDialog *>(modal))
+          outer->reject();
         return;
       }
       dialog->selectFile(exactBootBPath);
@@ -411,6 +412,10 @@ int main() {
       return;
     }
     choose->click();
+    if (failed) {
+      application.exit(EXIT_FAILURE);
+      return;
+    }
     const int preservedBootA = findTargetRow(*table, QStringLiteral("boot_a"));
     const int preservedBootB = findTargetRow(*table, QStringLiteral("boot_b"));
     if (preservedBootA < 0 || preservedBootB < 0 ||

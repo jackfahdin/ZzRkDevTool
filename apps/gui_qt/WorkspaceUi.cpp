@@ -151,6 +151,27 @@ QIcon icon(const Icon role) {
   case Icon::Device:
     glyph = 0xe772;
     break; // Devices
+  case Icon::File:
+    glyph = 0xe8a5;
+    break; // Page
+  case Icon::Back:
+    glyph = 0xe72b;
+    break;
+  case Icon::Forward:
+    glyph = 0xe72a;
+    break;
+  case Icon::Up:
+    glyph = 0xe74a;
+    break;
+  case Icon::NewFolder:
+    glyph = 0xe8f4;
+    break;
+  case Icon::List:
+    glyph = 0xe8fd;
+    break;
+  case Icon::Details:
+    glyph = 0xe8a9;
+    break;
   }
   return ZzFluentUI::ZzSegoeIconFont::icon(
       static_cast<ZzFluentUI::ZzSegoeIcon>(glyph));

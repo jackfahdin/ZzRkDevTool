@@ -16,6 +16,8 @@ qt_add_library(
     MainWorkspaceViewModel.hpp
     WorkspaceUi.cpp
     WorkspaceUi.hpp
+    FileSelectionDialog.cpp
+    FileSelectionDialog.hpp
     pages/DevicePage.cpp
     pages/DevicePage.hpp
     pages/ImageDownloadPage.cpp

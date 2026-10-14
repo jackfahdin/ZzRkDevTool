@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "GuiTestHarness.hpp"
+#include "FileSelectionDialog.hpp"
 #include "GuiWindowShell.hpp"
 #include "MainWorkspaceController.hpp"
 #include "pages/DevicePage.hpp"
@@ -9,6 +10,7 @@
 #include "pages/PartitionPage.hpp"
 
 #include <ZzFluentUI/ZzActivityBar.h>
+#include <ZzFluentUI/ZzContentDialog.h>
 #include <ZzFluentUI/ZzFluentTitleBar.h>
 #include <ZzFluentUI/ZzInfoBar.h>
 #include <ZzFluentUI/ZzNavigationPane.h>
@@ -32,11 +34,13 @@
 #include <QAbstractButton>
 #include <QApplication>
 #include <QDir>
+#include <QDialogButtonBox>
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QFileDialog>
 #include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
@@ -52,6 +56,7 @@
 #include <QThread>
 #include <QTimer>
 #include <QToolButton>
+#include <QTreeView>
 
 #include <atomic>
 #include <chrono>
@@ -82,6 +87,92 @@ bool waitFor(const std::function<bool()> &condition,
     QThread::msleep(1);
   }
   return condition();
+}
+
+void checkFilePickers(QWidget *window, ZzFluentUI::ZzThemeController *theme) {
+  // 这些检查捕获丢失中文完整路径、确认/取消信号接错及目录模式被当作文件的回归。
+  QTemporaryDir fixture;
+  expect(fixture.isValid(), "file picker fixture has a temporary directory");
+  const QString directory = fixture.filePath(QStringLiteral("镜像 文件夹"));
+  expect(QDir{}.mkpath(directory), "file picker fixture creates a Unicode directory");
+  const QString imagePath = QDir(directory).filePath(QStringLiteral("测试 固件.img"));
+  QFile image(imagePath);
+  expect(image.open(QIODevice::WriteOnly) && image.write("firmware") == 8,
+         "file picker fixture creates an existing image");
+  image.close();
+  const auto originalMode = theme->mode();
+  const auto respond = [&](const QString &selectedPath, const QString &capture,
+                           bool cancel = false) {
+    QTimer::singleShot(0, window, [=] {
+      auto *dialog = qobject_cast<ZzFluentUI::ZzContentDialog *>(
+          QApplication::activeModalWidget());
+      expect(dialog != nullptr, "all file picker modes use the Fluent host");
+      auto *browser = dialog != nullptr ? dialog->findChild<QFileDialog *>() : nullptr;
+      expect(browser != nullptr, "Fluent file picker retains Qt file browsing");
+      if (browser == nullptr) {
+        if (auto *modal = qobject_cast<QDialog *>(QApplication::activeModalWidget()))
+          modal->reject();
+        return;
+      }
+      browser->selectFile(selectedPath);
+      expect(browser->testOption(QFileDialog::DontUseNativeDialog),
+             "file picker stays within the framework on every platform");
+      expect(browser->palette().color(QPalette::Base) ==
+                 QApplication::palette().color(QPalette::Base),
+             "file browsing follows the application theme");
+      const auto screenshotDirectory = qEnvironmentVariable("ZZRK_GUI_SCREENSHOT_DIR");
+      if (!screenshotDirectory.isEmpty() && !capture.isEmpty()) {
+        if (auto *tree = browser->findChild<QTreeView *>(QStringLiteral("treeView")))
+          waitFor([tree] { return tree->model()->rowCount(tree->rootIndex()) > 0; });
+        for (int frame = 0; frame < 3; ++frame) {
+          QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+          QApplication::processEvents();
+        }
+        expect(QDir{}.mkpath(screenshotDirectory) &&
+                   dialog->grab().save(QDir(screenshotDirectory).filePath(capture)),
+               "file picker visual evidence is saved");
+      }
+      QTimer::singleShot(2000, dialog, &QDialog::reject); // 验证失败也不能挂住测试。
+      if (cancel)
+        dialog->reject();
+      else if (auto *buttons = browser->findChild<QDialogButtonBox *>()) {
+        bool confirmed = false;
+        for (auto *button : buttons->findChildren<QPushButton *>())
+          if (buttons->buttonRole(button) == QDialogButtonBox::AcceptRole) {
+            confirmed = button->isEnabled();
+            button->click();
+            break;
+          }
+        expect(confirmed, "selected file or directory can be confirmed through its button");
+      } else {
+        expect(false, "file picker has a confirmation button");
+        dialog->reject();
+      }
+    });
+  };
+  theme->setMode(ZzFluentUI::ZzThemeMode::Light);
+  respond(imagePath, QStringLiteral("file-picker-light.png"));
+  expect(zzrk::gui::FileSelectionDialog::getOpenFileName(
+             window, QStringLiteral("选择镜像"), directory,
+             QStringLiteral("分区镜像 (*.img *.bin);;所有文件 (*)")) == imagePath,
+         "file picker returns an existing Unicode image path intact");
+  theme->setMode(ZzFluentUI::ZzThemeMode::Dark);
+  respond(imagePath, QStringLiteral("file-picker-dark.png"), true);
+  expect(zzrk::gui::FileSelectionDialog::getOpenFileName(
+             window, QStringLiteral("选择镜像"), directory).isEmpty(),
+         "cancel returns no path even when a file is preselected");
+  respond(directory, QStringLiteral("directory-picker-dark.png"));
+  expect(zzrk::gui::FileSelectionDialog::getExistingDirectory(
+             window, QStringLiteral("选择镜像目录"), fixture.path()) == directory,
+         "directory picker returns a directory rather than a file");
+  const QString savePath = QDir(directory).filePath(QStringLiteral("备份 分区.img"));
+  respond(savePath, QStringLiteral("save-picker-dark.png"));
+  expect(zzrk::gui::FileSelectionDialog::getSaveFileName(
+             window, QStringLiteral("备份分区"), savePath,
+             QStringLiteral("分区镜像 (*.img);;所有文件 (*)")) == savePath &&
+             !QFileInfo::exists(savePath),
+         "save picker returns a new path without writing the file");
+  theme->setMode(originalMode);
 }
 
 bool saveVisualEvidence(ZzPureTools::ZzPureApplication &application,
@@ -990,6 +1081,20 @@ int main(int argc, char **argv) {
                               Qt::DirectConnection);
     expect(selectedDeviceChanges == 1,
            "unchanged device selection does not emit another change");
+    // 初始扫描结束后再开模态窗口，避免提前消费扫描完成信号。
+    // 捕获退回系统/旧 Qt 文件弹窗的回归；取消选择不得启动固件解析。
+    bool pickerObserved = false;
+    QTimer::singleShot(0, window, [&] {
+      auto *modal = QApplication::activeModalWidget();
+      pickerObserved = modal != nullptr;
+      expect(qobject_cast<ZzFluentUI::ZzContentDialog *>(modal) != nullptr,
+             "firmware file selection uses the framework Fluent dialog");
+      if (modal != nullptr)
+        modal->close();
+    });
+    QMetaObject::invokeMethod(controller, "chooseFirmwareImage",
+                              Qt::DirectConnection);
+    expect(pickerObserved, "firmware chooser opens a modal selection window");
 
     auto *themeController = application->themeController();
     auto *titleBar = window->titleBar();
@@ -1118,6 +1223,7 @@ int main(int argc, char **argv) {
       expect(QApplication::style() == originalStyle,
              "theme switching preserves the application style object");
       QObject::disconnect(snapshotConnection);
+      checkFilePickers(window, themeController);
     }
 
     auto *buttonTitleBar = window->titleBar();
