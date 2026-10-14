@@ -744,12 +744,10 @@ int main() {
     }
     const bool complete =
         overall != nullptr && overall->value() == 100 && operation != nullptr &&
-        operation->value() == 100 && history != nullptr &&
-        history->rowCount() == 2 && history->item(0, 3) != nullptr &&
-        history->item(0, 3)->text() == QStringLiteral("已完成") &&
+        operation->value() == 100 && history == nullptr &&
         status != nullptr &&
         status->text().startsWith(QStringLiteral("升级完成")) &&
-        exportReport != nullptr && exportReport->isEnabled() &&
+        exportReport == nullptr &&
         !progressValues.empty() && monotonic && independent &&
         observedWorkspaceBusy &&
         controller->viewModel()->overallProgress() == 100 &&

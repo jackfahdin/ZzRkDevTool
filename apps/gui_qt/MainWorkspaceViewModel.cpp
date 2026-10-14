@@ -141,39 +141,4 @@ void MainWorkspaceViewModel::setProgress(const int overallPercent,
     emit progressChanged(m_overallProgress, m_operationProgress);
 }
 
-const MainWorkspaceViewModel::HistoryReports &
-MainWorkspaceViewModel::historyReports() const noexcept
-{
-    return m_historyReports;
-}
-
-void MainWorkspaceViewModel::setHistoryReports(HistoryReports reports)
-{
-    m_historyReports = std::move(reports);
-    emit historyChanged();
-}
-
-void MainWorkspaceViewModel::setHistoryReport(
-    const std::uint64_t id, zzrk::workflow::FirmwareUpgradeReport report)
-{
-    m_historyReports.insert_or_assign(id, std::move(report));
-    emit historyChanged();
-}
-
-void MainWorkspaceViewModel::removeHistoryReport(const std::uint64_t id)
-{
-    if (m_historyReports.erase(id) != 0U) {
-        emit historyChanged();
-    }
-}
-
-void MainWorkspaceViewModel::clearHistoryReports()
-{
-    if (m_historyReports.empty()) {
-        return;
-    }
-    m_historyReports.clear();
-    emit historyChanged();
-}
-
 } // namespace zzrk::gui

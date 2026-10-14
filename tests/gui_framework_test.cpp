@@ -571,12 +571,6 @@ int runSynchronousShutdownScenario(const QString &scenario) {
         [application](int, int) { application->beginShutdown(); },
         Qt::DirectConnection);
     controller->viewModel()->setProgress(1, 1);
-  } else if (scenario == QStringLiteral("viewModelHistoryChanged")) {
-    QObject::connect(
-        controller->viewModel(),
-        &zzrk::gui::MainWorkspaceViewModel::historyChanged, application,
-        [application] { application->beginShutdown(); }, Qt::DirectConnection);
-    controller->viewModel()->setHistoryReports({});
   } else if (scenario == QStringLiteral("refreshDevicesBusyChanged")) {
     QObject::connect(
         controller->viewModel(),
@@ -1375,7 +1369,6 @@ int main(int argc, char **argv) {
       QStringLiteral("viewModelDeviceSelectionChanged"),
       QStringLiteral("viewModelBusyChanged"),
       QStringLiteral("viewModelProgressChanged"),
-      QStringLiteral("viewModelHistoryChanged"),
       QStringLiteral("refreshDevicesBusyChanged"),
       QStringLiteral("shutdownBusyChanged"),
       QStringLiteral("pendingRefreshAfterInspection"),

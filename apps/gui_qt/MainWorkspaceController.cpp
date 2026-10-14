@@ -8,7 +8,6 @@
 #include "pages/PartitionPage.hpp"
 
 #include <ZzFluentUI/ZzTabWidget.h>
-#include <zzrk/workflow/FirmwareUpgradeReportWriter.hpp>
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -720,10 +719,6 @@ void MainWorkspaceController::attachPages(ImageDownloadPage *downloadPage,
               &MainWorkspaceController::startUpgrade);
       connect(m_upgradePage, &FullUpgradePage::cancelRequested, this,
               &MainWorkspaceController::cancelUpgrade);
-      connect(m_upgradePage, &FullUpgradePage::exportReportRequested, this,
-              &MainWorkspaceController::exportSelectedReport);
-      connect(m_upgradePage, &FullUpgradePage::historySelectionChanged, this,
-              &MainWorkspaceController::updateReportExportControls);
     }
   }
   if (m_partitionPage != partitionPage) {
@@ -1598,27 +1593,17 @@ void MainWorkspaceController::startUpgrade() {
   const auto prepared = *m_preparedUpgrade;
   const auto verifyMode = m_upgradePage->verifyMode();
   m_progressTracker.emplace(prepared.plan, verifyMode);
-  beginHistoryEntry(port);
-  if (guard == nullptr)
-    return;
   const zzrk::workflow::FirmwareUpgradeRequest request{
       .portPath = port.toStdString(),
       .imagePath = prepared.image.sourcePath,
       .verifyMode = verifyMode,
       .reboot = m_upgradePage->rebootAfterFlash(),
       .prepareOnly = false};
-  m_activeReportBuilder =
-      std::make_shared<zzrk::workflow::FirmwareUpgradeReportBuilder>(request);
-  m_activeReportBuilder->setPrepared(prepared);
-  const auto reportBuilder = m_activeReportBuilder;
   const auto backend = m_backend;
   m_upgradeWatcher.setFuture(
-      QtConcurrent::run([guard, backend, request, prepared, cancellation,
-                         reportBuilder]() mutable {
+      QtConcurrent::run([guard, backend, request, prepared, cancellation]() mutable {
         const auto progress =
-            [guard,
-             reportBuilder](const zzrk::workflow::FirmwareUpgradeEvent &event) {
-              reportBuilder->observe(event);
+            [guard](const zzrk::workflow::FirmwareUpgradeEvent &event) {
               if (guard != nullptr)
                 QMetaObject::invokeMethod(
                     guard,
@@ -1650,9 +1635,6 @@ void MainWorkspaceController::cancelUpgrade() {
     return;
   cancellation->store(true);
   m_upgradePage->setStatus(QStringLiteral("正在等待当前 USB 分块完成..."));
-  if (m_activeHistoryRow >= 0)
-    m_upgradePage->updateHistoryResult(m_activeHistoryRow,
-                                       QStringLiteral("正在取消"));
   updateUpgradeControls();
 }
 
@@ -1687,10 +1669,6 @@ void MainWorkspaceController::handleUpgradeFinished() {
   if (m_shuttingDown || m_upgradePage == nullptr)
     return;
   const auto result = m_upgradeWatcher.result();
-  if (m_activeReportBuilder != nullptr)
-    m_activeReportBuilder->finish(result);
-  auto report = std::move(*m_activeReportBuilder).takeReport();
-  m_activeReportBuilder.reset();
   m_upgradePage->setOverallProgress(
       m_viewModel != nullptr ? m_viewModel->overallProgress() : 0);
   m_upgradePage->setOperationProgress(
@@ -1704,14 +1682,6 @@ void MainWorkspaceController::handleUpgradeFinished() {
       m_upgradePage->setError(message);
     if (m_statusBar != nullptr)
       m_statusBar->showMessage(QStringLiteral("固件升级未完成"));
-    QPointer<MainWorkspaceController> guard{this};
-    finishHistoryEntry(
-        error->code == zzrk::workflow::FirmwareUpgradeErrorCode::cancelled
-            ? QStringLiteral("已取消")
-            : QStringLiteral("失败"),
-        message, std::move(report));
-    if (guard == nullptr)
-      return;
     if (m_showModalDialogs &&
         error->code != zzrk::workflow::FirmwareUpgradeErrorCode::cancelled)
       QMessageBox::critical(m_upgradePage, QStringLiteral("升级失败"), message);
@@ -1737,9 +1707,6 @@ void MainWorkspaceController::handleUpgradeFinished() {
     m_upgradePage->setStatus(message);
     if (m_statusBar != nullptr)
       m_statusBar->showMessage(QStringLiteral("固件升级完成"));
-    finishHistoryEntry(QStringLiteral("已完成"), message, std::move(report));
-    if (guard == nullptr)
-      return;
     if (m_showModalDialogs)
       QMessageBox::information(m_upgradePage, QStringLiteral("升级完成"),
                                message);
@@ -1755,87 +1722,6 @@ void MainWorkspaceController::handleUpgradeFinished() {
   emit upgradeCompleted();
 }
 
-void MainWorkspaceController::beginHistoryEntry(const QString &portPath) {
-  if (m_upgradePage == nullptr)
-    return;
-  m_upgradePage->prependHistoryEntry(
-      {.startedAt = QDateTime::currentDateTime().toString(
-           QStringLiteral("yyyy-MM-dd HH:mm:ss")),
-       .portPath = portPath,
-       .imageName = QFileInfo{m_firmwarePath}.fileName(),
-       .result = QStringLiteral("进行中"),
-       .detail = {},
-       .reportId = {}});
-  m_activeHistoryRow = 0;
-  constexpr int maximumHistoryRows = 50;
-  while (m_upgradePage->historyCount() > maximumHistoryRows) {
-    const auto removed = m_upgradePage->removeLastHistoryEntry();
-    QPointer<MainWorkspaceController> guard{this};
-    if (removed.has_value() && m_viewModel != nullptr) {
-      m_viewModel->removeHistoryReport(*removed);
-      if (guard == nullptr)
-        return;
-    }
-  }
-  updateReportExportControls();
-}
-
-void MainWorkspaceController::finishHistoryEntry(
-    const QString &result, const QString &detail,
-    zzrk::workflow::FirmwareUpgradeReport report) {
-  if (m_upgradePage == nullptr || m_activeHistoryRow < 0 ||
-      m_viewModel == nullptr)
-    return;
-  const auto reportId = m_nextReportId++;
-  QPointer<MainWorkspaceController> guard{this};
-  m_viewModel->setHistoryReport(reportId, std::move(report));
-  if (guard == nullptr)
-    return;
-  m_upgradePage->updateHistoryResult(m_activeHistoryRow, result, detail,
-                                     reportId);
-  m_upgradePage->selectHistoryRow(m_activeHistoryRow);
-  m_activeHistoryRow = -1;
-  updateReportExportControls();
-}
-
-void MainWorkspaceController::updateReportExportControls() {
-  updateUpgradeControls();
-}
-
-void MainWorkspaceController::exportSelectedReport() {
-  if (m_upgradePage == nullptr || m_viewModel == nullptr)
-    return;
-  const auto reportId = m_upgradePage->selectedReportId();
-  if (!reportId.has_value())
-    return;
-  const auto found = m_viewModel->historyReports().find(*reportId);
-  if (found == m_viewModel->historyReports().end())
-    return;
-  const QString suggested = QStringLiteral("%1-%2.json")
-                                .arg(m_upgradePage->selectedReportImageName(),
-                                     QDateTime::currentDateTime().toString(
-                                         QStringLiteral("yyyyMMdd-HHmmss")));
-  const QString path = QFileDialog::getSaveFileName(
-      m_upgradePage, QStringLiteral("导出升级报告"), suggested,
-      QStringLiteral("JSON 报告 (*.json)"));
-  if (path.isEmpty())
-    return;
-  const auto error = zzrk::workflow::writeFirmwareUpgradeReport(
-      found->second, filesystemPath(path),
-      {.includeFirmwarePath = false, .applicationVersion = ZZRK_VERSION});
-  if (error.has_value()) {
-    const QString message = QStringLiteral("无法导出报告：%1")
-                                .arg(QString::fromStdString(error->message));
-    if (m_statusBar != nullptr)
-      m_statusBar->showMessage(message);
-    if (m_showModalDialogs)
-      QMessageBox::critical(m_upgradePage, QStringLiteral("导出失败"), message);
-    return;
-  }
-  if (m_statusBar != nullptr)
-    m_statusBar->showMessage(QStringLiteral("升级报告已导出"));
-}
-
 void MainWorkspaceController::updateUpgradeControls() {
   if (m_upgradePage == nullptr)
     return;
@@ -1843,18 +1729,11 @@ void MainWorkspaceController::updateUpgradeControls() {
   const bool canStart = m_preparedUpgrade.has_value() &&
                         selectedDeviceFlashable() &&
                         !selectedPortPath().isEmpty();
-  bool canExport = false;
-  if (m_viewModel != nullptr) {
-    const auto reportId = m_upgradePage->selectedReportId();
-    canExport = reportId.has_value() &&
-                m_viewModel->historyReports().contains(*reportId);
-  }
   const auto cancellation =
       m_viewModel != nullptr ? m_viewModel->upgradeCancellation() : nullptr;
   m_upgradePage->setBusy(busy, canStart,
                          m_upgradeWatcher.isRunning() && cancellation &&
-                             !cancellation->load(),
-                         canExport);
+                             !cancellation->load());
 }
 
 void MainWorkspaceController::syncDownloadDeviceFromTable() {
