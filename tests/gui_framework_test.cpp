@@ -864,8 +864,8 @@ int main(int argc, char **argv) {
     window->show();
     QApplication::processEvents();
     expect(window->isWindow(), "framework application window is top-level");
-    expect(window->windowTitle() == QStringLiteral("ZzRkDevTool"),
-           "framework window preserves its application title");
+    expect(window->windowTitle() == QStringLiteral("ZzRkDevTool-下载镜像"),
+           "framework window initially includes the download page title");
     expect(!window->windowIcon().isNull(),
            "framework window preserves its application icon");
     expect(window->minimumSize() == QSize(800, 700) &&
@@ -896,6 +896,17 @@ int main(int argc, char **argv) {
         actualTabs.append(mainTabs->tabText(index));
       expect(actualTabs == expectedTabs,
              "main tabs preserve the required fixed order");
+      const int originalTab = mainTabs->currentIndex();
+      for (int index = 0; index < mainTabs->count(); ++index) {
+        mainTabs->setCurrentIndex(index);
+        const QString expectedTitle =
+            QStringLiteral("ZzRkDevTool-") + expectedTabs.at(index);
+        expect(window->windowTitle() == expectedTitle &&
+                   window->titleBar() != nullptr &&
+                   window->titleBar()->title() == expectedTitle,
+               "window and framework title bar follow the active page");
+      }
+      mainTabs->setCurrentIndex(originalTab);
       expect(!mainTabs->tabsClosable(), "main tabs cannot be closed");
       expect(!mainTabs->isMovable(), "main tabs cannot be reordered");
       auto *bar = mainTabs->fluentTabBar();

@@ -26,9 +26,6 @@ FullUpgradePage::FullUpgradePage(QWidget *parent) : QWidget(parent) {
   setObjectName(QStringLiteral("fullUpgradePage"));
   auto *pageLayout = new QVBoxLayout(this);
   ui::configurePage(this, pageLayout);
-  ui::addPageHeading(
-      pageLayout, QStringLiteral("完整升级"),
-      QStringLiteral("选择完整固件，确认升级计划后烧录并校验设备。"));
   auto *firmwareCard = ui::card(this);
   auto *firmwareLayout = new QVBoxLayout(firmwareCard);
   firmwareLayout->setContentsMargins(ui::CardPadding, ui::CardPadding,

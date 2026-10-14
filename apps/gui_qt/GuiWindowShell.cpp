@@ -262,6 +262,11 @@ ZzCore::ZzResult<void> GuiWindowShell::initialize() {
   window_->navigationPane()->hide();
 
   workspace_ = std::move(workspace);
+  // 框架内置组合标题采用“页面 - 应用”顺序；这里通过公开接口统一为“应用-页面”。
+  workspace_->setTitleMode(ZzPureTools::ZzWorkspaceTitleMode::Custom);
+  connect(workspace_->tabWidget(), &QTabWidget::currentChanged, this,
+          &GuiWindowShell::updateWindowTitle);
+  updateWindowTitle();
   return ZzCore::ZzResult<void>::success();
 }
 
@@ -313,7 +318,20 @@ GuiWindowShell::createInitialDownloadPage(QWidget *pageParent) {
   controller_ = controllerObserver;
   configureFixedTabs();
   workspace_->setApplicationTitle(QStringLiteral("ZzRkDevTool"));
+  updateWindowTitle();
   return instance;
+}
+
+void GuiWindowShell::updateWindowTitle() {
+  auto *tabs = workspace_ != nullptr ? workspace_->tabWidget() : nullptr;
+  if (tabs == nullptr)
+    return;
+  const QString applicationTitle = workspace_->applicationTitle();
+  const QString pageTitle = tabs->tabText(tabs->currentIndex());
+  // 页面名称取自顶部标签，后续改名只需修改标签文案；系统窗口与框架标题栏同步更新。
+  workspace_->setCustomTitle(pageTitle.isEmpty()
+                                ? applicationTitle
+                                : applicationTitle + QStringLiteral("-") + pageTitle);
 }
 
 void GuiWindowShell::configureFixedTabs() {

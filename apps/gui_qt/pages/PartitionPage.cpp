@@ -40,9 +40,6 @@ PartitionPage::PartitionPage(QWidget *parent) : QWidget(parent) {
   setObjectName(QStringLiteral("partitionPage"));
   auto *layout = new QVBoxLayout(this);
   ui::configurePage(this, layout);
-  ui::addPageHeading(
-      layout, QStringLiteral("分区"),
-      QStringLiteral("读取 GPT 分区表，备份分区或写入单独的镜像。"));
   auto *tableCard = ui::card(this);
   auto *tableLayout = new QVBoxLayout(tableCard);
   tableLayout->setContentsMargins(ui::CardPadding, ui::CardPadding,

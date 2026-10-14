@@ -31,9 +31,6 @@ ImageDownloadPage::ImageDownloadPage(QWidget *parent) : QWidget(parent) {
   setObjectName(QStringLiteral("downloadImagePage"));
   auto *pageLayout = new QVBoxLayout(this);
   ui::configurePage(this, pageLayout);
-  ui::addPageHeading(
-      pageLayout, QStringLiteral("下载镜像"),
-      QStringLiteral("选择目标设备，为各分区配置需要烧录的镜像。"));
 
   // 配置区独立为卡片；修改字段排列只需调整下面的网格坐标。
   auto *sourceCard = ui::card(this);

@@ -10,6 +10,7 @@
 | 字号、卡片圆角、表格边线、按钮强调样式 | `apps/gui_qt/WorkspaceUi.cpp` |
 | 全部业务图标 | `WorkspaceUi.cpp` 的 `icon()` |
 | 顶部标签样式 | `GuiWindowShell.cpp` 的 `configureFixedTabs()` |
+| 标题栏的应用与页面名称 | `GuiWindowShell.cpp` 的 `updateWindowTitle()` |
 | 下载页配置字段、清单、任务区的排列 | `pages/ImageDownloadPage.cpp` 构造函数 |
 | 设备列表及可展开原始信息 | `pages/DevicePage.cpp` 构造函数 |
 | 完整升级的固件、计划和任务分区 | `pages/FullUpgradePage.cpp` 构造函数 |
@@ -21,7 +22,7 @@
 
 所有尺寸都是 Qt 逻辑像素，高 DPI 由 Qt 和框架处理，无须自行乘缩放比例。默认页面边距 20、卡片内边距 16、区间距 16、表格行高 38、按钮高度 34。
 
-小窗口会通过 `WorkspaceUi.cpp` 中的 `PageDensity` 自动缩小边距，并暂时收起与顶部标签重复的大标题和副说明，优先保证工作区和任务操作可见。修改紧凑模式的宽高阈值也在这里。
+页面名称统一显示在标题栏，格式为“ZzRkDevTool-页面名字”，页面内不再显示重复大标题和副说明。小窗口会通过 `WorkspaceUi.cpp` 中的 `PageDensity` 自动缩小边距，优先保证工作区和任务操作可见。修改紧凑模式的宽高阈值也在这里。
 
 例如将 `TableRowHeight` 改为 34，可增加表格信息密度。页面内的具体网格间距和任务卡片内边距位于各页构造函数；中文注释标明了配置区、工作区和任务区的分界。
 
@@ -40,6 +41,8 @@ bar->setAppearance(ZzFluentUI::ZzTabBarAppearance::PivotSlide);
 ```
 
 例如换成 `SegmentedSlide`。四个标签采用纯文字，避免与标题栏混用图标样式。主题、置顶、最小化、最大化和关闭继续交给 ZzPureTools 管理。
+
+标题栏使用框架 `Custom` 标题模式，在标签切换时读取标签名称并同步系统窗口和框架标题栏。修改分隔符或显示顺序只需修改 `updateWindowTitle()`，无需修改框架子仓库。
 
 ## 维护时注意
 
