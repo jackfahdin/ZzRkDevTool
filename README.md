@@ -322,6 +322,7 @@ docs/                    构建指南、开发计划、硬件与协议记录
 | 文档 | 内容 |
 | --- | --- |
 | [🛠️ 中文编译与打包指南](docs/BUILD_AND_PACKAGE.zh-CN.md) | Linux、Windows、macOS、GPUI 的环境与构建命令，签名和常见问题 |
+| [🔄 CI 与发布指南](docs/CI_AND_RELEASE.zh-CN.md) | 三平台自动构建、持续预发布、正式版草稿、Action 升级规则和 Gitee 准备清单 |
 | [🗺️ 项目计划与待办](docs/PROJECT_PLAN.zh-CN.md#18-待验证与发布清单) | 真机验收、第二块板卡、兼容矩阵与发布事项 |
 | [🐧 Linux 安装与 USB 权限](packaging/linux/README.md) | DEB、udev、用户组、安装与卸载 |
 | [🪟 Windows 打包与驱动](packaging/windows/README.md) | TGZ、libusb、WinUSB 与签名策略 |
