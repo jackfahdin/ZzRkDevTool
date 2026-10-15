@@ -3,11 +3,16 @@
 #include "WorkspaceUi.hpp"
 #include "GuiTranslations.hpp"
 
+#include <QApplication>
 #include <ZzFluentUI/ZzButtonAppearance.h>
 #include <ZzFluentUI/ZzControlAppearance.h>
 #include <ZzFluentUI/ZzInfoBar.h>
 #include <ZzFluentUI/ZzPushButton.h>
 #include <ZzFluentUI/ZzSegoeIconFont.h>
+#include <ZzFluentUI/ZzThemeController.h>
+#include <ZzFluentUI/ZzThemeSnapshot.h>
+#include <ZzFluentUI/ZzTypographyToken.h>
+#include <ZzPureTools/ZzPureApplication.h>
 
 #include <QEvent>
 #include <QFont>
@@ -109,15 +114,47 @@ private:
   ZzFluentUI::ZzInfoBar *m_notice;
 };
 
-QLabel *label(const QString &text, QWidget *parent, int size,
-              QFont::Weight weight) {
+// Qt 在主题快照通知之后才把新字体传播到子控件；依据表格自己的
+// FontChange 调整高度，避免使用上一轮字体度量导致大字号被裁切。
+class TableSizing final : public QObject {
+public:
+  explicit TableSizing(QTableWidget *table) : QObject(table), m_table(table) {
+    table->installEventFilter(this);
+    update();
+  }
+
+protected:
+  bool eventFilter(QObject *watched, QEvent *event) override {
+    if (event->type() == QEvent::FontChange)
+      update();
+    return QObject::eventFilter(watched, event);
+  }
+
+private:
+  void update() {
+    m_table->verticalHeader()->setDefaultSectionSize(
+        qMax(TableRowHeight, m_table->fontMetrics().height() + 16));
+    m_table->horizontalHeader()->setMinimumHeight(
+        qMax(ControlHeight, m_table->fontMetrics().height() + 12));
+  }
+  QTableWidget *m_table;
+};
+
+QLabel *label(const QString &text, QWidget *parent,
+              ZzFluentUI::ZzTypographyToken role) {
   auto *result = new QLabel(text, parent);
   // 显式使用纯文本，固件名称或错误消息中的尖括号不应被解释为 HTML。
   result->setTextFormat(Qt::PlainText);
-  auto font = result->font();
-  font.setPixelSize(size);
-  font.setWeight(weight);
-  result->setFont(font);
+  // 角色字体来自框架；监听快照才能让已创建的标签随全局字体即时更新。
+  if (auto *app = qobject_cast<ZzPureTools::ZzPureApplication *>(qApp)) {
+    auto *theme = app->themeController();
+    auto update = [result, theme, role] {
+      result->setFont(theme->snapshot()->font(role));
+    };
+    update();
+    QObject::connect(theme, &ZzFluentUI::ZzThemeController::snapshotChanged,
+                     result, update);
+  }
   result->setWordWrap(true);
   return result;
 }
@@ -179,10 +216,6 @@ QIcon icon(const Icon role) {
 }
 
 void configurePage(QWidget *page, QVBoxLayout *layout) {
-  auto font = page->font();
-  font.setPixelSize(14);
-  font.setWeight(QFont::Normal);
-  page->setFont(font);
   layout->setContentsMargins(PageMargin, PageMargin, PageMargin, PageMargin);
   layout->setSpacing(SectionSpacing);
   new PageDensity(page, layout);
@@ -191,13 +224,13 @@ void configurePage(QWidget *page, QVBoxLayout *layout) {
 QWidget *card(QWidget *parent) { return new Surface(parent); }
 
 QLabel *sectionTitle(const GuiText &text, QWidget *parent) {
-  auto *result = label(text, parent, 14, QFont::DemiBold);
+  auto *result = label(text, parent, ZzFluentUI::ZzTypographyToken::BodyStrong);
   setGuiText(result, "text", text);
   return result;
 }
 
 QLabel *secondaryText(const GuiText &text, QWidget *parent) {
-  auto *result = label(text, parent, 12, QFont::Normal);
+  auto *result = label(text, parent, ZzFluentUI::ZzTypographyToken::Caption);
   setGuiText(result, "text", text);
   result->setForegroundRole(QPalette::PlaceholderText);
   return result;
@@ -218,7 +251,7 @@ QPushButton *button(const GuiText &text, const Icon role, QWidget *parent,
 void configureToolButton(QToolButton *button, const Icon role) {
   button->setIcon(icon(role));
   button->setIconSize(QSize(IconSize, IconSize));
-  button->setFixedSize(ControlHeight, ControlHeight);
+  button->setMinimumSize(ControlHeight, ControlHeight);
   button->setAutoRaise(true);
 }
 
@@ -233,11 +266,7 @@ void configureTable(QTableWidget *table) {
   table->horizontalHeader()->setMinimumHeight(ControlHeight);
   table->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft |
                                                  Qt::AlignVCenter);
-  auto font = table->font();
-  font.setPixelSize(13);
-  font.setWeight(QFont::Normal);
-  table->setFont(font);
-  table->horizontalHeader()->setFont(font);
+  new TableSizing(table);
   // 表格交给框架绘制，不使用 palette(...) 样式表。
   // Qt 样式表会固定部分调色板角色，导致运行中切换主题后仍残留浅色背景。
 }
@@ -247,8 +276,8 @@ void addProgressRow(QVBoxLayout *layout, const GuiText &title,
   auto *row = new QHBoxLayout;
   row->addWidget(secondaryText(title, layout->parentWidget()));
   row->addStretch();
-  auto *percent =
-      label(QStringLiteral("0%"), layout->parentWidget(), 12, QFont::DemiBold);
+  auto *percent = label(QStringLiteral("0%"), layout->parentWidget(),
+                        ZzFluentUI::ZzTypographyToken::Caption);
   percent->setObjectName(progress->objectName() + QStringLiteral("Percent"));
   row->addWidget(percent);
   layout->addLayout(row);

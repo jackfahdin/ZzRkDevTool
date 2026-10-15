@@ -8,6 +8,7 @@
 #include "MainWorkspaceViewModel.hpp"
 #include "pages/ImageDownloadPage.hpp"
 #include "pages/SettingsPage.hpp"
+#include "GuiAppearanceSettings.hpp"
 
 #include <ZzCore/ZzError.h>
 #include <ZzCore/ZzErrorCode.h>
@@ -327,8 +328,21 @@ GuiWindowShell::createInitialDownloadPage(QWidget *pageParent) {
   }
   controller_ = controllerObserver;
   auto *application = qobject_cast<ZzPureTools::ZzPureApplication *>(qApp);
+  // 框架标题栏固定 32 px，且不响应 FontChange 重新计算标题省略范围。
+  // 暂保留系统窗口装饰字体；工作区和文件弹窗使用用户字体。
+  // 框架支持动态标题栏高度与字体布局后，可删除这段固定装饰字体的适配。
+  auto chromeFont = QApplication::font();
+  chromeFont.setFamily(chromeFont.family());
+  if (chromeFont.pointSizeF() > 0)
+    chromeFont.setPointSizeF(chromeFont.pointSizeF());
+  else if (chromeFont.pixelSize() > 0)
+    chromeFont.setPixelSize(chromeFont.pixelSize());
+  window_->titleBar()->setFont(chromeFont);
+  appearance_ = new GuiAppearanceSettings(settings_, application->themeController(), this);
   settingsPage_ =
-      new SettingsPage(settings_, application->themeController(), tabs);
+      new SettingsPage(settings_, application->themeController(), appearance_, tabs);
+  connect(appearance_, &GuiAppearanceSettings::changed, this,
+          &GuiWindowShell::scheduleSave);
   tabs->addTab(settingsPage_, guiText("设置"));
   settingsPage_->setFlushCallback([this] { return savePreferences(); });
   settingsPage_->setLanguageCallback([](const QString &language) {
@@ -442,6 +456,7 @@ void GuiWindowShell::restorePreferences() {
       theme == QStringLiteral("dark")    ? ZzFluentUI::ZzThemeMode::Dark
       : theme == QStringLiteral("light") ? ZzFluentUI::ZzThemeMode::Light
                                          : ZzFluentUI::ZzThemeMode::System);
+  appearance_->applyStored();
   auto geometry = settings_->value(QStringLiteral("window/geometry")).toRect();
   if (geometry.isValid()) {
     QScreen *screen = window_->screen();

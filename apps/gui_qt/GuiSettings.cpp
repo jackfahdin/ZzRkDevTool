@@ -34,6 +34,9 @@ QVariant normalized(const QString &key, const QVariant &value) {
 QVariantMap defaults() {
   return {{"appearance/theme", "system"},
           {"appearance/language", "system"},
+          {"appearance/fontFamily", ""},
+          {"appearance/fontPointSize", 0},
+          {"appearance/accentColor", ""},
           {"upgrade/verify", "critical"},
           {"download/layout", "device"}};
 }

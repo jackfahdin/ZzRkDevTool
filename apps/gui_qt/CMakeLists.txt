@@ -23,6 +23,8 @@ qt_add_library(
     GuiDialogs.hpp
     GuiSettings.cpp
     GuiSettings.hpp
+    GuiAppearanceSettings.cpp
+    GuiAppearanceSettings.hpp
     GuiTranslations.cpp
     GuiTranslations.hpp
     SettingsLocationDialog.cpp
