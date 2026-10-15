@@ -8,8 +8,20 @@ endforeach()
 
 set(_install_root "${BUILD_DIR}/install-smoke")
 set(_install_prefix "${_install_root}/usr")
-set(_cli "${_install_prefix}/bin/zzrkdevtool-cli")
-set(_gui "${_install_prefix}/bin/ZzRkDevTool")
+set(_bindir "bin")
+set(_libdir "lib/zzrkdevtool")
+set(_plugindir "${_libdir}/plugins")
+set(_docdir "share/doc/zzrkdevtool")
+set(_udev_rule "lib/udev/rules.d/60-zzrkdevtool.rules")
+set(_expected_rpath "$ORIGIN/../lib/zzrkdevtool")
+if(PORTABLE_LAYOUT)
+    set(_bindir ".")
+    set(_libdir "lib")
+    set(_plugindir "plugins")
+    set(_docdir "docs")
+    set(_udev_rule "usb/60-zzrkdevtool.rules")
+    set(_expected_rpath "$ORIGIN/lib")
+endif()
 
 file(REMOVE_RECURSE "${_install_root}")
 set(_install_command "${CMAKE_COMMAND}" --install "${BUILD_DIR}")
@@ -31,23 +43,34 @@ if(NOT _install_result EQUAL 0)
     )
 endif()
 
+# 移动到带空格的目录后再启动，验证便携包不依赖原安装位置。
+if(PORTABLE_LAYOUT)
+    set(_relocated_prefix "${_install_root}/relocated folder/ZzRkDevTool")
+    file(MAKE_DIRECTORY "${_install_root}/relocated folder")
+    file(RENAME "${_install_prefix}" "${_relocated_prefix}")
+    set(_install_prefix "${_relocated_prefix}")
+endif()
+set(_cli "${_install_prefix}/${_bindir}/zzrkdevtool-cli")
+set(_gui "${_install_prefix}/${_bindir}/ZzRkDevTool")
+
 set(
     _required_files
     "${_cli}"
     "${_gui}"
-    "${_install_prefix}/bin/qt.conf"
-    "${_install_prefix}/lib/udev/rules.d/60-zzrkdevtool.rules"
-    "${_install_prefix}/lib/zzrkdevtool/libQt6Core.so.6"
-    "${_install_prefix}/lib/zzrkdevtool/libusb-1.0.so.0"
-    "${_install_prefix}/lib/zzrkdevtool/plugins/platforms/libqxcb.so"
-    "${_install_prefix}/lib/zzrkdevtool/plugins/platforms/libqoffscreen.so"
-    "${_install_prefix}/share/doc/zzrkdevtool/THIRD_PARTY_NOTICES.md"
-    "${_install_prefix}/share/doc/zzrkdevtool/sbom.spdx.json"
-    "${_install_prefix}/share/doc/zzrkdevtool/licenses/Qt/LGPL-3.0-only.txt"
-    "${_install_prefix}/share/doc/zzrkdevtool/licenses/libusb/LGPL-2.1-or-later.txt"
-    "${_install_prefix}/share/doc/zzrkdevtool/licenses/ZzPureTools/ZzPureTools-MIT.txt"
-    "${_install_prefix}/share/doc/zzrkdevtool/licenses/ZzLog/LICENSE"
-    "${_install_prefix}/share/doc/zzrkdevtool/licenses/QWindowKit/QWindowKit-Apache-2.0.txt"
+    "${_install_prefix}/${_bindir}/qt.conf"
+    "${_install_prefix}/${_udev_rule}"
+    "${_install_prefix}/${_libdir}/libQt6Core.so.6"
+    "${_install_prefix}/${_libdir}/libQt6Widgets.so.6"
+    "${_install_prefix}/${_libdir}/libQt6Svg.so.6"
+    "${_install_prefix}/${_plugindir}/platforms/libqxcb.so"
+    "${_install_prefix}/${_plugindir}/platforms/libqoffscreen.so"
+    "${_install_prefix}/${_docdir}/THIRD_PARTY_NOTICES.md"
+    "${_install_prefix}/${_docdir}/sbom.spdx.json"
+    "${_install_prefix}/${_docdir}/licenses/Qt/LGPL-3.0-only.txt"
+    "${_install_prefix}/${_docdir}/licenses/libusb/LGPL-2.1-or-later.txt"
+    "${_install_prefix}/${_docdir}/licenses/ZzPureTools/ZzPureTools-MIT.txt"
+    "${_install_prefix}/${_docdir}/licenses/ZzLog/LICENSE"
+    "${_install_prefix}/${_docdir}/licenses/QWindowKit/QWindowKit-Apache-2.0.txt"
 )
 foreach(_required_file IN LISTS _required_files)
     if(NOT EXISTS "${_required_file}")
@@ -57,9 +80,9 @@ endforeach()
 
 set(
     _framework_license_pairs
-    "${SOURCE_DIR}/thirdParty/ZzPureTools/LICENSE|${_install_prefix}/share/doc/zzrkdevtool/licenses/ZzPureTools/ZzPureTools-MIT.txt"
-    "${SOURCE_DIR}/thirdParty/ZzPureTools/ZzThirdParty/ZzLog/LICENSE|${_install_prefix}/share/doc/zzrkdevtool/licenses/ZzLog/LICENSE"
-    "${SOURCE_DIR}/thirdParty/ZzPureTools/ZzThirdParty/qwindowkit/LICENSE|${_install_prefix}/share/doc/zzrkdevtool/licenses/QWindowKit/QWindowKit-Apache-2.0.txt"
+    "${SOURCE_DIR}/thirdParty/ZzPureTools/LICENSE|${_install_prefix}/${_docdir}/licenses/ZzPureTools/ZzPureTools-MIT.txt"
+    "${SOURCE_DIR}/thirdParty/ZzPureTools/ZzThirdParty/ZzLog/LICENSE|${_install_prefix}/${_docdir}/licenses/ZzLog/LICENSE"
+    "${SOURCE_DIR}/thirdParty/ZzPureTools/ZzThirdParty/qwindowkit/LICENSE|${_install_prefix}/${_docdir}/licenses/QWindowKit/QWindowKit-Apache-2.0.txt"
 )
 foreach(_framework_license_pair IN LISTS _framework_license_pairs)
     string(REPLACE "|" ";" _framework_license_paths "${_framework_license_pair}")
@@ -73,7 +96,9 @@ foreach(_framework_license_pair IN LISTS _framework_license_pairs)
 endforeach()
 
 execute_process(
-    COMMAND "${_cli}" --version
+    COMMAND "${CMAKE_COMMAND}" -E env --unset=LD_LIBRARY_PATH
+        --unset=QT_PLUGIN_PATH --unset=QT_QPA_PLATFORM_PLUGIN_PATH
+        "${_cli}" --version
     RESULT_VARIABLE _cli_result
     OUTPUT_VARIABLE _cli_output
     ERROR_VARIABLE _cli_error
@@ -89,7 +114,9 @@ endif()
 
 execute_process(
     COMMAND
-        "${CMAKE_COMMAND}" -E env QT_QPA_PLATFORM=offscreen
+        "${CMAKE_COMMAND}" -E env --unset=LD_LIBRARY_PATH
+        --unset=QT_PLUGIN_PATH --unset=QT_QPA_PLATFORM_PLUGIN_PATH
+        QT_QPA_PLATFORM=offscreen
         "${_gui}" --smoke-test
     RESULT_VARIABLE _gui_result
     OUTPUT_VARIABLE _gui_output
@@ -114,12 +141,17 @@ foreach(_executable IN ITEMS "${_cli}" "${_gui}")
     if(NOT _readelf_result EQUAL 0)
         message(FATAL_ERROR "readelf failed: ${_readelf_error}")
     endif()
-    if(NOT _dynamic_section MATCHES "\\$ORIGIN/../lib/zzrkdevtool")
+    string(FIND "${_dynamic_section}" "${_expected_rpath}" _rpath_position)
+    if(_rpath_position EQUAL -1)
         message(FATAL_ERROR "Installed RPATH is not relative: ${_executable}")
     endif()
     if(_dynamic_section MATCHES "${SOURCE_DIR}" OR
        _dynamic_section MATCHES "${BUILD_DIR}")
         message(FATAL_ERROR "Installed RPATH exposes the build tree: ${_executable}")
+    endif()
+    # 源码静态链接后不应再依赖系统或旧仓库里的 libusb 动态库。
+    if(_dynamic_section MATCHES "NEEDED[^\n]*libusb")
+        message(FATAL_ERROR "Installed executable still depends on shared libusb: ${_executable}")
     endif()
 endforeach()
 

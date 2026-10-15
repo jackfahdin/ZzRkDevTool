@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   windows:
-    name: Windows MSVC application and ZIP
+    name: Windows MSVC application and TGZ
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -32,28 +32,38 @@ jobs:
       - name: Build, test, and package
         shell: pwsh
         run: |
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libusb:x64-windows `
-            "--overlay-ports=$PWD/packaging/windows/vcpkg-overlay-ports"
-          $libusbRoot = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows"
-          $env:PATH = "$libusbRoot\bin;$env:PATH"
-          cmake -S . -B build/windows-release -G Ninja `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DZZRK_LIBUSB_ROOT="$libusbRoot" `
-            -DZZRK_BUNDLE_RUNTIME=ON `
-            -DZZRK_WARNINGS_AS_ERRORS=ON
-          cmake --build build/windows-release --parallel
-          ctest --test-dir build/windows-release --output-on-failure
-          cpack --config build/windows-release/CPackConfig.cmake -G ZIP
+          cmake --preset windows-msvc-release
+          if ($LASTEXITCODE -ne 0) { throw "Configure failed" }
+          cmake --build --preset windows-msvc-release --parallel
+          if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+          ctest --preset windows-msvc-release
+          if ($LASTEXITCODE -ne 0) { throw "Tests failed" }
+          cpack --preset windows-msvc-tgz
+          if ($LASTEXITCODE -ne 0) { throw "Packaging failed" }
 
       - name: Validate packaged applications
         shell: pwsh
         run: |
-          $archive = Get-ChildItem build/windows-release/*.zip | Select-Object -First 1
-          Expand-Archive $archive.FullName -DestinationPath build/windows-package
+          $archive = Get-ChildItem build/windows-msvc-release/ZzRkDevTool-*.tar.gz | Select-Object -First 1
+          if (-not $archive) { throw "TGZ package is missing" }
+          New-Item -ItemType Directory -Force build/windows-package | Out-Null
+          Push-Location build/windows-package
+          try {
+            cmake -E tar xzf $archive.FullName
+            if ($LASTEXITCODE -ne 0) { throw "TGZ extraction failed" }
+          } finally {
+            Pop-Location
+          }
           $gui = Get-ChildItem build/windows-package -Recurse -Filter ZzRkDevTool.exe | Select-Object -First 1
           $cli = Get-ChildItem build/windows-package -Recurse -Filter zzrkdevtool-cli.exe | Select-Object -First 1
-          $libusb = Get-ChildItem build/windows-package -Recurse -Filter libusb-1.0.dll | Select-Object -First 1
-          if (-not $gui -or -not $cli -or -not $libusb) { throw "Packaged runtime files are missing" }
+          if (-not $gui -or -not $cli) { throw "Packaged applications are missing" }
+          $packageDirectoryName = $archive.Name -replace '\.tar\.gz$', ''
+          if ($gui.Directory.Name -ne $packageDirectoryName -or $cli.DirectoryName -ne $gui.DirectoryName) {
+            throw "Applications must be installed at the package root"
+          }
+          if (-not (Test-Path (Join-Path $gui.DirectoryName Qt6Core.dll))) { throw "Qt runtime is missing" }
+          $usbDependencies = & dumpbin /DEPENDENTS $gui.FullName $cli.FullName
+          if ($LASTEXITCODE -ne 0 -or $usbDependencies -match 'libusb.*\.dll') { throw "Unexpected shared libusb dependency" }
           $env:QT_QPA_PLATFORM = "offscreen"
           & $gui.FullName --smoke-test
           if ($LASTEXITCODE -ne 0) { throw "Packaged GUI smoke test failed" }
@@ -63,7 +73,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: zzrkdevtool-windows-unsigned
-          path: build/windows-release/*.zip
+          path: build/windows-msvc-release/ZzRkDevTool-*.tar.gz
           if-no-files-found: error
 
   macos:
@@ -80,14 +90,10 @@ jobs:
           arch: clang_64
           cache: true
 
-      - name: Install libusb
-        run: brew install libusb
-
       - name: Build, test, and package
         run: |
           cmake -S . -B build/macos-release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DZZRK_LIBUSB_ROOT="$(brew --prefix libusb)" \
             -DZZRK_BUNDLE_RUNTIME=ON \
             -DZZRK_MACOS_CODESIGN_IDENTITY=- \
             -DZZRK_WARNINGS_AS_ERRORS=ON
@@ -105,12 +111,13 @@ jobs:
           test -x "$mount_point/ZzRkDevTool.app/Contents/MacOS/ZzRkDevTool"
           test -x "$mount_point/ZzRkDevTool.app/Contents/MacOS/zzrkdevtool-cli"
           test -f "$mount_point/ZzRkDevTool.app/Contents/PlugIns/platforms/libqcocoa.dylib"
-          find "$mount_point/ZzRkDevTool.app/Contents/Frameworks" \
-            -maxdepth 1 -name 'libusb*.dylib' -print -quit | grep -q .
-          otool -L "$mount_point/ZzRkDevTool.app/Contents/MacOS/zzrkdevtool-cli" \
-            | grep -q '@rpath/libusb'
-          otool -L "$mount_point/ZzRkDevTool.app/Contents/MacOS/ZzRkDevTool" \
-            | grep -q '@rpath/libusb'
+          for executable in ZzRkDevTool zzrkdevtool-cli; do
+            dependencies="$(otool -L "$mount_point/ZzRkDevTool.app/Contents/MacOS/$executable")"
+            if printf '%s\n' "$dependencies" | grep -q 'libusb.*dylib'; then
+              echo "Unexpected shared libusb dependency" >&2
+              exit 1
+            fi
+          done
           QT_QPA_PLATFORM=offscreen \
             "$mount_point/ZzRkDevTool.app/Contents/MacOS/ZzRkDevTool" --smoke-test
           "$mount_point/ZzRkDevTool.app/Contents/MacOS/zzrkdevtool-cli" --help
@@ -165,31 +172,12 @@ jobs:
             export CXX=g++
           fi
 
-          libusb_root="${PWD}/build/libusb-mingw"
-          mkdir -p build
-          curl --fail --location --retry 3 \
-            --output build/libusb-1.0.30.tar.bz2 \
-            https://github.com/libusb/libusb/releases/download/v1.0.30/libusb-1.0.30.tar.bz2
-          tar -xjf build/libusb-1.0.30.tar.bz2 -C build
-          pushd build/libusb-1.0.30
-          ./configure \
-            --host=x86_64-w64-mingw32 \
-            --enable-windows-hotplug \
-            --enable-shared \
-            --disable-static \
-            --prefix="${libusb_root}"
-          mingw32-make -j"$(nproc)"
-          mingw32-make install
-          popd
-
-          export PATH="${libusb_root}/bin:${PATH}"
           cmake -S . -B build/windows-mingw-release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="${qt_root}" \
             -DZZRK_BUILD_GUI=ON \
             -DZZRK_BUILD_CLI=ON \
             -DZZRK_BUILD_TESTS=ON \
-            -DZZRK_LIBUSB_ROOT="$(cygpath -m "${libusb_root}")" \
             -DZZRK_BUNDLE_RUNTIME=OFF \
             -DZZRK_WARNINGS_AS_ERRORS=ON
           cmake --build build/windows-mingw-release --parallel

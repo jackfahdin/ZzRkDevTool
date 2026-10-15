@@ -21,3 +21,6 @@ target_link_libraries(
     PUBLIC zzrk::core zzrk::session zzrk_project_options
     PRIVATE LibUSB1::LibUSB1 Threads::Threads zzrk_project_warnings
 )
+if(WIN32)
+    target_compile_definitions(zzrk_transport PRIVATE NOMINMAX)
+endif()

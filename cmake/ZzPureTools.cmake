@@ -195,14 +195,13 @@ function(zzrk_add_puretools)
 
     find_package(
         Qt6
-        6.11.1
-        EXACT
+        6.8
         REQUIRED
         COMPONENTS Core Gui Widgets Svg Concurrent
     )
-    find_package(Qt6CorePrivate 6.11.1 EXACT REQUIRED)
-    find_package(Qt6GuiPrivate 6.11.1 EXACT REQUIRED)
-    find_package(Qt6WidgetsPrivate 6.11.1 EXACT REQUIRED)
+    find_package(Qt6CorePrivate 6.8 REQUIRED)
+    find_package(Qt6GuiPrivate 6.8 REQUIRED)
+    find_package(Qt6WidgetsPrivate 6.8 REQUIRED)
 
     add_subdirectory(
         "${PROJECT_SOURCE_DIR}/thirdParty/ZzPureTools"

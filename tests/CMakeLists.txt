@@ -82,13 +82,9 @@ if(TARGET zzrk_transport)
         PRIVATE
             "${PROJECT_SOURCE_DIR}/src/transport/include"
     )
-    target_include_directories(
-        usb_device_scanner_test
-        SYSTEM PRIVATE "${LIBUSB1_INCLUDE_DIR}"
-    )
     target_link_libraries(
         usb_device_scanner_test
-        PRIVATE zzrk_project_options zzrk_project_warnings
+        PRIVATE zzrk_project_options zzrk_project_warnings zzrk_libusb_headers
     )
     add_test(NAME usb_device_scanner COMMAND usb_device_scanner_test)
 
@@ -101,13 +97,9 @@ if(TARGET zzrk_transport)
         libusb_hotplug_monitor_test
         PRIVATE "${PROJECT_SOURCE_DIR}/src/transport/include"
     )
-    target_include_directories(
-        libusb_hotplug_monitor_test
-        SYSTEM PRIVATE "${LIBUSB1_INCLUDE_DIR}"
-    )
     target_link_libraries(
         libusb_hotplug_monitor_test
-        PRIVATE Threads::Threads zzrk_project_options zzrk_project_warnings
+        PRIVATE Threads::Threads zzrk_project_options zzrk_project_warnings zzrk_libusb_headers
     )
     add_test(NAME libusb_hotplug_monitor COMMAND libusb_hotplug_monitor_test)
 
@@ -122,13 +114,9 @@ if(TARGET zzrk_transport)
             "${PROJECT_SOURCE_DIR}/src/transport/include"
             "${PROJECT_SOURCE_DIR}/src/session/include"
     )
-    target_include_directories(
-        libusb_bulk_transport_test
-        SYSTEM PRIVATE "${LIBUSB1_INCLUDE_DIR}"
-    )
     target_link_libraries(
         libusb_bulk_transport_test
-        PRIVATE zzrk_project_options zzrk_project_warnings
+        PRIVATE zzrk_project_options zzrk_project_warnings zzrk_libusb_headers
     )
     add_test(NAME libusb_bulk_transport COMMAND libusb_bulk_transport_test)
 
@@ -288,6 +276,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND TARGET ZzRkDevTool
             "-DBUILD_DIR=${CMAKE_BINARY_DIR}"
             "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}"
             "-DINSTALL_CONFIG=$<CONFIG>"
+            "-DPORTABLE_LAYOUT=${ZZRK_LINUX_PORTABLE}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/linux_install_smoke.cmake"
     )
     set_tests_properties(
@@ -306,7 +295,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND TARGET zzrkdevtool-cli)
             "${CMAKE_COMMAND}"
             "-DSOURCE_DIR=${PROJECT_SOURCE_DIR}"
             "-DBINARY_ROOT=${CMAKE_BINARY_DIR}/cli-only-install-smoke"
-            "-DLIBUSB_ROOT=${ZZRK_LIBUSB_ROOT}"
             "-DFMT_SOURCE=${CMAKE_BINARY_DIR}/_deps/fmt-src"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cli_only_install_smoke.cmake"
     )

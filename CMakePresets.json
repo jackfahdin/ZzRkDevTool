@@ -24,6 +24,11 @@
     {
       "name": "linux-base",
       "hidden": true,
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
@@ -32,8 +37,7 @@
         "ZZRK_BUILD_GUI": true,
         "ZZRK_BUILD_TRANSPORT": true,
         "ZZRK_BUILD_TESTS": true,
-        "ZZRK_WARNINGS_AS_ERRORS": true,
-        "ZZRK_LIBUSB_ROOT": "${sourceDir}/thirdParty/libusb"
+        "ZZRK_WARNINGS_AS_ERRORS": true
       }
     },
     {
@@ -49,7 +53,17 @@
       "displayName": "Linux GCC Release",
       "inherits": "linux-base",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "ZZRK_LINUX_PORTABLE": false
+      }
+    },
+    {
+      "name": "linux-portable-release",
+      "displayName": "Linux Portable Archive Release",
+      "inherits": "linux-release",
+      "cacheVariables": {
+        "ZZRK_LINUX_PORTABLE": true,
+        "ZZRK_BUNDLE_RUNTIME": true
       }
     },
     {
@@ -60,9 +74,190 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "ZZRK_ENABLE_SANITIZERS": true
       }
+    },
+    {
+      "name": "windows-msvc-base",
+      "hidden": true,
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "ZZRK_BUILD_CLI": true,
+        "ZZRK_BUILD_GUI": true,
+        "ZZRK_BUILD_TRANSPORT": true,
+        "ZZRK_BUILD_TESTS": true,
+        "ZZRK_WARNINGS_AS_ERRORS": true,
+        "ZZRK_BUNDLE_RUNTIME": true,
+        "CMAKE_INSTALL_BINDIR": { "type": "PATH", "value": "." },
+        "CMAKE_PREFIX_PATH": "$env{QT_PREFIX_PATH}"
+      }
+    },
+    {
+      "name": "windows-msvc-debug",
+      "displayName": "Windows MSVC Ninja Debug (Developer Terminal)",
+      "inherits": "windows-msvc-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-msvc-release",
+      "displayName": "Windows MSVC Ninja Release (Developer Terminal)",
+      "inherits": "windows-msvc-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "windows-vs2022-base",
+      "hidden": true,
+      "inherits": "windows-msvc-base",
+      "generator": "Visual Studio 17 2022",
+      "architecture": { "value": "x64", "strategy": "set" },
+      "cacheVariables": { "CMAKE_EXPORT_COMPILE_COMMANDS": false }
+    },
+    {
+      "name": "windows-vs2026-base",
+      "hidden": true,
+      "inherits": "windows-vs2022-base",
+      "generator": "Visual Studio 18 2026",
+      "description": "Requires CMake 4.2 or newer and Visual Studio 2026"
+    },
+    {
+      "name": "windows-vs2022-debug",
+      "inherits": "windows-vs2022-base",
+      "cacheVariables": { "CMAKE_CONFIGURATION_TYPES": "Debug" }
+    },
+    {
+      "name": "windows-vs2022-release",
+      "inherits": "windows-vs2022-base",
+      "cacheVariables": { "CMAKE_CONFIGURATION_TYPES": "Release" }
+    },
+    {
+      "name": "windows-vs2026-debug",
+      "inherits": "windows-vs2026-base",
+      "cacheVariables": { "CMAKE_CONFIGURATION_TYPES": "Debug" }
+    },
+    {
+      "name": "windows-vs2026-release",
+      "inherits": "windows-vs2026-base",
+      "cacheVariables": { "CMAKE_CONFIGURATION_TYPES": "Release" }
+    },
+    {
+      "name": "windows-mingw-base",
+      "hidden": true,
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "environment": {
+        "PATH": "$env{QT_PREFIX_PATH}/bin${pathListSep}$penv{PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_INSTALL_BINDIR": { "type": "PATH", "value": "." },
+        "ZZRK_BUILD_CLI": true,
+        "ZZRK_BUILD_GUI": true,
+        "ZZRK_BUILD_TRANSPORT": true,
+        "ZZRK_BUILD_TESTS": true,
+        "ZZRK_WARNINGS_AS_ERRORS": true,
+        "CMAKE_PREFIX_PATH": "$env{QT_PREFIX_PATH}",
+        "ZZRK_BUNDLE_RUNTIME": false
+      }
+    },
+    {
+      "name": "windows-mingw-debug",
+      "displayName": "Windows MinGW Debug",
+      "inherits": "windows-mingw-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-mingw-release",
+      "displayName": "Windows MinGW Release",
+      "inherits": "windows-mingw-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "macos-clang-base",
+      "hidden": true,
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "ZZRK_BUILD_CLI": true,
+        "ZZRK_BUILD_GUI": true,
+        "ZZRK_BUILD_TRANSPORT": true,
+        "ZZRK_BUILD_TESTS": true,
+        "ZZRK_WARNINGS_AS_ERRORS": true,
+        "ZZRK_MACOS_CODESIGN_IDENTITY": "-"
+      }
+    },
+    {
+      "name": "macos-arm64-debug",
+      "displayName": "macOS Clang arm64 Debug",
+      "inherits": "macos-clang-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_OSX_ARCHITECTURES": "arm64"
+      }
+    },
+    {
+      "name": "macos-arm64-release",
+      "displayName": "macOS Clang arm64 Release",
+      "inherits": "macos-clang-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_ARCHITECTURES": "arm64"
+      }
+    },
+    {
+      "name": "macos-x86_64-debug",
+      "displayName": "macOS Clang x86_64 Debug",
+      "inherits": "macos-clang-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_OSX_ARCHITECTURES": "x86_64"
+      }
+    },
+    {
+      "name": "macos-x86_64-release",
+      "displayName": "macOS Clang x86_64 Release",
+      "inherits": "macos-clang-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_ARCHITECTURES": "x86_64"
+      }
     }
   ],
   "buildPresets": [
+    { "name": "linux-portable-release", "configurePreset": "linux-portable-release" },
+    { "name": "windows-vs2022-debug", "configurePreset": "windows-vs2022-debug", "configuration": "Debug" },
+    { "name": "windows-vs2022-release", "configurePreset": "windows-vs2022-release", "configuration": "Release" },
+    { "name": "windows-vs2026-debug", "configurePreset": "windows-vs2026-debug", "configuration": "Debug" },
+    { "name": "windows-vs2026-release", "configurePreset": "windows-vs2026-release", "configuration": "Release" },
     {
       "name": "portable-debug",
       "configurePreset": "portable-debug"
@@ -78,9 +273,48 @@
     {
       "name": "linux-sanitize",
       "configurePreset": "linux-sanitize"
+    },
+    {
+      "name": "windows-msvc-debug",
+      "configurePreset": "windows-msvc-debug",
+      "configuration": "Debug"
+    },
+    {
+      "name": "windows-msvc-release",
+      "configurePreset": "windows-msvc-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-mingw-debug",
+      "configurePreset": "windows-mingw-debug"
+    },
+    {
+      "name": "windows-mingw-release",
+      "configurePreset": "windows-mingw-release"
+    },
+    {
+      "name": "macos-arm64-debug",
+      "configurePreset": "macos-arm64-debug"
+    },
+    {
+      "name": "macos-arm64-release",
+      "configurePreset": "macos-arm64-release"
+    },
+    {
+      "name": "macos-x86_64-debug",
+      "configurePreset": "macos-x86_64-debug"
+    },
+    {
+      "name": "macos-x86_64-release",
+      "configurePreset": "macos-x86_64-release"
     }
   ],
   "testPresets": [
+    { "name": "linux-portable-release", "configurePreset": "linux-portable-release", "output": { "outputOnFailure": true } },
+    { "name": "windows-vs2022-debug", "configurePreset": "windows-vs2022-debug", "configuration": "Debug", "output": { "outputOnFailure": true } },
+    { "name": "windows-vs2022-release", "configurePreset": "windows-vs2022-release", "configuration": "Release", "output": { "outputOnFailure": true } },
+    { "name": "windows-vs2026-debug", "configurePreset": "windows-vs2026-debug", "configuration": "Debug", "output": { "outputOnFailure": true } },
+    { "name": "windows-vs2026-release", "configurePreset": "windows-vs2026-release", "configuration": "Release", "output": { "outputOnFailure": true } },
     {
       "name": "portable-debug",
       "configurePreset": "portable-debug",
@@ -96,20 +330,113 @@
       }
     },
     {
+      "name": "linux-release",
+      "configurePreset": "linux-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
       "name": "linux-sanitize",
       "configurePreset": "linux-sanitize",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-msvc-debug",
+      "configurePreset": "windows-msvc-debug",
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-msvc-release",
+      "configurePreset": "windows-msvc-release",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-mingw-debug",
+      "configurePreset": "windows-mingw-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-mingw-release",
+      "configurePreset": "windows-mingw-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-arm64-debug",
+      "configurePreset": "macos-arm64-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-arm64-release",
+      "configurePreset": "macos-arm64-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-x86_64-debug",
+      "configurePreset": "macos-x86_64-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-x86_64-release",
+      "configurePreset": "macos-x86_64-release",
       "output": {
         "outputOnFailure": true
       }
     }
   ],
   "packagePresets": [
+    { "name": "linux-tgz", "displayName": "Linux Portable tar.gz Package", "configurePreset": "linux-portable-release", "generators": ["TGZ"] },
+    { "name": "windows-vs2022-tgz", "configurePreset": "windows-vs2022-release", "configurations": ["Release"], "generators": ["TGZ"] },
+    { "name": "windows-vs2026-tgz", "configurePreset": "windows-vs2026-release", "configurations": ["Release"], "generators": ["TGZ"] },
     {
       "name": "linux-deb",
       "displayName": "Linux Debian Package",
       "configurePreset": "linux-release",
       "generators": [
         "DEB"
+      ]
+    },
+    {
+      "name": "windows-msvc-tgz",
+      "displayName": "Windows MSVC tar.gz Package",
+      "configurePreset": "windows-msvc-release",
+      "configurations": ["Release"],
+      "generators": [
+        "TGZ"
+      ]
+    },
+    {
+      "name": "macos-arm64-dmg",
+      "displayName": "macOS arm64 DMG Package",
+      "configurePreset": "macos-arm64-release",
+      "generators": [
+        "DragNDrop"
+      ]
+    },
+    {
+      "name": "macos-x86_64-dmg",
+      "displayName": "macOS x86_64 DMG Package",
+      "configurePreset": "macos-x86_64-release",
+      "generators": [
+        "DragNDrop"
       ]
     }
   ]

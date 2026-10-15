@@ -1,7 +1,12 @@
 # SPDX-License-Identifier: MIT
 
 set(ZZRK_PRIVATE_LIBDIR "${CMAKE_INSTALL_LIBDIR}/zzrkdevtool")
-if(APPLE AND TARGET ZzRkDevTool)
+set(ZZRK_INSTALL_PLUGINDIR "${ZZRK_PRIVATE_LIBDIR}/plugins")
+if(ZZRK_LINUX_PORTABLE)
+    set(ZZRK_PRIVATE_LIBDIR "lib")
+    set(ZZRK_INSTALL_PLUGINDIR "plugins")
+    set(ZZRK_INSTALL_DOCDIR "docs")
+elseif(APPLE AND TARGET ZzRkDevTool)
     set(
         ZZRK_INSTALL_DOCDIR
         "ZzRkDevTool.app/Contents/Resources/doc/zzrkdevtool"
@@ -98,12 +103,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             "${PROJECT_SOURCE_DIR}/packaging/linux/sbom.spdx.json"
         DESTINATION "${ZZRK_INSTALL_DOCDIR}"
     )
-    install(
-        FILES "${PROJECT_SOURCE_DIR}/packaging/linux/60-zzrkdevtool.rules"
-        DESTINATION "lib/udev/rules.d"
-    )
+    if(ZZRK_LINUX_PORTABLE)
+        # 便携包只携带规则与安装说明，不自动修改系统 udev 配置。
+        install(FILES "${PROJECT_SOURCE_DIR}/packaging/linux/60-zzrkdevtool.rules"
+                DESTINATION "usb")
+        install(FILES "${PROJECT_SOURCE_DIR}/packaging/linux/PORTABLE.zh-CN.md"
+                DESTINATION "." RENAME "README.zh-CN.md")
+    else()
+        install(FILES "${PROJECT_SOURCE_DIR}/packaging/linux/60-zzrkdevtool.rules"
+                DESTINATION "lib/udev/rules.d")
+    endif()
 
-    if(TARGET ZzRkDevTool)
+    if(TARGET ZzRkDevTool AND NOT ZZRK_LINUX_PORTABLE)
         install(
             FILES "${PROJECT_SOURCE_DIR}/packaging/linux/zzrkdevtool.desktop"
             DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/applications"
@@ -117,7 +128,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
                 "ZZRK_BUNDLE_RUNTIME requires at least one Qt application target"
             )
         endif()
-        find_package(Qt6 6.11 REQUIRED COMPONENTS Core)
+        find_package(Qt6 6.8 REQUIRED COMPONENTS Core)
 
         set(_zzrk_primary_deploy_target)
         set(_zzrk_additional_deploy_executables)
@@ -133,18 +144,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             set(_zzrk_primary_deploy_target zzrkdevtool-cli)
         endif()
 
-        qt_generate_deploy_script(
-            TARGET ${_zzrk_primary_deploy_target}
-            OUTPUT_SCRIPT _zzrk_runtime_deploy_script
-            CONTENT
-"set(QT_DEPLOY_LIB_DIR \"${ZZRK_PRIVATE_LIBDIR}\")
-set(QT_DEPLOY_PLUGINS_DIR \"${ZZRK_PRIVATE_LIBDIR}/plugins\")
-qt_deploy_runtime_dependencies(
-    EXECUTABLE \"$<TARGET_FILE:${_zzrk_primary_deploy_target}>\"
-    ${_zzrk_additional_deploy_executables}
-    GENERATE_QT_CONF
-    NO_TRANSLATIONS
-    INCLUDE_PLUGINS qoffscreen
+        # 精细插件筛选参数在 Qt 6.10 才引入；6.8/6.9 使用默认完整部署。
+        set(_zzrk_linux_plugin_options)
+        if(Qt6_VERSION VERSION_GREATER_EQUAL "6.10")
+            set(_zzrk_linux_plugin_options
+"INCLUDE_PLUGINS qoffscreen
     EXCLUDE_PLUGIN_TYPES
         egldeviceintegrations
         generic
@@ -160,7 +164,25 @@ qt_deploy_runtime_dependencies(
         wayland-decoration-client
         wayland-graphics-integration-client
         wayland-shell-integration
-        xcbglintegrations
+        xcbglintegrations"
+            )
+        endif()
+
+        # Linux 从构建产物分析依赖，保留其中指向所选 Qt 的 BUILD_RPATH。
+        # 已安装程序的 RPATH 已改为包内路径，此时依赖尚未复制，分析它会误用系统 Qt。
+        # 使用 Qt 6 接口，避免无版本接口转发参数时提前展开安装阶段的变量。
+        qt6_generate_deploy_script(
+            TARGET ${_zzrk_primary_deploy_target}
+            OUTPUT_SCRIPT _zzrk_runtime_deploy_script
+            CONTENT
+"set(QT_DEPLOY_LIB_DIR \"${ZZRK_PRIVATE_LIBDIR}\")
+set(QT_DEPLOY_PLUGINS_DIR \"${ZZRK_INSTALL_PLUGINDIR}\")
+qt_deploy_runtime_dependencies(
+    EXECUTABLE \"$<TARGET_FILE:${_zzrk_primary_deploy_target}>\"
+    ${_zzrk_additional_deploy_executables}
+    GENERATE_QT_CONF
+    NO_TRANSLATIONS
+    ${_zzrk_linux_plugin_options}
 )"
         )
         install(SCRIPT "${_zzrk_runtime_deploy_script}")
@@ -199,7 +221,7 @@ if(ZZRK_BUNDLE_RUNTIME AND (WIN32 OR APPLE))
             "ZZRK_BUNDLE_RUNTIME requires at least one Qt application target"
         )
     endif()
-    find_package(Qt6 6.11 REQUIRED COMPONENTS Core)
+    find_package(Qt6 6.8 REQUIRED COMPONENTS Core)
 
     set(_zzrk_cross_deploy_target)
     set(_zzrk_cross_deploy_executable)
@@ -243,7 +265,10 @@ if(ZZRK_BUNDLE_RUNTIME AND (WIN32 OR APPLE))
     endif()
 
     set(_zzrk_deploy_tool_options)
-    set(_zzrk_cross_plugin_options "INCLUDE_PLUGINS qoffscreen")
+    set(_zzrk_cross_plugin_options)
+    if(Qt6_VERSION VERSION_GREATER_EQUAL "6.10")
+        set(_zzrk_cross_plugin_options "INCLUDE_PLUGINS qoffscreen")
+    endif()
     if(APPLE AND ZZRK_MACOS_CODESIGN_IDENTITY)
         set(
             _zzrk_deploy_tool_options
@@ -251,7 +276,8 @@ if(ZZRK_BUNDLE_RUNTIME AND (WIN32 OR APPLE))
         )
     endif()
 
-    qt_generate_deploy_script(
+    # 保留 QT_DEPLOY_BIN_DIR，等安装脚本加载 Qt 部署环境后再展开。
+    qt6_generate_deploy_script(
         TARGET ${_zzrk_cross_deploy_target}
         OUTPUT_SCRIPT _zzrk_cross_runtime_deploy_script
         CONTENT
@@ -265,30 +291,7 @@ if(ZZRK_BUNDLE_RUNTIME AND (WIN32 OR APPLE))
 )"
     )
 
-    if(TARGET LibUSB1::LibUSB1)
-        if(APPLE)
-            get_filename_component(
-                _zzrk_macos_libusb_name
-                "${LIBUSB1_RUNTIME_LIBRARY}"
-                NAME
-            )
-            install(
-                FILES "${LIBUSB1_RUNTIME_LIBRARY}"
-                DESTINATION "ZzRkDevTool.app/Contents/Frameworks"
-            )
-            configure_file(
-                "${PROJECT_SOURCE_DIR}/cmake/FixMacOSLibUSB.cmake.in"
-                "${CMAKE_CURRENT_BINARY_DIR}/FixMacOSLibUSB.cmake"
-                @ONLY
-            )
-            install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/FixMacOSLibUSB.cmake")
-        else()
-            install(
-                FILES "${LIBUSB1_RUNTIME_LIBRARY}"
-                DESTINATION "${CMAKE_INSTALL_BINDIR}"
-            )
-        endif()
-    endif()
+    # Zzlibusb 已静态链接，不再从旧缓存路径复制预编译 DLL/dylib。
     install(SCRIPT "${_zzrk_cross_runtime_deploy_script}")
 endif()
 
@@ -301,28 +304,35 @@ set(CPACK_RESOURCE_FILE_LICENSE "${PROJECT_SOURCE_DIR}/LICENSE")
 set(CPACK_VERBATIM_VARIABLES YES)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(CPACK_GENERATOR "DEB")
-    set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
-    set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
-    set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
-    set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
-    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
-    set(
-        CPACK_DEBIAN_PACKAGE_SHLIBDEPS_PRIVATE_DIRS
-        "${ZZRK_PRIVATE_LIBDIR}"
-    )
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "adduser, udev")
-    set(
-        CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
-        "${PROJECT_SOURCE_DIR}/packaging/linux/postinst;${PROJECT_SOURCE_DIR}/packaging/linux/postrm"
-    )
+    if(ZZRK_LINUX_PORTABLE)
+        set(CPACK_GENERATOR "TGZ")
+        set(CPACK_PACKAGING_INSTALL_PREFIX "/")
+        set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY ON)
+        set(CPACK_PACKAGE_FILE_NAME "ZzRkDevTool-${PROJECT_VERSION}-linux-${CMAKE_SYSTEM_PROCESSOR}-portable")
+    else()
+        set(CPACK_GENERATOR "DEB")
+        set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
+        set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+        set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
+        set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
+        set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+        set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS_PRIVATE_DIRS "${ZZRK_PRIVATE_LIBDIR}")
+        set(CPACK_DEBIAN_PACKAGE_DEPENDS "adduser, udev")
+        set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
+            "${PROJECT_SOURCE_DIR}/packaging/linux/postinst;${PROJECT_SOURCE_DIR}/packaging/linux/postrm")
+    endif()
 elseif(WIN32)
-    set(CPACK_GENERATOR "ZIP")
-    set(CPACK_PACKAGE_FILE_NAME "zzrkdevtool-${PROJECT_VERSION}-windows-x86_64")
+    set(CPACK_GENERATOR "TGZ")
+    set(CPACK_PACKAGE_FILE_NAME "ZzRkDevTool-${PROJECT_VERSION}-windows-x86_64")
 elseif(APPLE)
     set(CPACK_GENERATOR "DragNDrop")
     set(CPACK_DMG_VOLUME_NAME "ZzRkDevTool ${PROJECT_VERSION}")
-    set(CPACK_PACKAGE_FILE_NAME "zzrkdevtool-${PROJECT_VERSION}-macos")
+    set(_zzrk_macos_package_arch "${CMAKE_OSX_ARCHITECTURES}")
+    if(NOT _zzrk_macos_package_arch)
+        set(_zzrk_macos_package_arch "${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+    string(REPLACE ";" "-" _zzrk_macos_package_arch "${_zzrk_macos_package_arch}")
+    set(CPACK_PACKAGE_FILE_NAME "ZzRkDevTool-${PROJECT_VERSION}-macos-${_zzrk_macos_package_arch}")
 endif()
 
 include(CPack)
