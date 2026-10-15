@@ -320,6 +320,16 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         set(CPACK_DEBIAN_PACKAGE_DEPENDS "adduser, udev")
         set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
             "${PROJECT_SOURCE_DIR}/packaging/linux/postinst;${PROJECT_SOURCE_DIR}/packaging/linux/postrm")
+        # 同一份编译产物生成两种布局；TGZ 仅整理自己的 CPack 暂存副本。
+        configure_file(
+            "${PROJECT_SOURCE_DIR}/cmake/LinuxPackageConfig.cmake.in"
+            "${PROJECT_BINARY_DIR}/LinuxPackageConfig.cmake" @ONLY
+        )
+        configure_file(
+            "${PROJECT_SOURCE_DIR}/cmake/LinuxPortableStage.cmake.in"
+            "${PROJECT_BINARY_DIR}/LinuxPortableStage.cmake" @ONLY
+        )
+        set(CPACK_PROJECT_CONFIG_FILE "${PROJECT_BINARY_DIR}/LinuxPackageConfig.cmake")
     endif()
 elseif(WIN32)
     set(CPACK_GENERATOR "TGZ")

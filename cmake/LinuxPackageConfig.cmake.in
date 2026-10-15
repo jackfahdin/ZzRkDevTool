@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: MIT
+# CPack 在每个生成器开始时加载此文件；DEB 沿用系统安装布局。
+if(CPACK_GENERATOR STREQUAL "TGZ")
+    if(NOT "@ZZRK_BUNDLE_RUNTIME@")
+        message(FATAL_ERROR "Linux portable TGZ requires ZZRK_BUNDLE_RUNTIME=ON")
+    endif()
+    set(CPACK_PACKAGE_FILE_NAME "ZzRkDevTool-@PROJECT_VERSION@-linux-@CMAKE_SYSTEM_PROCESSOR@-portable")
+    set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY ON)
+    # 安装仍使用 /usr，安装完成后再转换暂存副本，不重新编译或修改安装规则。
+    list(APPEND CPACK_PRE_BUILD_SCRIPTS "@PROJECT_BINARY_DIR@/LinuxPortableStage.cmake")
+endif()

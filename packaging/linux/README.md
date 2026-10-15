@@ -7,20 +7,26 @@ archive puts the applications at its root, libraries in `lib/`, plugins in
 ## Build the portable archive
 
 ```bash
-cmake --preset linux-portable-release -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/gcc_64"
-cmake --build --preset linux-portable-release
-ctest --preset linux-portable-release
+cmake --preset linux-release -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/gcc_64"
+cmake --build --preset linux-release
+ctest --preset linux-release
 cpack --preset linux-tgz
 ```
 
 The x86_64 output is
-`build/linux-portable-release/ZzRkDevTool-0.1.0-linux-x86_64-portable.tar.gz`.
+`build/linux-release/ZzRkDevTool-0.1.0-linux-x86_64-portable.tar.gz`.
 Extract the archive and run `./ZzRkDevTool` from its top-level directory.
 The entire directory can be relocated. USB access rules are included under
 `usb/` for manual installation; see `README.zh-CN.md` inside the archive.
 The host still needs compatible glibc, C++ and graphics system libraries.
 
 ## Build the Debian package
+
+The DEB and TGZ share the build and tests above. Run `cpack --preset linux-deb`
+to produce the DEB from the same build directory without rebuilding. CPack
+converts only the TGZ staging copy to the portable layout, using `patchelf` to
+adjust relative library paths. After creating both packages, run
+`bash .github/scripts/verify-linux-packages.sh` to extract and check them.
 
 The Ubuntu 26.04 x86_64 release package contains both applications, the
 compatible Qt platform runtime, source-built static Zzlibusb 1.0.30, ICU,

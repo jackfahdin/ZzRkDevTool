@@ -77,7 +77,7 @@ GUI 启动路径固定为：先调用 `ZzWindowKitBootstrap::prepare()`，再构
 | `ZZRK_BUILD_TESTS`             | `ON`               | 构建自动化测试                                      |
 | `ZZRK_WARNINGS_AS_ERRORS`      | `OFF`              | 将项目警告视为错误；发布和 CI 应启用                |
 | `ZZRK_BUNDLE_RUNTIME`          | 应用构建时 `ON`    | 安装/打包 Qt、插件和非系统运行库                    |
-| `ZZRK_LINUX_PORTABLE`          | `OFF`              | Linux 便携包布局；`linux-portable-release` 自动启用，要求携带运行库 |
+| `ZZRK_LINUX_PORTABLE`          | `OFF`              | 直接安装时使用 Linux 便携布局；`linux-portable-release` 自动启用。常规发包可直接从 `linux-release` 生成两种包 |
 | `ZZRK_FFI_SHARED`              | `OFF`              | 将 `src/ffi` 构建为共享库；Rust 前端构建时自动启用  |
 | `CMAKE_INSTALL_BINDIR`         | Windows 为 `.`，Linux 为 `bin` | 程序安装位置；macOS GUI 构建固定使用 `.app` 布局 |
 | `ZZRK_MACOS_CODESIGN_IDENTITY` | macOS 预设为 ad-hoc `-` | macOS `macdeployqt` 使用的签名身份；`-` 表示 ad-hoc |
@@ -199,20 +199,16 @@ sudo usermod -aG zzrkdevtool "$USER"
 
 ### 2.5 Linux 便携包 `.tar.gz`
 
-便携包与 DEB 同时提供，使用独立预设和构建目录。不要用 DEB 预设直接指定 `-G TGZ`：只改归档格式不会改变安装布局。
+便携包与 DEB 共用 `linux-release` 的一次编译、一次完整测试。执行上一节的构建后，直接生成 TGZ，无需再编译一遍：
 
 ```bash
-cmake --preset linux-portable-release \
-  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/gcc_64"
-cmake --build --preset linux-portable-release --parallel
-ctest --preset linux-portable-release
 cpack --preset linux-tgz
 ```
 
 x86_64 当前版本产物为：
 
 ```text
-build/linux-portable-release/ZzRkDevTool-0.1.0-linux-x86_64-portable.tar.gz
+build/linux-release/ZzRkDevTool-0.1.0-linux-x86_64-portable.tar.gz
 ```
 
 解压后，程序直接位于顶层软件目录：
@@ -232,13 +228,21 @@ ZzRkDevTool-0.1.0-linux-x86_64-portable/
 例如解压到当前目录并运行：
 
 ```bash
-tar -xzf build/linux-portable-release/ZzRkDevTool-0.1.0-linux-x86_64-portable.tar.gz
+tar -xzf build/linux-release/ZzRkDevTool-0.1.0-linux-x86_64-portable.tar.gz
 cd ZzRkDevTool-0.1.0-linux-x86_64-portable
 ./zzrkdevtool-cli --version
 ./ZzRkDevTool
 ```
 
-整个软件目录可以移动或重命名，无需安装 Qt。CTest 会将临时安装目录移动到带空格的新路径，再在清除 Qt/动态库路径环境变量后验证 GUI 和 CLI 启动。Qt 配置、可执行文件和插件均通过相对路径寻找包内依赖，不能只复制单个程序。
+整个软件目录可以移动或重命名，无需安装 Qt。CPack 为两种包创建独立暂存目录，TGZ 在自己的目录内整理布局、调整程序及插件的相对库路径，不修改原始构建产物或 DEB。`patchelf` 是打包依赖。Qt 配置、可执行文件和插件均通过相对路径寻找包内依赖，不能只复制单个程序。
+
+两种包生成后，可执行与 CI 相同的解包启动验证（含空格路径、清除 Qt/动态库环境变量、检查插件使用包内 Qt），不安装软件，也不访问 USB 硬件：
+
+```bash
+bash .github/scripts/verify-linux-packages.sh
+```
+
+仍保留 `linux-portable-release` 配置，供需要 `cmake --install` 直接获得便携布局的开发场景使用；该独立配置可在构建后用 `cpack --config build/linux-portable-release/CPackConfig.cmake -G TGZ` 打包。常规 CI 和发包使用前面的单次构建流程。
 
 便携包不自动修改系统 udev 配置；USB 权限不足时按包根目录 `README.zh-CN.md` 手动安装 `usb/` 中的规则。DEB 则由安装脚本处理。便携包仍要求目标系统提供兼容的 glibc、C++ 运行库和图形系统，不表示能跨所有 Linux 发行版运行。
 

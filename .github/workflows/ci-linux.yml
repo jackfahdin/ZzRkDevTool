@@ -51,17 +51,16 @@ jobs:
           version: ${{ env.QT_VERSION }}
           # Svg、LinguistTools 随基础桌面归档安装，不属于 aqt 附加 modules。
           cache: true
-      - name: 构建并检查 DEB 版本
+      # 两种包共用应用和依赖的构建结果，完整测试只执行一次。
+      - name: 编译与测试
         run: |
           cmake --preset linux-release
           cmake --build --preset linux-release --parallel 4
           ctest --preset linux-release --parallel 4
-          cpack --preset linux-deb
-      - name: 构建并检查便携版本
+      # CPack 为每种格式创建独立暂存目录；TGZ 的目录整理不修改构建产物。
+      - name: 生成 DEB 与便携 TGZ
         run: |
-          cmake --preset linux-portable-release
-          cmake --build --preset linux-portable-release --parallel 4
-          ctest --preset linux-portable-release --parallel 4
+          cpack --preset linux-deb
           cpack --preset linux-tgz
       # 两种布局分别解包后启动；不安装 DEB，也不触碰 USB 设备。
       - name: 验证最终发布包
@@ -70,7 +69,7 @@ jobs:
         run: |
           # 多目录直接上传会保留目录层级；先收集到同一目录，供公共发布流程读取。
           mkdir -p build/release-packages
-          cp build/linux-release/*.deb build/linux-portable-release/ZzRkDevTool-*.tar.gz build/release-packages/
+          cp build/linux-release/*.deb build/linux-release/ZzRkDevTool-*.tar.gz build/release-packages/
       - uses: actions/upload-artifact@v7
         with:
           name: packages-linux

@@ -404,7 +404,7 @@
     }
   ],
   "packagePresets": [
-    { "name": "linux-tgz", "displayName": "Linux Portable tar.gz Package", "configurePreset": "linux-portable-release", "generators": ["TGZ"] },
+    { "name": "linux-tgz", "displayName": "Linux Portable tar.gz Package", "configurePreset": "linux-release", "generators": ["TGZ"] },
     { "name": "windows-vs2022-tgz", "configurePreset": "windows-vs2022-release", "configurations": ["Release"], "generators": ["TGZ"] },
     { "name": "windows-vs2026-tgz", "configurePreset": "windows-vs2026-release", "configurations": ["Release"], "generators": ["TGZ"] },
     {
