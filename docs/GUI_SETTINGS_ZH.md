@@ -18,7 +18,7 @@ GUI 使用 ZzPureTools 的 `ZzQtSettingsStore` 保存 INI 配置，无需额外�
 
 第五个顶部标签为“设置”，包含：
 
-- 外观与语言：跟随系统、浅色、深色；简体中文、英文或跟随系统。主题和语言即时生效，未支持的系统语言使用中文。
+- 外观与语言：跟随系统、浅色、深色；字体、字号及高亮颜色；简体中文、英文或跟随系统。修改即时生效，未支持的系统语言使用中文。
 - 路径与存储：查看、打开及修改配置目录，单独设置分区备份的默认保存目录。
 - 配置管理：恢复默认偏好与镜像草稿，保留配置目录。设备忙碌时不能迁移或恢复默认。
 
@@ -30,7 +30,7 @@ GUI 使用 ZzPureTools 的 `ZzQtSettingsStore` 保存 INI 配置，无需额外�
 
 | 分组 | 内容 |
 | --- | --- |
-| `appearance` | 主题、语言 |
+| `appearance` | 主题、语言、字体、字号、高亮颜色 |
 | `window` | 标签页、正常窗口位置与尺寸、最大化及置顶 |
 | `upgrade` | 固件路径、回读校验模式、完成后重启 |
 | `download` | 布局来源、parameter 路径、镜像目录、文件映射、勾选、回读校验及重启 |
@@ -54,6 +54,9 @@ schemaVersion=1
 [appearance]
 language=zh_CN
 theme=dark
+fontFamily=
+fontPointSize=0
+accentColor=#a43bb7
 
 [upgrade]
 reboot=true
@@ -64,11 +67,18 @@ verify=critical
 
 目录暂时不可用、文件损坏或版本不支持时，启动允许重新定位；运行中保存失败不会静默重建目录或覆盖异常配置。原文件保留，可重新挂载目录或选择有效位置。
 
+字体可选择当前机器已安装的字体，字号范围为 8–24 pt。“系统默认”对应 `fontFamily` 为空和 `fontPointSize=0`；“恢复默认字体”同时还原字体与字号。迁移配置后找不到字体或字号无效时，回到当前系统默认。高亮颜色通过 ZzPureTools 的颜色选择器修改，并由框架主题控制器应用到按钮、选中状态等强调区域；只使用不透明颜色。`accentColor` 为空或非法时使用框架默认颜色，“恢复默认颜色”不影响字体和主题。
+
+字体、字号和高亮颜色自动保存，重启恢复；整体恢复默认也会立即还原这些选项。页面和文件选择框跟随应用字体，标题与辅助文字使用框架排版角色，图标保留独立的图标字体。设置内容支持滚动，方便大字号和小窗口使用。
+
+当前 ZzPureTools 无边框标题栏固定高度为 32 px，尚未在 `FontChange` 时重新计算标题省略范围。项目暂让标题栏保留启动时的系统字体，避免大字号裁切标题；工作区与文件弹窗仍使用用户字体。后续框架支持动态高度与字体布局后，可移除 `GuiWindowShell.cpp` 中对应适配。
+
 ## 维护入口
 
 | 文件 | 职责 |
 | --- | --- |
 | `apps/gui_qt/GuiSettings.hpp/.cpp` | 默认值、版本检查、存储、目录定位和迁移 |
+| `apps/gui_qt/GuiAppearanceSettings.hpp/.cpp` | 字体与高亮颜色的应用、校验和恢复默认 |
 | `apps/gui_qt/SettingsLocationDialog.hpp/.cpp` | 首次选择与目录迁移弹窗 |
 | `apps/gui_qt/pages/SettingsPage.hpp/.cpp` | 设置页展示与用户操作 |
 | `apps/gui_qt/GuiWindowShell.cpp` | 外观、窗口恢复、自动保存与关闭同步 |

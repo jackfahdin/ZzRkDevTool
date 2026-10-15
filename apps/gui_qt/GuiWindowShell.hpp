@@ -25,6 +25,7 @@ namespace zzrk::gui {
 class MainWorkspaceController;
 class GuiSettingsStore;
 class SettingsPage;
+class GuiAppearanceSettings;
 
 class GuiWindowShell final : public QObject {
   Q_OBJECT
@@ -71,6 +72,7 @@ private:
   QPointer<MainWorkspaceController> controller_;
   std::shared_ptr<GuiSettingsStore> settings_;
   QPointer<SettingsPage> settingsPage_;
+  GuiAppearanceSettings *appearance_ = nullptr;
   QTimer *saveTimer_ = nullptr;
   bool restoring_ = false;
 };

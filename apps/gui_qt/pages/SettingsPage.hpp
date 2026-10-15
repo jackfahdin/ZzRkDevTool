@@ -7,16 +7,20 @@ class QComboBox;
 class QLineEdit;
 class QLabel;
 class QPushButton;
+class QDoubleSpinBox;
 namespace ZzFluentUI {
 class ZzThemeController;
-}
+class ZzColorPickerButton;
+} // namespace ZzFluentUI
 namespace zzrk::gui {
 class GuiSettingsStore;
+class GuiAppearanceSettings;
 class SettingsPage final : public QWidget {
   Q_OBJECT
 public:
   SettingsPage(std::shared_ptr<GuiSettingsStore> settings,
-               ZzFluentUI::ZzThemeController *theme, QWidget *parent = nullptr);
+               ZzFluentUI::ZzThemeController *theme,
+               GuiAppearanceSettings *appearance, QWidget *parent = nullptr);
   void setFlushCallback(std::function<bool()> flush);
   void setLanguageCallback(std::function<bool(const QString &)> change);
   void setBusy(bool busy);
@@ -28,6 +32,10 @@ signals:
 private:
   std::shared_ptr<GuiSettingsStore> m_settings;
   ZzFluentUI::ZzThemeController *m_theme;
+  GuiAppearanceSettings *m_appearance;
+  QComboBox *m_fontFamily;
+  QDoubleSpinBox *m_fontSize;
+  ZzFluentUI::ZzColorPickerButton *m_accent;
   std::function<bool()> m_flush;
   std::function<bool(const QString &)> m_changeLanguage;
   QComboBox *m_themeCombo;

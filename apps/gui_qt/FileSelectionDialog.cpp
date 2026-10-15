@@ -173,9 +173,6 @@ void configureBrowser(QFileDialog *browser, SelectionMode mode) {
     browser->setLabelText(QFileDialog::Reject, guiText("取消"));
   });
   browser->setProxyModel(new FileHeaders(browser));
-  auto font = browser->font();
-  font.setPixelSize(14);
-  browser->setFont(font);
   if (browser->layout() != nullptr) {
     browser->layout()->setContentsMargins(0, 0, 0, 0);
     browser->layout()->setSpacing(12);

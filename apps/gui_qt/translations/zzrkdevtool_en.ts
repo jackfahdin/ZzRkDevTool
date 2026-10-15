@@ -3,6 +3,12 @@
 <TS version="2.1" language="en" sourcelanguage="zh_CN">
   <context>
     <name>ZzRkDevTool</name>
+    <message><source>字体</source><translation>Font</translation></message>
+    <message><source>字号</source><translation>Font size</translation></message>
+    <message><source>高亮颜色</source><translation>Accent color</translation></message>
+    <message><source>系统默认</source><translation>System default</translation></message>
+    <message><source>恢复默认字体</source><translation>Reset font</translation></message>
+    <message><source>恢复默认颜色</source><translation>Reset color</translation></message>
     <message><source>确定</source><translation>OK</translation></message>
     <message><source>继续</source><translation>Continue</translation></message>
     <message><source>重试</source><translation>Retry</translation></message>
@@ -388,5 +394,31 @@ Existing data in the selected targets will be overwritten.</translation></messag
     <name>ZzFluentUI::ZzInfoBar</name>
     <message><source>关闭</source><translation>Close</translation></message>
     <message><source>关闭通知</source><translation>Dismiss notification</translation></message>
+  </context>
+  <context>
+    <name>ZzFluentUI::ZzColorPicker</name>
+    <message><source>红色</source><translation>Red</translation></message>
+    <message><source>绿色</source><translation>Green</translation></message>
+    <message><source>蓝色</source><translation>Blue</translation></message>
+    <message><source>透明度</source><translation>Alpha</translation></message>
+    <message><source>十六进制颜色</source><translation>Hex color</translation></message>
+    <message><source>颜色色板</source><translation>Color palette</translation></message>
+    <message><source>当前颜色预览</source><translation>Current color preview</translation></message>
+    <message><source>色相</source><translation>Hue</translation></message>
+    <message><source>饱和度</source><translation>Saturation</translation></message>
+    <message><source>明度</source><translation>Value</translation></message>
+    <message><source>色相和饱和度色谱</source><translation>Hue and saturation spectrum</translation></message>
+    <message><source>方向键调整色相和饱和度，Shift 加快调整</source><translation>Use arrow keys to adjust hue and saturation; hold Shift for larger steps</translation></message>
+    <message><source>颜色明暗色阶</source><translation>Color shade strip</translation></message>
+    <message><source>颜色表示</source><translation>Color representation</translation></message>
+    <message><source>色谱</source><translation>Spectrum</translation></message>
+    <message><source>色板</source><translation>Palette</translation></message>
+    <message><source>滑条</source><translation>Sliders</translation></message>
+    <message><source>颜色编辑方式</source><translation>Color editing mode</translation></message>
+  </context>
+  <context>
+    <name>ZzFluentUI::ZzColorPickerButton</name>
+    <message><source>选择颜色</source><translation>Choose color</translation></message>
+    <message><source>颜色选择器</source><translation>Color picker</translation></message>
   </context>
 </TS>
