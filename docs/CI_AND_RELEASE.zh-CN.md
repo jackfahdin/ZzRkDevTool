@@ -14,7 +14,9 @@
 
 三个应用工作流都监听 `main`、`master` 的 push 和 PR、`v*` 标签的 push，并支持 Actions 页面的手动运行。版本标签必须严格匹配 `vX.Y.Z`，且与被标记提交的 CMake 项目版本一致；不匹配时在准备源码阶段直接失败。`main` 是本仓库当前主分支；如果以后改成其他名称，需要同步修改触发分支、发布 job 条件和发布脚本的分支校验。
 
-Qt 当前统一为 **6.11.1**，可以修改各平台文件中的 `QT_VERSION`。Qt 的公开头文件、私有头文件、库与部署工具必须来自同一套安装。`qtsvg`、`qttools` 在基础桌面归档中，不能填到 aqt 的附加 `modules` 列表；这样可以避免安装阶段报“模块不存在”。Windows 的 MinGW 编译器工具包单独固定为 `tools_mingw1310`，变更 Qt 套件时应再次检查匹配关系。
+Qt 当前统一为 **6.12.0**，可以修改各平台文件中的 `QT_VERSION`。Qt 的公开头文件、私有头文件、库与部署工具必须来自同一套安装。`qtsvg`、`qttools` 在基础桌面归档中，不能填到 aqt 的附加 `modules` 列表；这样可以避免安装阶段报“模块不存在”。Windows 的 MinGW 编译器工具包单独固定为 `tools_mingw1310`，变更 Qt 套件时应再次检查匹配关系。
+
+Windows 的 Qt 6.11+ 下载仓库按架构拆分，`install-qt-action@v4` 默认安装的 aqt 3.3.0 会请求不存在的旧路径。Windows 工作流通过 `AQT_SOURCE` 固定到 aqt 官方修复提交 [`7e5a5c3`](https://github.com/miurahr/aqtinstall/commit/7e5a5c3d95cf962cfc2f36c86ffa0d2c07f1a0d4)，MSVC 和 MinGW 共用；它是尚未正式发布的 aqt 修复版本。待 aqt 稳定版包含该修复后，可移除 `aqtsource` 覆盖并重新验证下载。不改为跟踪上游 `master`，也不关闭下载校验。
 
 CI 通过 `.github/actions/prepare-source/action.yml` 拉取固定子模块。它只对当前 Git 命令使用 HTTPS 地址转换，不修改 `.gitmodules`，本地仍可使用 SSH。目前三个子模块均可公开通过 HTTPS 获取；若以后改成私有仓库，需要另行配置只读凭据。
 

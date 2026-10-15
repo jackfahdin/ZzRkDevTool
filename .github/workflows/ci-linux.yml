@@ -23,7 +23,7 @@ concurrency:
 
 env:
   # Qt 安装包、私有头文件和部署工具必须来自同一版本。
-  QT_VERSION: 6.11.1
+  QT_VERSION: 6.12.0
 
 jobs:
   build:

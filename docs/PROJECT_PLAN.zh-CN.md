@@ -381,7 +381,7 @@ UI 显示解决动作，例如“安装驱动”“重新连接同一 USB 口”
 
 - 主开发与首轮真机系统固定为当前 Ubuntu 26.04 LTS x86_64。
 - 首个硬件组合固定为 RK3588 + eMMC；Maskrom 和 Loader 都必须验证。
-- 当前工程使用 `/home/zz/Qt/6.11.1/gcc_64` 的 Qt 6.11.1，以及 `thirdParty/libusb` 的 libusb 1.0.30；CMakeUserPresets 记录本机 Qt 路径。
+- 当前工程使用 `/home/zz/Qt/6.12.0/gcc_64` 的 Qt 6.12.0，以及 `thirdParty/Zzlibusb` 的源码 libusb 1.0.30；CMakeUserPresets 记录本机 Qt 路径。
 - 开发依赖至少包括 `build-essential`、`cmake`、`ninja-build`、`pkg-config`、`qt6-base-dev`、`qt6-tools-dev`、`libusb-1.0-0-dev`、`clang` 和 `clang-tidy`。
 - udev 使用 `TAG+="uaccess"` 或受控组，不使用 `MODE="0666"`。
 - 处理 kernel driver detach/reattach、权限变更、休眠和热插拔。
@@ -413,7 +413,7 @@ UI 显示解决动作，例如“安装驱动”“重新连接同一 USB 口”
 
 - C++20。
 - CMake 3.25+，Ninja，CMake Presets。
-- Qt 6.11.1 作为 Ubuntu 26.04 首轮开发基线；跨平台发布时固定并验证各平台同一 Qt minor/patch 策略。
+- 当前本地开发与三平台 CI 统一使用 Qt 6.12.0；跨平台发布时固定并验证各平台同一 Qt minor/patch 策略。
 - libusb 1.0.30 作为 Ubuntu 26.04 首轮开发基线；跨平台发布固定源码/二进制哈希。
 - 依赖优先通过 vcpkg manifest 或受控构建脚本提供，发行版构建可选择系统库。
 

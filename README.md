@@ -82,11 +82,11 @@ ZzPureTools 和 Zzlibusb 子模块分别使用 GitHub、GitCode SSH 地址，需
 
 ### 2. 构建 Qt GUI 与 CLI（Linux）
 
-以下示例假设 Qt 安装在 `$HOME/Qt/6.11.1/gcc_64`：
+以下示例假设 Qt 安装在 `$HOME/Qt/6.12.0/gcc_64`；三平台 CI 也统一使用 Qt 6.12.0：
 
 ```bash
 cmake --preset linux-debug \
-  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/gcc_64"
+  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/gcc_64"
 cmake --build --preset linux-debug --parallel
 ctest --preset linux-debug
 ```
@@ -251,7 +251,7 @@ Linux Release 测试与打包：
 
 ```bash
 cmake --preset linux-release \
-  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/gcc_64"
+  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/gcc_64"
 cmake --build --preset linux-release --parallel
 ctest --test-dir build/linux-release --output-on-failure
 cpack --preset linux-deb

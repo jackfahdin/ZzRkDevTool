@@ -29,3 +29,9 @@
 - 更新隔离测试和中文操作文档；验证后本地提交，不 push。
 
 调整验证：actionlint（启用 ShellCheck）、独立 ShellCheck、20 项发布/版本校验隔离测试及 diff 格式检查通过；独立只读审查未发现需要修改的问题。未触发远端工作流，实际标签发布仍待首次 GitHub CI 验证。
+
+## 后续调整：统一 Qt 6.12.0
+
+三平台 CI、当前开发文档与 Linux SPDX 清单统一为 Qt 6.12.0。历史验证记录中的 Qt 版本保留原值。Windows 使用固定 aqt 上游提交 `7e5a5c3d95cf962cfc2f36c86ffa0d2c07f1a0d4`，修正 aqt 3.3.0 对 Qt 6.11+ 分架构下载目录的解析；该覆盖待稳定版包含修复后移除。
+
+验证记录：Linux Qt 6.12.0 Release 构建、37/37 CTest、actionlint（启用 ShellCheck）、独立 ShellCheck、20 项发布隔离测试及 SPDX JSON 检查通过。Linux/macOS 稳定 aqt 与 Windows 固定修复版的四套 Qt 下载计划均通过 `--dry-run`，MinGW 元数据确认仍使用 13.1.0。独立审查确认 `aqtsource` 优先安装，缓存键包含 Qt 版本、架构和源码 URL。未执行 Windows/macOS 原生构建，未 push 或触发远端 CI。
