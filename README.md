@@ -5,7 +5,7 @@
 <p>面向 Rockchip 设备的跨平台固件烧录工具<br>共享 C++ 核心 · Qt 桌面界面 · Rust GPUI 实验前端 · 命令行自动化</p>
 
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?style=flat-square&logo=cplusplus&logoColor=white)
-![Qt 6.11.1](https://img.shields.io/badge/Qt-6.11.1-41CD52?style=flat-square&logo=qt&logoColor=white)
+![Qt ≥ 6.8](https://img.shields.io/badge/Qt-%E2%89%A5%206.8-41CD52?style=flat-square&logo=qt&logoColor=white)
 ![Rust GPUI](https://img.shields.io/badge/Rust-GPUI_Experimental-CE422B?style=flat-square&logo=rust&logoColor=white)
 [![MIT License](https://img.shields.io/badge/License-MIT-7C3AED?style=flat-square)](LICENSE)
 
@@ -52,7 +52,7 @@ Qt GUI 使用完整的 [ZzPureTools](https://github.com/jackfahdin/ZzPureTools) 
 
 `rust/gui_gpui` 使用 `gpui-kit`，已接入设备、完整升级、下载镜像和分区四个页面，通过 `rust/zzrk-sys` 调用 C++ 核心的 C ABI。支持文件选择、任务进度、取消和明暗主题。
 
-当前 GPUI 前端尚未接入设备热插拔事件、升级报告导出及 DEB/ZIP/DMG 打包。其 Linux 构建依赖构建树中的共享库，不能直接拷贝可执行文件作为独立安装包。Qt GUI + CLI 是现有安装打包流程的目标。
+当前 GPUI 前端尚未接入设备热插拔事件、升级报告导出及 DEB/TGZ/DMG 打包。其 Linux 构建依赖构建树中的共享库，不能直接拷贝可执行文件作为独立安装包。Qt GUI + CLI 是现有安装打包流程的目标。
 
 <a id="quick-start"></a>
 
@@ -64,11 +64,11 @@ Qt GUI 使用完整的 [ZzPureTools](https://github.com/jackfahdin/ZzPureTools) 
 | --- | --- | --- |
 | C++ 编译器 | 支持 C++20 | C++ 核心、CLI、Qt GUI 与 FFI |
 | CMake / Ninja | CMake ≥ 3.25；Ninja | C++ 构建 |
-| libusb | ≥ 1.0.30 | USB 传输；Qt 热插拔还需运行库具备 `LIBUSB_CAP_HAS_HOTPLUG` |
-| Qt | 6.11.1，含同版本 `CorePrivate`、`GuiPrivate`、`WidgetsPrivate` 及 `LinguistTools` | Qt GUI；CLI 无需 Qt |
+| Zzlibusb | 固定子模块，基于 libusb 1.0.30 | 从源码静态构建，Windows 热插拔已启用 |
+| Qt | ≥ 6.8，含同版本 `CorePrivate`、`GuiPrivate`、`WidgetsPrivate` 及 `LinguistTools` | GUI 与 CLI；可移植核心目标无需 Qt |
 | Rust / libclang | Rust 稳定版工具链；bindgen 可加载的 libclang | GPUI 前端与 Rust 绑定 |
 
-Linux 预设使用仓库内的 `thirdParty/libusb`。Windows 热插拔要求 libusb 编译时启用 `LIBUSB_WINDOWS_HOTPLUG`，应使用仓库提供的 vcpkg overlay。详见[中文编译与打包指南](docs/BUILD_AND_PACKAGE.zh-CN.md)。
+三个平台均使用 `thirdParty/Zzlibusb` 从源码构建，不需要另外准备 libusb 二进制或 vcpkg overlay。旧 `thirdParty/libusb` 暂时保留，等待真机验证后清理。详见[中文编译与打包指南](docs/BUILD_AND_PACKAGE.zh-CN.md)。
 
 ### 1. 获取源码与依赖
 
@@ -78,7 +78,7 @@ cd ZzRkDevTool
 git submodule update --init --recursive
 ```
 
-Qt GUI 的 ZzPureTools 子模块使用 GitHub SSH 地址，需要配置对应的 SSH 访问。子模块提交由仓库固定；首次配置应用目标时，spdlog 会下载 SHA-256 固定的 fmt 12.1.0。
+ZzPureTools 和 Zzlibusb 子模块分别使用 GitHub、GitCode SSH 地址，需要配置对应的 SSH 访问。子模块提交由仓库固定；首次配置应用目标时，spdlog 会下载 SHA-256 固定的 fmt 12.1.0。
 
 ### 2. 构建 Qt GUI 与 CLI（Linux）
 
@@ -244,7 +244,7 @@ Cargo 会自动通过 CMake 构建 C++ FFI 共享库，无需事先编译 Qt GUI
 | 平台 | 构建与产物 | 当前验证范围 |
 | --- | --- | --- |
 | 🐧 Linux | GCC/Clang；Ubuntu 26.04 x86_64 `.deb` | 已有本地构建、安装冒烟及 RK3588/eMMC CLI 真机验证；Qt 页面验收事项见待办清单 |
-| 🪟 Windows | MSVC x64 ZIP；另有 MinGW GUI 验证配置 | 构建、测试和打包工作流已配置；真机、WinUSB 驱动与正式签名待验证 |
+| 🪟 Windows | MSVC x64 TGZ；另有 MinGW GUI 验证配置 | 构建、测试和打包工作流已配置；真机、WinUSB 驱动与正式签名待验证 |
 | 🍎 macOS | Clang；包含 Qt GUI 与 CLI 的 DMG | 构建、测试和打包工作流已配置；真机、Developer ID 签名与公证待验证 |
 
 Linux Release 测试与打包：
@@ -259,9 +259,9 @@ cpack --preset linux-deb
 sudo apt install ./build/linux-release/zzrkdevtool_0.1.0_amd64.deb
 ```
 
-Linux 默认安装包包含 Qt GUI、CLI、所需 Qt/libusb/ICU 运行库、许可证和 SPDX 组件清单，以及桌面入口与限定 Rockchip 设备的 udev 规则。桌面 `uaccess` 或专用 `zzrkdevtool` 组提供 USB 权限，应用以普通用户运行。
+Linux DEB 包含 Qt GUI、CLI、Qt/ICU 运行库、许可证和 SPDX 组件清单，以及桌面入口与限定 Rockchip 设备的 udev 规则；Zzlibusb 已静态链接。另提供解压即用的 TGZ 便携包。桌面 `uaccess` 或专用 `zzrkdevtool` 组提供 USB 权限，应用以普通用户运行。
 
-Windows ZIP 不安装或替换 USB 驱动，真机访问需要兼容 WinUSB 驱动。macOS CI 配置采用 ad-hoc 签名；正式发布还需 Developer ID 与 Apple 公证。各平台完整命令见[编译、测试与打包指南](docs/BUILD_AND_PACKAGE.zh-CN.md)。
+Windows TGZ 不安装或替换 USB 驱动，真机访问需要兼容 WinUSB 驱动。macOS CI 配置采用 ad-hoc 签名；正式发布还需 Developer ID 与 Apple 公证。各平台完整命令见[编译、测试与打包指南](docs/BUILD_AND_PACKAGE.zh-CN.md)。
 
 ## 📌 当前支持边界
 
@@ -324,7 +324,7 @@ docs/                    构建指南、开发计划、硬件与协议记录
 | [🛠️ 中文编译与打包指南](docs/BUILD_AND_PACKAGE.zh-CN.md) | Linux、Windows、macOS、GPUI 的环境与构建命令，签名和常见问题 |
 | [🗺️ 项目计划与待办](docs/PROJECT_PLAN.zh-CN.md#18-待验证与发布清单) | 真机验收、第二块板卡、兼容矩阵与发布事项 |
 | [🐧 Linux 安装与 USB 权限](packaging/linux/README.md) | DEB、udev、用户组、安装与卸载 |
-| [🪟 Windows 打包与驱动](packaging/windows/README.md) | ZIP、libusb、WinUSB 与签名策略 |
+| [🪟 Windows 打包与驱动](packaging/windows/README.md) | TGZ、libusb、WinUSB 与签名策略 |
 | [🍎 macOS 打包与签名](packaging/macos/README.md) | DMG、运行库部署、Developer ID 与公证 |
 | [🔬 RK3588S 硬件观察](docs/hardware/rk3588s-pudu-usb-observations.md) | Loader/Maskrom USB 身份与接口记录 |
 | [📡 USB 协议采集工具](tools/usbtrace/README.md) | libusb trace 的采集与对比方式 |
