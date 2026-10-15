@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <exception>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 
@@ -22,7 +23,22 @@ struct LoggerState {
 };
 
 std::atomic<std::uint64_t> nextGeneration{0};
-std::atomic<std::shared_ptr<const LoggerState>> activeLoggerState;
+// Support libc++ versions without the C++20 atomic<shared_ptr> specialization.
+std::mutex loggerStateMutex;
+std::shared_ptr<const LoggerState> activeLoggerState;
+
+std::shared_ptr<const LoggerState> loadLoggerState()
+{
+    const std::lock_guard lock{loggerStateMutex};
+    return activeLoggerState;
+}
+
+std::shared_ptr<const LoggerState> exchangeLoggerState(
+    std::shared_ptr<const LoggerState> state)
+{
+    const std::lock_guard lock{loggerStateMutex};
+    return std::exchange(activeLoggerState, std::move(state));
+}
 
 [[nodiscard]] constexpr spdlog::level toSpdlogLevel(const Level level) noexcept
 {
@@ -70,13 +86,15 @@ void releaseSession(const std::uint64_t generation) noexcept
         return;
     }
 
-    auto state = activeLoggerState.load();
-    while (state != nullptr && state->generation == generation) {
-        if (activeLoggerState.compare_exchange_weak(state, nullptr)) {
-            flushLogger(state);
-            return;
+    std::shared_ptr<const LoggerState> state;
+    {
+        const std::lock_guard lock{loggerStateMutex};
+        if (activeLoggerState != nullptr
+            && activeLoggerState->generation == generation) {
+            state = std::exchange(activeLoggerState, nullptr);
         }
     }
+    flushLogger(state);
 }
 
 } // namespace
@@ -109,7 +127,7 @@ LoggingSession& LoggingSession::operator=(LoggingSession&& other) noexcept
 
 LoggingSession::operator bool() const noexcept
 {
-    const auto state = activeLoggerState.load();
+    const auto state = loadLoggerState();
     return generation_ != 0 && state != nullptr
         && state->generation == generation_;
 }
@@ -129,8 +147,7 @@ LoggingSession initializeConsoleLogging(const std::string_view applicationName,
         const auto generation = nextGeneration.fetch_add(1) + 1;
         auto state = std::make_shared<LoggerState>(
             LoggerState{generation, std::move(logger)});
-        const auto previousState =
-            activeLoggerState.exchange(std::move(state));
+        const auto previousState = exchangeLoggerState(std::move(state));
         flushLogger(previousState);
         return LoggingSession{generation};
     } catch (const std::exception& exception) {
@@ -144,13 +161,13 @@ LoggingSession initializeConsoleLogging(const std::string_view applicationName,
 
 void shutdown() noexcept
 {
-    const auto state = activeLoggerState.exchange(nullptr);
+    const auto state = exchangeLoggerState(nullptr);
     flushLogger(state);
 }
 
 void log(const Level level, const std::string_view message) noexcept
 {
-    const auto state = activeLoggerState.load();
+    const auto state = loadLoggerState();
     if (state != nullptr && state->logger != nullptr) {
         state->logger->log(toSpdlogLevel(level), message);
     }

@@ -38,6 +38,10 @@ int main()
     expect(!static_cast<bool>(second), "moved-from session is inactive");
     expect(static_cast<bool>(moved), "moved-to session retains ownership");
 
+    first = {};
+    expect(static_cast<bool>(moved),
+           "releasing a retired session preserves the current session");
+
     zzrk::logging::trace("trace");
     zzrk::logging::debug("debug");
     zzrk::logging::info("info");
