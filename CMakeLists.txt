@@ -183,6 +183,10 @@ if(ZZRK_BUILD_TRANSPORT)
     target_include_directories(zzrk_libusb_headers SYSTEM INTERFACE
         "$<TARGET_PROPERTY:libusb,INTERFACE_INCLUDE_DIRECTORIES>"
     )
+    # libusb.h 在 Windows 会包含 windows.h；模拟测试同样需要禁用 min/max 宏。
+    target_compile_definitions(zzrk_libusb_headers INTERFACE
+        "$<$<PLATFORM_ID:Windows>:NOMINMAX>"
+    )
 endif()
 
 add_subdirectory(src)
