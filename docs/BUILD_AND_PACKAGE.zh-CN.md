@@ -23,8 +23,11 @@ Qt 6.10 及以上使用插件筛选参数；Qt 6.8/6.9 使用默认完整插件�
 - Windows x86_64 TGZ 与 macOS DMG 已建立 CMake/CPack 和 CI 配置，需在对应系统或 CI runner 上完成首次验证。
 - Windows TGZ 尚未正式签名，也不包含 USB 驱动安装程序。
 - macOS CI 产物只使用 ad-hoc 签名，尚未完成 Developer ID 签名和 Apple 公证。
+- macOS GUI 的最低系统版本为 13.3，由 ZzPureTools 要求；macOS 预设和 CI 均显式设置部署目标，避免依赖 CMake 的默认值。
 
 所有命令都应在仓库根目录执行。不要使用 root 或管理员身份运行 ZzRkDevTool 本身；管理员权限只用于安装系统依赖、软件包或 USB 访问规则。
+
+GitHub 自动构建、`continuous-build` 预发布、`[Release]` 正式版草稿与 Gitee 准备项见 [CI 与发布指南](CI_AND_RELEASE.zh-CN.md)。
 
 ## 1. 通用准备
 
@@ -487,7 +490,7 @@ GPUI 前端尚未接入 CPack/DEB/TGZ/DMG 打包链路。`gui_gpui` 二进制经
 
 ## 7. CI 构建
 
-`.github/workflows/cross-platform-apps.yml` 定义 Windows MSVC、MinGW 和 macOS 的构建验证；MSVC/macOS 还包含打包后启动检查和产物上传。各 job 均直接构建 Zzlibusb，不再自举 vcpkg/Homebrew/autotools libusb。Linux CTest 额外验证 GUI/CLI 安装和不依赖 UI 框架的 CLI 单独构建。测试数量以当前 `ctest -N` 输出为准。该 workflow 由 `push`、`pull_request` 或手工触发，需在支持 GitHub Actions 的远端运行。
+`.github/workflows/ci-linux.yml`、`ci-windows.yml` 和 `ci-macos.yml` 分别定义三个平台的构建、测试、解包启动检查和产物上传；Windows 还保留 MinGW GUI 验证。各 job 均直接构建 Zzlibusb，不再自举 vcpkg/Homebrew/autotools libusb。Linux CTest 额外验证 GUI/CLI 安装和不依赖 UI 框架的 CLI 单独构建。测试数量以当前 `ctest -N` 输出为准。工作流由主分支 `push`、`pull_request` 或手工触发，共用 `publish-artifacts.yml` 处理预发布和正式版草稿，详见 [CI 与发布指南](CI_AND_RELEASE.zh-CN.md)。
 
 CI 通过只说明对应 runner 上能够编译、测试、部署和启动，不能替代 USB 真机、Windows 驱动、正式签名或 macOS 公证验证。
 
