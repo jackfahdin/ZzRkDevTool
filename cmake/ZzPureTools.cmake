@@ -158,6 +158,19 @@ function(zzrk_clear_puretools_scope_snapshot prefix)
     unset("${prefix}_CACHE_VARIABLES" PARENT_SCOPE)
 endfunction()
 
+# Qt 的导入目标属于目录作用域，包发现也必须保留在同一作用域。
+# MinGW 的入口目标文件使用默认 include_guard()；若在函数内加载，guard 会在
+# 返回时丢失，后续 GUI 的 find_package() 会尝试重复创建 EntryPointMinGW32。
+find_package(
+    Qt6
+    6.8
+    REQUIRED
+    COMPONENTS Core Gui Widgets Svg Concurrent
+)
+find_package(Qt6CorePrivate 6.8 REQUIRED)
+find_package(Qt6GuiPrivate 6.8 REQUIRED)
+find_package(Qt6WidgetsPrivate 6.8 REQUIRED)
+
 function(zzrk_add_puretools)
     zzrk_capture_puretools_scope_snapshot(_zzrk_puretools_saved)
 
@@ -192,16 +205,6 @@ function(zzrk_add_puretools)
     set(QWINDOWKIT_ENABLE_WINDOWS_SYSTEM_BORDERS ON)
     set(QWINDOWKIT_ENABLE_STYLE_AGENT OFF)
     set(CMAKE_SKIP_INSTALL_RULES ON)
-
-    find_package(
-        Qt6
-        6.8
-        REQUIRED
-        COMPONENTS Core Gui Widgets Svg Concurrent
-    )
-    find_package(Qt6CorePrivate 6.8 REQUIRED)
-    find_package(Qt6GuiPrivate 6.8 REQUIRED)
-    find_package(Qt6WidgetsPrivate 6.8 REQUIRED)
 
     add_subdirectory(
         "${PROJECT_SOURCE_DIR}/thirdParty/ZzPureTools"
