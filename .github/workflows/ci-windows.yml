@@ -19,7 +19,10 @@ concurrency:
   group: ci-windows-${{ github.ref }}
   cancel-in-progress: ${{ github.ref_type != 'tag' }}
 env:
-  QT_VERSION: 6.11.1
+  QT_VERSION: 6.12.0
+  # aqt 3.3.0 尚不支持 Qt 6.11+ 的 Windows 分架构目录。
+  # 固定上游修复提交，不跟随 master；后续稳定版包含修复后可移除此覆盖。
+  AQT_SOURCE: https://github.com/miurahr/aqtinstall/archive/7e5a5c3d95cf962cfc2f36c86ffa0d2c07f1a0d4.tar.gz
 
 jobs:
   build:
@@ -42,6 +45,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: win64_msvc2022_64
+          aqtsource: ${{ env.AQT_SOURCE }}
           # Svg、LinguistTools 在基础归档中，不添加到 aqt 的 modules 列表。
           cache: true
       - name: 编译、测试与 TGZ 打包
@@ -109,6 +113,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: win64_mingw
+          aqtsource: ${{ env.AQT_SOURCE }}
           tools: tools_mingw1310
           cache: true
       - name: 使用匹配 Qt 的 MinGW 工具链

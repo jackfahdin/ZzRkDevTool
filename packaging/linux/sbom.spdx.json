@@ -27,8 +27,8 @@
     {
       "name": "Qt Base",
       "SPDXID": "SPDXRef-Package-QtBase",
-      "versionInfo": "6.11.1",
-      "downloadLocation": "https://code.qt.io/cgit/qt/qtbase.git/tag/?h=v6.11.1",
+      "versionInfo": "6.12.0",
+      "downloadLocation": "https://code.qt.io/cgit/qt/qtbase.git/tag/?h=v6.12.0",
       "filesAnalyzed": false,
       "licenseConcluded": "LGPL-3.0-only",
       "licenseDeclared": "LGPL-3.0-only",
