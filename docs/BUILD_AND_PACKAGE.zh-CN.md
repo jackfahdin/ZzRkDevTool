@@ -1,14 +1,27 @@
 # ZzRkDevTool 各平台编译与打包指南
 
-本文说明如何从源码编译、测试和打包 ZzRkDevTool。当前发布基线为 Qt 6.11.1、C++20、CMake 3.25 或更高版本、Ninja 和 libusb 1.0.30 或更高版本。
+本文说明如何从源码编译、测试和打包 ZzRkDevTool。项目要求 Qt 6.8 或以上、C++20、CMake 3.25 或以上；本文命令以 Qt 6.12.0 为例。使用 Visual Studio 2026 生成器时，CMake 必须为 4.2 或以上。
 
-libusb 1.0.30 是硬性最低版本，不兼容旧版本。运行库还必须通过 `libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG)` 报告当前平台具备热插拔能力；能力缺失时 GUI 会继续启动，显示明确错误并允许手动刷新，不会退回定时轮询。Windows 的 libusb 必须在编译时启用 `LIBUSB_WINDOWS_HOTPLUG`。
+USB 依赖统一由 `thirdParty/Zzlibusb` 子模块从源码静态构建（当前版本 1.0.30），不再查找预编译 libusb，也不要求安装额外的 libusb DLL/dylib/so。主项目自动启用 Windows hotplug 后端。运行时仍通过 `libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG)` 检查能力；能力缺失时显示错误并允许手动刷新，不退回定时轮询。旧的 `thirdParty/libusb` 二进制暂时保留，待 Linux 真机验证通过后再清理；`ZZRK_LIBUSB_ROOT` 已不再参与构建。
+
+三平台的默认布局：
+
+| 平台 | 编译方式 | 安装/解压后入口 |
+| --- | --- | --- |
+| Windows TGZ | Ninja + MSVC，或独立 VS 2022/2026 生成器 | 包根目录的 `ZzRkDevTool.exe` 和 `zzrkdevtool-cli.exe`；Qt DLL、`qt.conf` 同目录，插件在 `plugins/` |
+| Linux DEB | Ninja + GCC/Clang | `/usr/bin`；私有 Qt 库和插件位于 `/usr/lib/zzrkdevtool` |
+| Linux 便携包 `.tar.gz` | Ninja + GCC/Clang | 解压目录根部的 GUI/CLI；依赖在 `lib/`，插件在 `plugins/` |
+| macOS DMG | Ninja + Apple Clang | `ZzRkDevTool.app`；GUI 和 CLI 均位于 `Contents/MacOS` |
+
+Ninja 负责调度编译，不决定编译器和 ABI。Linux/macOS 使用它没有额外限制；Windows MSVC 必须在对应 VS 的 x64 开发者终端中配置。生成器不同的预设使用独立目录，不要在同一构建目录中切换 Ninja 和 Visual Studio。
+
+Qt 6.10 及以上使用插件筛选参数；Qt 6.8/6.9 使用默认完整插件部署，避免传入旧 SDK 尚不支持的参数。实际平台验收仍以使用的 Qt 套件为准。
 
 当前状态：
 
-- Ubuntu 26.04 x86_64 的自包含 `.deb` 已在本地完成构建、24 项测试和临时安装验证。
-- Windows x86_64 ZIP 与 macOS DMG 已建立 CMake/CPack 和 CI 配置，需在对应系统或 CI runner 上完成首次验证。
-- Windows ZIP 尚未正式签名，也不包含 USB 驱动安装程序。
+- Linux 的自动化测试覆盖源码 USB 构建、GUI/CLI 和临时安装；真实 USB 通信需要按下文单独验收。
+- Windows x86_64 TGZ 与 macOS DMG 已建立 CMake/CPack 和 CI 配置，需在对应系统或 CI runner 上完成首次验证。
+- Windows TGZ 尚未正式签名，也不包含 USB 驱动安装程序。
 - macOS CI 产物只使用 ad-hoc 签名，尚未完成 Developer ID 签名和 Apple 公证。
 
 所有命令都应在仓库根目录执行。不要使用 root 或管理员身份运行 ZzRkDevTool 本身；管理员权限只用于安装系统依赖、软件包或 USB 访问规则。
@@ -39,12 +52,12 @@ cmake --build --preset portable-debug --parallel
 ctest --preset portable-debug
 ```
 
-GUI 依赖 Qt 6.11.1 的 `CorePrivate`、`GuiPrivate` 和 `WidgetsPrivate` CMake 包，这是 ZzWindowKit 无边框平台实现的硬性要求。使用在线安装器时必须安装与编译器 ABI 完全一致的 Qt 6.11.1 桌面套件及私有开发头文件；不能混用其他 Qt 补丁版本、MSVC 与 MinGW 套件。Linux 可在配置前检查：
+GUI 依赖所选 Qt 套件的 `CorePrivate`、`GuiPrivate` 和 `WidgetsPrivate` CMake 包，这是 ZzWindowKit 无边框平台实现的要求。必须安装与 Qt 版本和编译器 ABI 一致的私有开发头文件；构建和运行不能混用不同 Qt 版本或 MSVC/MinGW 套件。声明最低 Qt 版本不代表每个中间版本均已完成验证。Linux 可在配置前检查：
 
 ```bash
-test -f "$HOME/Qt/6.11.1/gcc_64/lib/cmake/Qt6CorePrivate/Qt6CorePrivateConfig.cmake"
-test -f "$HOME/Qt/6.11.1/gcc_64/lib/cmake/Qt6GuiPrivate/Qt6GuiPrivateConfig.cmake"
-test -f "$HOME/Qt/6.11.1/gcc_64/lib/cmake/Qt6WidgetsPrivate/Qt6WidgetsPrivateConfig.cmake"
+test -f "$HOME/Qt/6.12.0/gcc_64/lib/cmake/Qt6CorePrivate/Qt6CorePrivateConfig.cmake"
+test -f "$HOME/Qt/6.12.0/gcc_64/lib/cmake/Qt6GuiPrivate/Qt6GuiPrivateConfig.cmake"
+test -f "$HOME/Qt/6.12.0/gcc_64/lib/cmake/Qt6WidgetsPrivate/Qt6WidgetsPrivateConfig.cmake"
 ```
 
 GUI 还需要 Qt `LinguistTools`（包含 `lrelease`）。英文 TS 在构建时生成 QM 并内嵌，安装包无需单独部署翻译文件。
@@ -61,9 +74,10 @@ GUI 启动路径固定为：先调用 `ZzWindowKitBootstrap::prepare()`，再构
 | `ZZRK_BUILD_TESTS`             | `ON`               | 构建自动化测试                                      |
 | `ZZRK_WARNINGS_AS_ERRORS`      | `OFF`              | 将项目警告视为错误；发布和 CI 应启用                |
 | `ZZRK_BUNDLE_RUNTIME`          | 应用构建时 `ON`    | 安装/打包 Qt、插件和非系统运行库                    |
+| `ZZRK_LINUX_PORTABLE`          | `OFF`              | Linux 便携包布局；`linux-portable-release` 自动启用，要求携带运行库 |
 | `ZZRK_FFI_SHARED`              | `OFF`              | 将 `src/ffi` 构建为共享库；Rust 前端构建时自动启用  |
-| `ZZRK_LIBUSB_ROOT`             | Linux 指向仓库副本 | 指定 libusb 头文件、库和版本元数据根目录            |
-| `ZZRK_MACOS_CODESIGN_IDENTITY` | 空                 | macOS `macdeployqt` 使用的签名身份；`-` 表示 ad-hoc |
+| `CMAKE_INSTALL_BINDIR`         | Windows 为 `.`，Linux 为 `bin` | 程序安装位置；macOS GUI 构建固定使用 `.app` 布局 |
+| `ZZRK_MACOS_CODESIGN_IDENTITY` | macOS 预设为 ad-hoc `-` | macOS `macdeployqt` 使用的签名身份；`-` 表示 ad-hoc |
 
 ## 2. Ubuntu 26.04 x86_64
 
@@ -73,22 +87,22 @@ GUI 启动路径固定为：先调用 `ZzWindowKitBootstrap::prepare()`，再构
 
 ```bash
 sudo apt update
-sudo apt install build-essential cmake ninja-build pkg-config dpkg-dev udev
+sudo apt install build-essential cmake ninja-build pkg-config dpkg-dev udev libudev-dev
 ```
 
-安装 Qt 6.11.1 GCC x86_64 套件。下面假设 Qt 位于：
+安装 Qt GCC x86_64 套件。下面假设 Qt 位于：
 
 ```text
-$HOME/Qt/6.11.1/gcc_64
+$HOME/Qt/6.12.0/gcc_64
 ```
 
-Linux 预设默认使用仓库中的 `thirdParty/libusb`，无需另外安装开发版 libusb。
+Linux 预设使用源码 `thirdParty/Zzlibusb`，无需安装开发版 libusb。安装 `libudev-dev` 后优先使用 udev；未找到时 Zzlibusb 可使用 netlink 后端。
 
 ### 2.2 Debug 构建
 
 ```bash
 cmake --preset linux-debug \
-  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/gcc_64"
+  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/gcc_64"
 cmake --build --preset linux-debug --parallel
 ctest --preset linux-debug
 ```
@@ -104,7 +118,7 @@ build/linux-debug/apps/cli/zzrkdevtool-cli
 
 ```bash
 cmake --preset linux-sanitize \
-  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/gcc_64"
+  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/gcc_64"
 cmake --build --preset linux-sanitize --parallel
 ctest --preset linux-sanitize
 ```
@@ -122,9 +136,9 @@ ctest --test-dir build/linux-sanitize --output-on-failure \
 
 ```bash
 cmake --preset linux-release \
-  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/gcc_64"
+  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/gcc_64"
 cmake --build --preset linux-release --parallel
-ctest --test-dir build/linux-release --output-on-failure
+ctest --preset linux-release
 cpack --preset linux-deb
 ```
 
@@ -180,183 +194,204 @@ sudo usermod -aG zzrkdevtool "$USER"
 
 更详细的 udev 安装和卸载说明见 `packaging/linux/README.md`。
 
+### 2.5 Linux 便携包 `.tar.gz`
+
+便携包与 DEB 同时提供，使用独立预设和构建目录。不要用 DEB 预设直接指定 `-G TGZ`：只改归档格式不会改变安装布局。
+
+```bash
+cmake --preset linux-portable-release \
+  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/gcc_64"
+cmake --build --preset linux-portable-release --parallel
+ctest --preset linux-portable-release
+cpack --preset linux-tgz
+```
+
+x86_64 当前版本产物为：
+
+```text
+build/linux-portable-release/ZzRkDevTool-0.1.0-linux-x86_64-portable.tar.gz
+```
+
+解压后，程序直接位于顶层软件目录：
+
+```text
+ZzRkDevTool-0.1.0-linux-x86_64-portable/
+├── ZzRkDevTool
+├── zzrkdevtool-cli
+├── qt.conf
+├── README.zh-CN.md
+├── lib/
+├── plugins/
+├── docs/
+└── usb/60-zzrkdevtool.rules
+```
+
+例如解压到当前目录并运行：
+
+```bash
+tar -xzf build/linux-portable-release/ZzRkDevTool-0.1.0-linux-x86_64-portable.tar.gz
+cd ZzRkDevTool-0.1.0-linux-x86_64-portable
+./zzrkdevtool-cli --version
+./ZzRkDevTool
+```
+
+整个软件目录可以移动或重命名，无需安装 Qt。CTest 会将临时安装目录移动到带空格的新路径，再在清除 Qt/动态库路径环境变量后验证 GUI 和 CLI 启动。Qt 配置、可执行文件和插件均通过相对路径寻找包内依赖，不能只复制单个程序。
+
+便携包不自动修改系统 udev 配置；USB 权限不足时按包根目录 `README.zh-CN.md` 手动安装 `usb/` 中的规则。DEB 则由安装脚本处理。便携包仍要求目标系统提供兼容的 glibc、C++ 运行库和图形系统，不表示能跨所有 Linux 发行版运行。
+
+### 2.6 Zzlibusb 真机验收
+
+先使用本次源码构建的程序，不要混用旧 `build/apps` 目录中的程序：
+
+```bash
+build/linux-release/apps/cli/zzrkdevtool-cli --version
+build/linux-release/apps/cli/zzrkdevtool-cli list
+build/linux-release/apps/gui_qt/ZzRkDevTool
+```
+
+在 GUI 中验证设备插入、拔出、Loader/Maskrom 模式变化和端口选择，无需手动刷新。关闭 GUI 后，按 `list` 输出替换下方 `1-5`（以下为只读检查）：
+
+```bash
+build/linux-release/apps/cli/zzrkdevtool-cli info 1-5
+build/linux-release/apps/cli/zzrkdevtool-cli read-chip-info 1-5
+build/linux-release/apps/cli/zzrkdevtool-cli read-flash-info 1-5
+build/linux-release/apps/cli/zzrkdevtool-cli partitions 1-5
+```
+
+`read-*` 和分区操作要求设备处于 Loader 模式。自动化检查通过不等于 USB 真机验证通过；旧二进制目录将在真机验证通过后单独删除。
+
 ## 3. Windows 10/11 x86_64（MSVC）
 
 ### 3.1 环境准备
 
 安装以下组件：
 
-- Visual Studio 2022，并选择“使用 C++ 的桌面开发”和 MSVC x64 工具链。
+- Visual Studio 2022 或 2026，并选择“使用 C++ 的桌面开发”和 MSVC x64 工具链。
 - CMake 3.25 或更高版本与 Ninja，并加入 `PATH`。
-- Qt 6.11.1 `msvc2022_64` 套件。
-- vcpkg，以及动态库 triplet `x64-windows` 的 libusb。
+- 与 MSVC 工具链 ABI 匹配的 Qt 套件，例如 Qt 6.12.0 `msvc2022_64`。
+- Zzlibusb 子模块；不再需要 vcpkg libusb 或手工复制 USB DLL。
+
+在对应版本的 x64 开发者 PowerShell 中设置 Qt 路径：
+
+```powershell
+$env:QT_PREFIX_PATH = "D:/SoftWare/Qt/6.12.0/msvc2022_64"
+```
+
+Ninja 使用当前开发者环境中的编译器。首次配置前可运行 `where.exe cl` 和 `where.exe ninja` 确认工具可用。更换 VS 工具链时建议使用新的构建目录。
+
+### 3.2 Debug / Release 构建和 TGZ 打包
+
+`windows-msvc-debug`、`windows-msvc-release` 均使用 Ninja，构建类型由预设固定；本地调试使用 Debug，发布使用 Release。Windows 预设显式设置 `CMAKE_INSTALL_BINDIR=.`，已有缓存中的 `bin` 也会被更新。
 
 在“x64 Native Tools Command Prompt for VS 2022”或已加载 MSVC 环境的 PowerShell 中执行：
 
 ```powershell
-& "$env:VCPKG_ROOT\vcpkg.exe" install libusb:x64-windows `
-  "--overlay-ports=$PWD/packaging/windows/vcpkg-overlay-ports"
+cmake --preset windows-msvc-release
+cmake --build --preset windows-msvc-release --parallel
+ctest --preset windows-msvc-release
+ctest --preset windows-msvc-release -R "^(gui_framework|gui_smoke)$"
+cpack --preset windows-msvc-tgz
 ```
 
-必须使用仓库中的 overlay。vcpkg 的普通 Windows `Release` 配置不保证编译 libusb 1.0.30 新增的 Windows 热插拔后端；该 overlay 固定 1.0.30，并向上游 MSBuild 工程传入 `EnableWindowsHotplug=true`。
-
-vcpkg 安装根目录应至少包含：
-
-```text
-include/libusb-1.0/libusb.h
-lib/libusb-1.0.lib
-bin/libusb-1.0.dll
-lib/pkgconfig/libusb-1.0.pc
-```
-
-### 3.2 Release 构建和 ZIP 打包
-
-根据本机路径设置变量：
+需要 Visual Studio 工程文件时，使用独立预设（不与 Ninja 目录混用）：
 
 ```powershell
-$qtRoot = "C:/Qt/6.11.1/msvc2022_64"
-$libusbRoot = "$env:VCPKG_ROOT/installed/x64-windows"
+cmake --preset windows-vs2022-release
+cmake --build --preset windows-vs2022-release --parallel
+ctest --preset windows-vs2022-release
+cpack --preset windows-vs2022-tgz
 ```
 
-配置、构建、测试并打包：
-
-```powershell
-cmake -S . -B build/windows-release -G Ninja `
-  -DCMAKE_BUILD_TYPE=Release `
-  -DCMAKE_PREFIX_PATH="$qtRoot" `
-  -DZZRK_BUILD_GUI=ON `
-  -DZZRK_LIBUSB_ROOT="$libusbRoot" `
-  -DZZRK_BUNDLE_RUNTIME=ON `
-  -DZZRK_WARNINGS_AS_ERRORS=ON
-cmake --build build/windows-release --parallel
-ctest --test-dir build/windows-release --output-on-failure
-ctest --test-dir build/windows-release --output-on-failure `
-  -R "^(gui_framework|gui_smoke)$"
-cpack --config build/windows-release/CPackConfig.cmake -G ZIP
-```
+VS 2026 将名称中的 `vs2022` 换成 `vs2026`，并使用 CMake 4.2 或以上。对应 Debug 预设为 `windows-vs2022-debug`、`windows-vs2026-debug`。这些预设在构建、测试和打包时明确指定配置，不依赖对 Visual Studio 生成器无效的 `CMAKE_BUILD_TYPE`。若旧 `windows-msvc-debug` 目录由 VS 生成器创建，改用新目录或先归档旧目录，不能直接在其中运行 Ninja。
 
 当前版本的预期产物为：
 
 ```text
-build/windows-release/zzrkdevtool-0.1.0-windows-x86_64.zip
+build/windows-msvc-release/ZzRkDevTool-0.1.0-windows-x86_64.tar.gz
 ```
 
 ### 3.3 解压后检查
 
 ```powershell
-Expand-Archive `
-  build/windows-release/zzrkdevtool-0.1.0-windows-x86_64.zip `
-  -DestinationPath build/windows-package
+$archive = (Resolve-Path `
+  build/windows-msvc-release/ZzRkDevTool-0.1.0-windows-x86_64.tar.gz).Path
+New-Item -ItemType Directory -Force build/windows-package | Out-Null
+Push-Location build/windows-package
+try {
+  cmake -E tar xzf $archive
+  if ($LASTEXITCODE -ne 0) { throw "TGZ 解压失败" }
+} finally {
+  Pop-Location
+}
 $gui = Get-ChildItem build/windows-package -Recurse -Filter ZzRkDevTool.exe |
   Select-Object -First 1
 $cli = Get-ChildItem build/windows-package -Recurse -Filter zzrkdevtool-cli.exe |
   Select-Object -First 1
-$libusb = Get-ChildItem build/windows-package -Recurse -Filter libusb-1.0.dll |
-  Select-Object -First 1
-if (-not $gui -or -not $cli -or -not $libusb) {
-  throw "打包后的 GUI、CLI 或 libusb DLL 缺失"
+if (-not $gui -or -not $cli) {
+  throw "打包后的 GUI 或 CLI 缺失"
 }
 $env:QT_QPA_PLATFORM = "offscreen"
 & $gui.FullName --smoke-test
 & $cli.FullName --help
 ```
 
-ZIP 不安装 USB 驱动。RockUSB 真机访问要求设备绑定兼容 WinUSB 驱动；正式发布必须使用项目自有并可信签名的 INF/CAT。首次切换驱动前应记录原驱动，避免影响 Rockchip 厂商工具。详细策略见 `packaging/windows/README.md`。
+Windows 和 Linux 便携包统一使用 CPack TGZ 格式（扩展名 `.tar.gz`）。可使用上述 CMake 命令或支持该格式的解压工具打开。程序应直接位于压缩包内的顶层软件目录，Qt DLL、`qt.conf` 与 exe 同级，插件位于 `plugins/`；没有额外的 `bin/`。不要单独拷贝 exe，需保留其 Qt 依赖。libusb 已静态链接，因此不需要 `libusb-1.0.dll`。
 
-正式发布还需要对所有 EXE/DLL 做 Authenticode SHA-256 签名和时间戳验证，然后重新生成 ZIP。证书、密码、token 和私钥不得写入仓库或 CI 日志。
+TGZ 不安装 USB 驱动。RockUSB 真机访问要求设备绑定兼容 WinUSB 驱动；正式发布必须使用项目自有并可信签名的 INF/CAT。首次切换驱动前应记录原驱动，避免影响 Rockchip 厂商工具。详细策略见 `packaging/windows/README.md`。
+
+正式发布还需要对所有 EXE/DLL 做 Authenticode SHA-256 签名和时间戳验证，然后重新生成 TGZ。证书、密码、token 和私钥不得写入仓库或 CI 日志。
 
 ### 3.4 Windows MinGW 验证
 
-Qt 的 MinGW 套件必须与本机 MinGW-w64 编译器完全匹配，不能和 `msvc2022_64` 混用。仓库的 vcpkg overlay 调用 MSBuild，仅适用于上面的 MSVC 流程；MinGW 流程应使用 Qt 6.11.1 的 `win64_mingw` 套件和 `tools_mingw1310`，并从官方 libusb 1.0.30 tarball 本地构建动态库（必须启用 Windows hotplug）。下面的命令在 Git Bash 中执行，会把 libusb 安装到 `build/libusb-mingw`：
+Qt MinGW 套件必须与 MinGW-w64 编译器匹配，不能与 MSVC Qt 混用。预设不再硬编码 Qt 安装位置或编译器版本；请先将所用 Qt 的 MinGW 工具链加入 `PATH`，并将 `QT_PREFIX_PATH` 指向对应的 `mingw_64` 目录。
 
-```bash
-set -euo pipefail
-
-qtRoot="/c/Qt/6.11.1/mingw_64"
-mingwBin="/c/Qt/Tools/mingw1310_64/bin"
-export PATH="$mingwBin:$PATH"
-if command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
-  export CC=x86_64-w64-mingw32-gcc
-  export CXX=x86_64-w64-mingw32-g++
-else
-  export CC=gcc
-  export CXX=g++
-fi
-
-mkdir -p build
-curl --fail --location --retry 3 \
-  --output build/libusb-1.0.30.tar.bz2 \
-  https://github.com/libusb/libusb/releases/download/v1.0.30/libusb-1.0.30.tar.bz2
-tar -xjf build/libusb-1.0.30.tar.bz2 -C build
-pushd build/libusb-1.0.30
-./configure \
-  --host=x86_64-w64-mingw32 \
-  --enable-windows-hotplug \
-  --enable-shared \
-  --disable-static \
-  --prefix="$PWD/../libusb-mingw"
-mingw32-make -j"$(nproc)"
-mingw32-make install
-popd
-
-export PATH="$PWD/build/libusb-mingw/bin:$PATH"
-cmake -S . -B build/windows-mingw-release -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="$qtRoot" \
-  -DZZRK_BUILD_GUI=ON \
-  -DZZRK_BUILD_CLI=ON \
-  -DZZRK_BUILD_TESTS=ON \
-  -DZZRK_LIBUSB_ROOT="$(cygpath -m "$PWD/build/libusb-mingw")" \
-  -DZZRK_BUNDLE_RUNTIME=OFF \
-  -DZZRK_WARNINGS_AS_ERRORS=ON
-cmake --build build/windows-mingw-release --parallel
-ctest --test-dir build/windows-mingw-release --output-on-failure \
-  -R "^(gui_framework|gui_smoke)$"
+```powershell
+$env:QT_PREFIX_PATH = "C:/Qt/6.12.0/mingw_64"
+# 按实际安装位置修改 MinGW 工具链目录。
+$env:PATH = "C:/Qt/Tools/mingw1310_64/bin;$env:PATH"
+cmake --preset windows-mingw-release
+cmake --build --preset windows-mingw-release --parallel
+ctest --preset windows-mingw-release -R "^(gui_framework|gui_smoke)$"
 ```
 
-CI 中的 MinGW job 使用同一自举流程，不依赖仓库 secret 或预设 `MINGW_INSTALL_ROOT`。当前 Linux 主机未实际运行 Windows MinGW、MSVC 或 macOS 构建；这些平台仍需在 GitHub Actions runner 或对应系统上确认。在 Windows 桌面会话中还要手工检查无边框窗口拖动区、最小化/最大化/关闭系统按钮、125%/150% DPI 缩放以及最大化后工作区边界；这些项目无法由 Linux runner 的 offscreen 测试替代。
+MinGW 同样使用源码 Zzlibusb，当前预设只验证构建，不启用运行库打包。Windows MinGW、MSVC 和 macOS 需在对应系统或 CI 验证；Linux 上的配置检查不能替代原生编译。在 Windows 桌面会话中还需验证标题栏、系统按钮和 DPI 缩放。
 
 ## 4. macOS
 
 ### 4.1 环境准备
 
-安装 Xcode Command Line Tools、Homebrew、CMake、Ninja 和 libusb：
+安装 Xcode Command Line Tools、Homebrew、CMake 和 Ninja：
 
 ```bash
 xcode-select --install
-brew install cmake ninja libusb
+brew install cmake ninja
 ```
 
-安装 Qt 6.11.1 `clang_64` 套件。下面假设 Qt 位于：
+安装支持目标架构的 Qt macOS 套件。下面假设 Qt 位于：
 
 ```text
-$HOME/Qt/6.11.1/macos
+$HOME/Qt/6.12.0/macos
 ```
 
 ### 4.2 Release 构建和 DMG 打包
 
-本地和 CI 验证建议先使用 ad-hoc 签名：
+macOS 预设按架构分为 `macos-arm64-*` 与 `macos-x86_64-*`，均使用 Ninja，默认 ad-hoc 签名（`ZZRK_MACOS_CODESIGN_IDENTITY=-`）。Zzlibusb 随目标架构一起静态构建，无需准备 Homebrew libusb：
 
 ```bash
-cmake -S . -B build/macos-release -G Ninja \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/macos" \
-  -DZZRK_BUILD_GUI=ON \
-  -DZZRK_LIBUSB_ROOT="$(brew --prefix libusb)" \
-  -DZZRK_BUNDLE_RUNTIME=ON \
-  -DZZRK_MACOS_CODESIGN_IDENTITY=- \
-  -DZZRK_WARNINGS_AS_ERRORS=ON
-cmake --build build/macos-release --parallel
-ctest --test-dir build/macos-release --output-on-failure
-ctest --test-dir build/macos-release --output-on-failure \
-  -R '^(gui_framework|gui_smoke)$'
-cpack --config build/macos-release/CPackConfig.cmake -G DragNDrop
+cmake --preset macos-arm64-release \
+  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/macos"
+cmake --build --preset macos-arm64-release --parallel
+ctest --preset macos-arm64-release
+ctest --preset macos-arm64-release -R '^(gui_framework|gui_smoke)$'
+cpack --preset macos-arm64-dmg
 ```
+
+x86_64 构建把预设换为 `macos-x86_64-release` 与 `macos-x86_64-dmg`；在 Apple Silicon 上运行 x86_64 测试还需要 Rosetta。
 
 当前版本的预期产物为：
 
 ```text
-build/macos-release/zzrkdevtool-0.1.0-macos.dmg
+build/macos-arm64-release/ZzRkDevTool-0.1.0-macos-arm64.dmg
 ```
 
 ### 4.3 DMG 检查
@@ -365,7 +400,7 @@ build/macos-release/zzrkdevtool-0.1.0-macos.dmg
 
 ```bash
 hdiutil attach -nobrowse -readonly \
-  build/macos-release/zzrkdevtool-0.1.0-macos.dmg
+  build/macos-arm64-release/ZzRkDevTool-0.1.0-macos-arm64.dmg
 test -x "<挂载目录>/ZzRkDevTool.app/Contents/MacOS/ZzRkDevTool"
 test -x "<挂载目录>/ZzRkDevTool.app/Contents/MacOS/zzrkdevtool-cli"
 test -f "<挂载目录>/ZzRkDevTool.app/Contents/PlugIns/platforms/libqcocoa.dylib"
@@ -376,14 +411,14 @@ codesign --verify --deep --strict "<挂载目录>/ZzRkDevTool.app"
 hdiutil detach "<挂载目录>"
 ```
 
-`otool -L` 的 GUI 和 CLI 的 libusb 条目应使用 `@rpath/libusb...dylib`；Qt 框架也应解析到 bundle 内的 `Contents/Frameworks`。任何指向 `/opt/homebrew`、`/usr/local` 或构建机的绝对路径都表示打包不完整。安装的许可证位于 `ZzRkDevTool.app/Contents/Resources/doc/zzrkdevtool/licenses`（其中包含 Qt、libusb、ZzPureTools、ZzLog 和 QWindowKit 子目录）。
+`otool -L` 不应出现 libusb 动态库依赖；Qt 框架应解析到 bundle 内的 `Contents/Frameworks`。任何指向 `/opt/homebrew`、`/usr/local` 或构建机的依赖路径都表示打包不完整。许可证位于 `ZzRkDevTool.app/Contents/Resources/doc/zzrkdevtool/licenses`。
 
 ### 4.4 正式签名和公证
 
-正式发布时把 ad-hoc 的 `-` 替换为真实 Developer ID Application 身份：
+正式发布时把预设默认的 ad-hoc `-` 替换为真实 Developer ID Application 身份：
 
 ```bash
-cmake -S . -B build/macos-release \
+cmake --preset macos-arm64-release \
   -DZZRK_MACOS_CODESIGN_IDENTITY="Developer ID Application: Example (TEAMID)"
 ```
 
@@ -391,12 +426,12 @@ cmake -S . -B build/macos-release \
 
 ```bash
 xcrun notarytool submit \
-  build/macos-release/zzrkdevtool-0.1.0-macos.dmg \
+  build/macos-arm64-release/ZzRkDevTool-0.1.0-macos-arm64.dmg \
   --keychain-profile ZZRK_NOTARY --wait
 xcrun stapler staple \
-  build/macos-release/zzrkdevtool-0.1.0-macos.dmg
+  build/macos-arm64-release/ZzRkDevTool-0.1.0-macos-arm64.dmg
 spctl --assess --type open --context context:primary-signature -v \
-  build/macos-release/zzrkdevtool-0.1.0-macos.dmg
+  build/macos-arm64-release/ZzRkDevTool-0.1.0-macos-arm64.dmg
 ```
 
 签名身份、App Store Connect 密钥、密码和公证 profile 必须存放在开发者 Keychain 或 CI secret store 中。详细策略见 `packaging/macos/README.md`。
@@ -435,7 +470,7 @@ cargo build --release -p gui_gpui   # 发布构建
 
 ### 5.3 打包现状
 
-GPUI 前端尚未接入 CPack/DEB/ZIP/DMG 打包链路。`gui_gpui` 二进制经 rpath 引用 `rust/target/` 构建树内的 `libzzrk_ffi.so`，直接拷贝到其他机器无法运行；发布前需要补齐安装规则（核心共享库 + 可执行文件的相对 RPATH）。该工作列入后续迭代，当前仅以 Qt GUI + CLI 作为正式发布产物。
+GPUI 前端尚未接入 CPack/DEB/TGZ/DMG 打包链路。`gui_gpui` 二进制经 rpath 引用 `rust/target/` 构建树内的 `libzzrk_ffi.so`，直接拷贝到其他机器无法运行；发布前需要补齐安装规则（核心共享库 + 可执行文件的相对 RPATH）。该工作列入后续迭代，当前仅以 Qt GUI + CLI 作为正式发布产物。
 
 ## 6. 安装许可证目录和硬件限制
 
@@ -444,16 +479,15 @@ GPUI 前端尚未接入 CPack/DEB/ZIP/DMG 打包链路。`gui_gpui` 二进制经
 | 平台 | 文档根目录 | 第三方许可证目录 |
 | --- | --- | --- |
 | Linux | `/usr/share/doc/zzrkdevtool` | `/usr/share/doc/zzrkdevtool/licenses` |
-| Windows ZIP | `share/doc/zzrkdevtool` | `share/doc/zzrkdevtool/licenses` |
+| Linux 便携包 | `docs` | `docs/licenses` |
+| Windows TGZ | `share/doc/zzrkdevtool` | `share/doc/zzrkdevtool/licenses` |
 | macOS bundle | `ZzRkDevTool.app/Contents/Resources/doc/zzrkdevtool` | `ZzRkDevTool.app/Contents/Resources/doc/zzrkdevtool/licenses` |
 
 自动化和 offscreen 测试使用模拟后端，只能验证无硬件启动、页面工作流和确定性关闭；不得据此宣称真实 RK3588/eMMC 读写成功。连接目标设备前，应先确认供电、USB 线材、设备模式、权限或驱动，并在专用测试设备上依次执行只读扫描、分区读取和 `--prepare-only`。完整刷写会改写存储介质，必须另行确认镜像、分区目标、备份与恢复路径。
 
 ## 7. CI 构建
 
-`.github/workflows/cross-platform-apps.yml` 定义了 Windows 2022 与 macOS 14 的构建、23 项无硬件测试、打包后启动检查和产物上传。Linux 另有第 24 项安装 smoke test。该 workflow 由 `push`、`pull_request` 或手工 `workflow_dispatch` 触发。
-
-当前仓库的 `origin` 指向 GitCode，且远端 `main` 与本地历史没有共同祖先。启用 GitHub Actions 前必须先确认正确的 GitHub 仓库或新分支，禁止未经备份和明确确认直接 force-push 覆盖远端。
+`.github/workflows/cross-platform-apps.yml` 定义 Windows MSVC、MinGW 和 macOS 的构建验证；MSVC/macOS 还包含打包后启动检查和产物上传。各 job 均直接构建 Zzlibusb，不再自举 vcpkg/Homebrew/autotools libusb。Linux CTest 额外验证 GUI/CLI 安装和不依赖 UI 框架的 CLI 单独构建。测试数量以当前 `ctest -N` 输出为准。该 workflow 由 `push`、`pull_request` 或手工触发，需在支持 GitHub Actions 的远端运行。
 
 CI 通过只说明对应 runner 上能够编译、测试、部署和启动，不能替代 USB 真机、Windows 驱动、正式签名或 macOS 公证验证。
 
@@ -463,13 +497,13 @@ CI 通过只说明对应 runner 上能够编译、测试、部署和启动，不
 
 确认 `CMAKE_PREFIX_PATH` 指向包含 `lib/cmake/Qt6/Qt6Config.cmake` 的 Qt 套件根目录，并确保 Qt 编译器 ABI 与当前工具链一致。例如 MSVC 不能使用 MinGW Qt。
 
-### CMake 找不到 libusb 1.0.30
+### CMake 找不到 Zzlibusb
 
-检查 `ZZRK_LIBUSB_ROOT` 下是否存在头文件、链接库和 `lib/pkgconfig/libusb-1.0.pc`。Windows 还必须存在动态 DLL；macOS 应使用动态 `.dylib`，不能只提供静态库。
+执行 `git submodule update --init --recursive`，确认 `thirdParty/Zzlibusb/CMakeLists.txt` 存在。不要再设置 `ZZRK_LIBUSB_ROOT`；旧目录可以暂时保留，但不会参与构建。
 
 ### GUI 报告热插拔检测不可用
 
-确认实际加载的运行库版本不低于 1.0.30，并且 `libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG)` 返回非零。Windows 必须用仓库内 vcpkg overlay 重新构建 libusb；仅替换头文件或使用未启用 `LIBUSB_WINDOWS_HOTPLUG` 的 DLL 无效。本项目不提供旧版兼容或轮询回退。
+确认正在运行新的源码构建产物，且 `libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG)` 返回非零。Windows 热插拔由主项目在源码构建时启用。本项目不提供旧版兼容或轮询回退。
 
 ### 修改依赖路径后仍使用旧缓存
 
@@ -477,15 +511,15 @@ CMake 3.25 或更高版本可以重新配置并清理缓存：
 
 ```bash
 cmake --fresh --preset linux-release \
-  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.1/gcc_64"
+  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.12.0/gcc_64"
 ```
 
-Windows/macOS 使用对应的 `cmake -S . -B ... --fresh` 配置命令和原有参数。
+Windows/macOS 使用对应的 `cmake --fresh --preset windows-msvc-release`（或 `windows-mingw-release`、`macos-arm64-release`、`macos-x86_64-release`）加原有参数。
 
 ### 打包成功但目标机器无法启动
 
 - Linux：检查 `dpkg-deb --info` 的系统依赖和 `/usr/lib/zzrkdevtool`，不要删除包内 `qt.conf`。
-- Windows：确认 EXE 同目录存在 Qt、MSVC runtime、平台插件和 `libusb-1.0.dll`。
+- Windows：确认包根目录包含 EXE、Qt DLL、MSVC runtime、`qt.conf` 和 `plugins/`；不需要单独的 libusb DLL。
 - macOS：检查 `codesign --verify`、`otool -L`、bundle 的 `Contents/Frameworks` 和 `Contents/PlugIns`。
 
 ## 9. 发布前统一检查

@@ -1,50 +1,36 @@
 # Windows packaging and driver policy
 
-The Windows release baseline is a self-contained x86_64 ZIP produced by CPack.
-It contains the GUI, CLI, Qt runtime, MSVC runtime, libusb DLL, Qt plugins, and
+The Windows release baseline is a self-contained x86_64 TGZ (`.tar.gz`) produced by CPack.
+It contains the GUI, CLI, Qt runtime, MSVC runtime, Qt plugins, and
 license texts. It is intentionally an unsigned validation artifact until the
 project has an Authenticode certificate and a signed driver package.
 
 ## Build
 
-Use an MSVC x64 developer shell with Qt 6.11.1 and a dynamic libusb 1.0.30 or
-newer installation. Windows libusb must be built with
-`LIBUSB_WINDOWS_HOTPLUG`; a stock library that reports no hotplug capability is
-not supported. The repository's vcpkg overlay pins 1.0.30 and passes
-`EnableWindowsHotplug=true` to the upstream MSBuild project:
+Use an MSVC x64 developer shell with an ABI-compatible Qt kit. Zzlibusb is
+built statically from its pinned submodule with Windows hotplug enabled;
+vcpkg and a separate libusb DLL are no longer required. The Ninja presets
+use the compiler from the developer shell:
 
 ```powershell
-& "$env:VCPKG_ROOT\vcpkg.exe" install libusb:x64-windows `
-  "--overlay-ports=$PWD/packaging/windows/vcpkg-overlay-ports"
+$env:QT_PREFIX_PATH = "D:/SoftWare/Qt/6.12.0/msvc2022_64"
+cmake --preset windows-msvc-release
+cmake --build --preset windows-msvc-release --parallel
+ctest --preset windows-msvc-release
+cpack --preset windows-msvc-tgz
 ```
 
-`ZZRK_LIBUSB_ROOT` must contain:
-
-```text
-include/libusb-1.0/libusb.h
-lib/libusb-1.0.lib
-bin/libusb-1.0.dll
-lib/pkgconfig/libusb-1.0.pc
-```
-
-Then configure, test, and package:
-
-```powershell
-cmake -S . -B build/windows-release -G Ninja `
-  -DCMAKE_BUILD_TYPE=Release `
-  -DZZRK_LIBUSB_ROOT=C:/path/to/libusb `
-  -DZZRK_BUNDLE_RUNTIME=ON `
-  -DZZRK_WARNINGS_AS_ERRORS=ON
-cmake --build build/windows-release --parallel
-ctest --test-dir build/windows-release --output-on-failure
-cpack --config build/windows-release/CPackConfig.cmake -G ZIP
-```
+The executables, Qt DLLs and `qt.conf` are placed at the package root;
+plugins remain under `plugins/`. Do not move an executable out of this tree.
+For Visual Studio project files use `windows-vs2022-release` and
+`windows-vs2022-tgz`, or the corresponding `vs2026` presets (CMake >= 4.2).
+Each generator has its own build directory.
 
 ## USB driver
 
 RockUSB access through libusb on Windows requires a compatible WinUSB driver
 bound to `USB\VID_2207&PID_350B`. A production installer must use a project-owned
-INF/CAT package signed by a trusted code-signing identity. The application ZIP
+INF/CAT package signed by a trusted code-signing identity. The application TGZ
 does not silently replace a device driver and does not ship an unsigned INF.
 
 For isolated development hardware, a developer may bind WinUSB manually and
