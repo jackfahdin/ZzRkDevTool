@@ -71,7 +71,9 @@ protected:
       return false;
     // 必须在 Qt 真正映射窗口前设置；原模态循环保留，但旧窗口不显示到屏幕。
     box->setOption(QMessageBox::Option::DontUseNativeDialog);
-    box->setAttribute(Qt::WA_DontShowOnScreen);
+    // QMessageBox::setVisible(false) 会重置 WA_DontShowOnScreen，导致 Qt
+    // 跳过离屏窗口的模态清理。使用透明窗口保留成对的 show/hide 生命周期。
+    box->setWindowOpacity(0);
     if (event->type() == QEvent::Show &&
         !box->property("fluentMessageQueued").toBool()) {
       box->setProperty("fluentMessageQueued", true);
@@ -91,7 +93,7 @@ private:
       text += QStringLiteral("\n\n") + box->informativeText();
     if (!box->detailedText().isEmpty())
       text += QStringLiteral("\n\n") + box->detailedText();
-    // 隐藏逻辑上的原窗口，解除它的模态拦截；仍在原 exec 调用内等待用户操作。
+    // 先正常隐藏原窗口并解除模态阻塞，再显示 Fluent 确认窗口。
     box->hide();
     QPointer<ZzContentDialog> dialog =
         create(box->parentWidget(), box->windowTitle(), text);

@@ -173,7 +173,6 @@ void configureBrowser(QFileDialog *browser, SelectionMode mode) {
     browser->setLabelText(QFileDialog::Reject, guiText("取消"));
   });
   browser->setProxyModel(new FileHeaders(browser));
-  browser->setItemDelegate(new FileRows(browser));
   auto font = browser->font();
   font.setPixelSize(14);
   browser->setFont(font);
@@ -186,6 +185,11 @@ void configureBrowser(QFileDialog *browser, SelectionMode mode) {
   for (auto *edit : browser->findChildren<QLineEdit *>())
     edit->setMinimumHeight(ui::ControlHeight);
   for (auto *view : browser->findChildren<QAbstractItemView *>()) {
+    // QFileDialog::setItemDelegate 会把同一个代理交给两个视图，重命名时
+    // commitData/closeEditor 信号就会误发给另一个视图；每个视图独立持有代理。
+    if (view->objectName() == QStringLiteral("listView") ||
+        view->objectName() == QStringLiteral("treeView"))
+      view->setItemDelegate(new FileRows(view));
     view->setIconSize(QSize(ui::IconSize, ui::IconSize));
     view->setFrameShape(QFrame::NoFrame);
     if (auto *tree = qobject_cast<QTreeView *>(view)) {
