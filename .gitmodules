@@ -6,3 +6,7 @@
 	path = thirdParty/ZzPureTools
 	url = git@github.com:jackfahdin/ZzPureTools.git
 	branch = master
+[submodule "thirdParty/Zzlibusb"]
+	path = thirdParty/Zzlibusb
+	url = git@gitcode.com:JackfahdinQt/Zzlibusb.git
+	branch = main

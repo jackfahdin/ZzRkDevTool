@@ -1710,13 +1710,13 @@ void MainWorkspaceController::handleDownloadDeviceChanged() {
       m_viewModel != nullptr &&
       m_viewModel->downloadLayoutPort() != selectedPortPath()) {
     m_downloadLayout.reset();
-    QPointer<MainWorkspaceController> guard{this};
+    QPointer<MainWorkspaceController> layoutGuard{this};
     m_viewModel->setDownloadLayoutPort({});
-    if (guard == nullptr)
+    if (layoutGuard == nullptr)
       return;
     setGuiText(m_downloadPage->layoutPathEdit(), "text", {});
     rebuildDownloadTable();
-    if (guard == nullptr)
+    if (layoutGuard == nullptr)
       return;
   }
   updateDownloadControls();

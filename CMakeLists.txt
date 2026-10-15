@@ -17,6 +17,7 @@ option(ZZRK_BUILD_TRANSPORT "Build the libusb transport" ON)
 option(ZZRK_BUILD_TESTS "Build unit tests" ON)
 option(ZZRK_WARNINGS_AS_ERRORS "Treat project warnings as errors" OFF)
 option(ZZRK_ENABLE_SANITIZERS "Enable address and undefined sanitizers" OFF)
+option(ZZRK_LINUX_PORTABLE "Use the relocatable Linux archive layout" OFF)
 set(_zzrk_bundle_runtime_default OFF)
 if((CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32 OR APPLE) AND
    ZZRK_BUILD_GUI)
@@ -34,6 +35,15 @@ set(
     "Optional Developer ID Application identity used by macdeployqt"
 )
 unset(_zzrk_bundle_runtime_default)
+
+if(ZZRK_LINUX_PORTABLE)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        message(FATAL_ERROR "ZZRK_LINUX_PORTABLE is only supported on Linux")
+    endif()
+    if(NOT ZZRK_BUNDLE_RUNTIME)
+        message(FATAL_ERROR "The Linux portable package requires ZZRK_BUNDLE_RUNTIME=ON")
+    endif()
+endif()
 
 set(_zzrk_transport_consumers)
 if(ZZRK_BUILD_CLI)
@@ -57,6 +67,19 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Windows 和 Linux 便携包将程序放在根目录；Linux DEB 使用 GNU 标准目录，
+# macOS 的 GUI 和 CLI 则由安装脚本放入同一个 .app。
+# 缓存值允许用户覆盖；Windows 预设也显式设置，便于更新已有构建目录。
+# 只初始化未定义的值，避免把命令行传入的相对路径转换为源码绝对路径。
+if(WIN32 AND NOT DEFINED CMAKE_INSTALL_BINDIR)
+    set(CMAKE_INSTALL_BINDIR "." CACHE PATH "Executable installation directory")
+endif()
+# 便携布局固定使用相对目录，不受发行版 lib64/multiarch 默认值影响。
+# 与 DEB 使用独立预设和构建目录，切换布局时不会相互覆盖。
+if(ZZRK_LINUX_PORTABLE)
+    set(CMAKE_INSTALL_BINDIR ".")
+    set(CMAKE_INSTALL_LIBDIR "lib")
+endif()
 include(GNUInstallDirs)
 
 add_library(zzrk_project_options INTERFACE)
@@ -138,22 +161,28 @@ if(ZZRK_BUILD_CLI OR ZZRK_BUILD_GUI)
 endif()
 
 if(ZZRK_BUILD_TRANSPORT)
-    set(_zzrk_default_libusb_root)
-    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        set(_zzrk_default_libusb_root "${CMAKE_CURRENT_SOURCE_DIR}/thirdParty/libusb")
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/thirdParty/Zzlibusb/CMakeLists.txt")
+        message(FATAL_ERROR "Zzlibusb is required. Run git submodule update --init --recursive")
     endif()
-    set(
-        ZZRK_LIBUSB_ROOT
-        "${_zzrk_default_libusb_root}"
-        CACHE PATH
-        "Root of a libusb installation"
-    )
-    find_package(LibUSB1 1.0.30 REQUIRED)
 
-    get_filename_component(ZZRK_LIBUSB_LIBRARY_DIR "${LIBUSB1_LIBRARY}" DIRECTORY)
-    if(UNIX AND NOT APPLE)
-        list(APPEND CMAKE_BUILD_RPATH "${ZZRK_LIBUSB_LIBRARY_DIR}")
+    # 只在子目录作用域内设置静态构建，避免影响 FFI 或 UI 框架的链接方式。
+    function(zzrk_add_libusb)
+        set(BUILD_SHARED_LIBS OFF)
+        set(ZZLIBUSB_INSTALL OFF)
+        set(LIBUSB_ENABLE_WINDOWS_HOTPLUG ON)
+        add_subdirectory(thirdParty/Zzlibusb EXCLUDE_FROM_ALL SYSTEM)
+    endfunction()
+    zzrk_add_libusb()
+
+    if(NOT TARGET LibUSB1::LibUSB1)
+        add_library(LibUSB1::LibUSB1 ALIAS libusb)
     endif()
+
+    # 模拟 USB 函数的测试只需要头文件，不能链接真实 libusb 导致符号冲突。
+    add_library(zzrk_libusb_headers INTERFACE)
+    target_include_directories(zzrk_libusb_headers SYSTEM INTERFACE
+        "$<TARGET_PROPERTY:libusb,INTERFACE_INCLUDE_DIRECTORIES>"
+    )
 endif()
 
 add_subdirectory(src)

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 
-foreach(_required_variable IN ITEMS SOURCE_DIR BINARY_ROOT LIBUSB_ROOT)
+foreach(_required_variable IN ITEMS SOURCE_DIR BINARY_ROOT)
     if(NOT DEFINED ${_required_variable} OR "${${_required_variable}}" STREQUAL "")
         message(FATAL_ERROR "${_required_variable} is required")
     endif()
@@ -22,6 +22,7 @@ file(COPY
     DESTINATION "${_source_dir}"
 )
 file(COPY "${SOURCE_DIR}/thirdParty/spdlog"
+          "${SOURCE_DIR}/thirdParty/Zzlibusb"
      DESTINATION "${_source_dir}/thirdParty")
 if(DEFINED FMT_SOURCE AND EXISTS "${FMT_SOURCE}")
     file(MAKE_DIRECTORY "${_source_dir}/thirdParty/fmt")
@@ -42,7 +43,6 @@ execute_process(
         -DZZRK_BUILD_TRANSPORT=ON
         -DZZRK_BUILD_TESTS=OFF
         -DZZRK_BUNDLE_RUNTIME=OFF
-        "-DZZRK_LIBUSB_ROOT=${LIBUSB_ROOT}"
         ${_fmt_override}
     RESULT_VARIABLE _configure_result
     OUTPUT_VARIABLE _configure_output

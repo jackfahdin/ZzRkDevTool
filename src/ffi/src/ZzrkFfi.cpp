@@ -1275,6 +1275,11 @@ zzrk_status runPartitionOperation(
     return ZZRK_OK;
 }
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4190)
+#endif
+
 [[nodiscard]] workflow::PartitionOperationProgressCallback
 makePartitionProgress(const zzrk_partition_progress_fn progress_fn,
                       void* user_data)
@@ -1302,6 +1307,10 @@ makePartitionCancellation(const zzrk_cancellation* cancellation)
     const auto flag = cancellation->flag;
     return [flag] { return flag->load(std::memory_order_relaxed); };
 }
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 [[nodiscard]] bool validPartitionArgs(const char* port_path,
                                       const char* partition,

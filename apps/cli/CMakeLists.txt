@@ -30,5 +30,4 @@ set_target_properties(
     zzrkdevtool-cli
     PROPERTIES
         OUTPUT_NAME zzrkdevtool-cli
-        BUILD_RPATH "${ZZRK_LIBUSB_LIBRARY_DIR}"
 )

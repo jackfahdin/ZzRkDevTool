@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 
-find_package(Qt6 6.11 REQUIRED COMPONENTS Concurrent)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Concurrent)
 
 qt_add_library(
     zzrk_gui_support STATIC
@@ -92,7 +92,6 @@ set_target_properties(
     PROPERTIES
         OUTPUT_NAME ZzRkDevTool
         AUTOMOC ON
-        BUILD_RPATH "${ZZRK_LIBUSB_LIBRARY_DIR}"
         WIN32_EXECUTABLE TRUE
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_BUNDLE_NAME ZzRkDevTool
