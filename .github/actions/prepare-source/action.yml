@@ -7,6 +7,15 @@ outputs:
 runs:
   using: composite
   steps:
+    # 先核对标签，再拉依赖和安装 Qt；错误版本不进入耗时编译。
+    - name: 读取应用版本并校验版本标签
+      id: version
+      shell: bash
+      run: |
+        set -euo pipefail
+        version=$(sed -nE 's/^    VERSION ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' CMakeLists.txt)
+        bash .github/scripts/validate-version-ref.sh "$version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
     # 不改 .gitmodules；-c 配置仅在当前 Git 命令及其子进程中生效。
     # GitCode 的公开子模块不能使用 GitHub Runner 上不存在的本地 SSH 私钥。
     - name: 拉取固定版本的子模块
@@ -17,14 +26,3 @@ runs:
         git -c url.https://github.com/.insteadOf=git@github.com: \
             -c url.https://gitcode.com/.insteadOf=git@gitcode.com: \
             submodule update --init --recursive --depth 1
-    - name: 读取应用版本
-      id: version
-      shell: bash
-      run: |
-        set -euo pipefail
-        version=$(sed -nE 's/^    VERSION ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' CMakeLists.txt)
-        if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo '无法从 CMakeLists.txt 读取唯一的三段版本号' >&2
-          exit 1
-        fi
-        echo "version=$version" >> "$GITHUB_OUTPUT"

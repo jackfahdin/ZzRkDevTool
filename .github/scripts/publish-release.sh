@@ -6,15 +6,21 @@ shopt -s nullglob
 : "${GH_REPO:?}"
 : "${GITHUB_SHA:?}"
 : "${GITHUB_REF_NAME:?}"
+: "${GITHUB_REF_TYPE:?}"
+: "${GITHUB_EVENT_NAME:?}"
 : "${RELEASE_PLATFORM:?}"
 : "${RELEASE_VERSION:?}"
 : "${RELEASE_KIND:?}"
-[[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-case "$GITHUB_REF_NAME" in main|master) ;; *) exit 1 ;; esac
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+bash "$script_dir/validate-version-ref.sh" "$RELEASE_VERSION"
+[[ "$GITHUB_EVENT_NAME" == push ]]
 case "$RELEASE_PLATFORM" in linux|windows|macos) ;; *) exit 1 ;; esac
-case "$RELEASE_KIND" in continuous|stable) ;; *) exit 1 ;; esac
+case "$RELEASE_KIND:$GITHUB_REF_TYPE:$GITHUB_REF_NAME" in
+    continuous:branch:main|continuous:branch:master|stable:tag:"v$RELEASE_VERSION") ;;
+    *) echo '发布来源不符：持续构建要求主分支 push，正式版要求匹配版本标签的 push。' >&2; exit 1 ;;
+esac
 
-# 只有持续构建要求仍是分支尖端；正式版绑定其 [Release] 提交，允许后续开发继续。
+# 只有持续构建要求仍是分支尖端；正式版绑定推送的版本标签，允许后续开发继续。
 if [[ "$RELEASE_KIND" == continuous ]]; then
     branch_sha=$(gh api "repos/$GH_REPO/git/ref/heads/$GITHUB_REF_NAME" --jq .object.sha)
     if [[ "$branch_sha" != "$GITHUB_SHA" ]]; then
@@ -46,20 +52,16 @@ if (( ${#packages[@]} != expected )); then
 fi
 
 if [[ "$RELEASE_KIND" == stable ]]; then
-    tag="v$RELEASE_VERSION"
+    tag="$GITHUB_REF_NAME"
     title="ZzRkDevTool $RELEASE_VERSION"
     notes="ZzRkDevTool $RELEASE_VERSION，提交 $GITHUB_SHA。请在发布前补充更新说明并完成对应平台验证。"
     create_flags=(--draft)
-    # GitHub 草稿不保证立即创建标签，先显式创建不可变版本标签，再校验提交。
-    if ! gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null 2>&1; then
-        if ! gh api --method POST "repos/$GH_REPO/git/refs" \
-            -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" >/dev/null; then
-            gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null
-        fi
-    fi
+    # 标签必须已由用户推送；CI 不创建或移动正式版本标签。
+    gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null
+    # commits API 解析轻量标签和附注标签，避免拿标签对象 SHA 与提交 SHA 比较。
     tag_sha=$(gh api "repos/$GH_REPO/commits/$tag" --jq .sha)
     if [[ "$tag_sha" != "$GITHUB_SHA" ]]; then
-        echo "版本标签 $tag 已指向其他提交，请先更新项目版本号。" >&2
+        echo "版本标签 $tag 已指向其他提交，拒绝上传本次构建。" >&2
         exit 1
     fi
 else
@@ -72,8 +74,11 @@ fi
 # 三个平台可能同时首次创建同一 release；创建失败后必须确认它确实已存在。
 # 不用无条件 || true 掩盖权限、网络或 API 错误。
 if ! gh release view "$tag" >/dev/null 2>&1; then
+    # 正式版额外要求远端标签存在，避免标签被删除后由 release create 隐式重建。
+    verify_flags=()
+    if [[ "$RELEASE_KIND" == stable ]]; then verify_flags=(--verify-tag); fi
     if ! gh release create "$tag" --target "$GITHUB_SHA" --title "$title" \
-        --notes "$notes" "${create_flags[@]}"; then
+        --notes "$notes" "${create_flags[@]}" "${verify_flags[@]}"; then
         gh release view "$tag" >/dev/null
     fi
 fi

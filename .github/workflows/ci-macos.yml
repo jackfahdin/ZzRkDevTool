@@ -6,6 +6,8 @@ name: CI-macOS
 on:
   push:
     branches: [main, master]
+    # 精确版本格式与 CMake 版本在 prepare-source 中校验。
+    tags: ['v*']
   pull_request:
     branches: [main, master]
   workflow_dispatch:
@@ -13,9 +15,9 @@ on:
 permissions:
   contents: read
 concurrency:
-  # [Release] 按提交隔离，后续日常开发不会取消这个版本的构建。
-  group: ci-macos-${{ github.ref }}-${{ startsWith(github.event.head_commit.message, '[Release]') && github.sha || 'continuous' }}
-  cancel-in-progress: true
+  # 分支和版本标签独立排队，主分支更新不会取消正式版编译。
+  group: ci-macos-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 env:
   QT_VERSION: 6.11.1
 
@@ -64,7 +66,7 @@ jobs:
 
   publish:
     needs: build
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
     permissions:
       contents: write
       actions: read

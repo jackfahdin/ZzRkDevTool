@@ -12,7 +12,7 @@
 | `publish-artifacts.yml` | `ubuntu-latest` | 三个平台共用的发布流程，仅接收本次 CI 的 artifact |
 | `portable.yml` | 三平台官方 Runner | 不依赖 Qt/USB 的核心测试、Linux ASan/UBSan、工作流语法与发布脚本隔离测试 |
 
-三个应用工作流都监听 `main`、`master` 的 push 和 PR，并支持 Actions 页面的手动运行。`main` 是本仓库当前主分支；如果以后改成其他名称，需要同步修改触发分支、发布 job 条件和发布脚本的分支校验。
+三个应用工作流都监听 `main`、`master` 的 push 和 PR、`v*` 标签的 push，并支持 Actions 页面的手动运行。版本标签必须严格匹配 `vX.Y.Z`，且与被标记提交的 CMake 项目版本一致；不匹配时在准备源码阶段直接失败。`main` 是本仓库当前主分支；如果以后改成其他名称，需要同步修改触发分支、发布 job 条件和发布脚本的分支校验。
 
 Qt 当前统一为 **6.11.1**，可以修改各平台文件中的 `QT_VERSION`。Qt 的公开头文件、私有头文件、库与部署工具必须来自同一套安装。`qtsvg`、`qttools` 在基础桌面归档中，不能填到 aqt 的附加 `modules` 列表；这样可以避免安装阶段报“模块不存在”。Windows 的 MinGW 编译器工具包单独固定为 `tools_mingw1310`，变更 Qt 套件时应再次检查匹配关系。
 
@@ -24,8 +24,10 @@ CI 通过 `.github/actions/prepare-source/action.yml` 拉取固定子模块。�
 | --- | --- | --- |
 | 提交 PR | 执行 | 不发布，无 Release 写权限 |
 | Actions 手动运行 | 执行 | 不发布 |
-| 主分支普通 push | 执行 | 各平台通过后分别更新 `continuous-build` 预发布 |
-| 主分支提交信息以 `[Release]` 开头 | 执行 | 创建或补充 `v版本号` 正式版草稿 |
+| 主分支 push | 执行 | 各平台通过后分别更新 `continuous-build` 预发布 |
+| 推送 `vX.Y.Z` 版本标签 | 执行，先校验版本 | 创建或补充对应版本的正式版草稿 |
+
+`continuous-build` 保留主分支 push 后更新的行为，并非每天定时构建。提交信息中的 `[Release]` 不再具有特殊含义。仅在本地创建标签不会触发 GitHub Actions，必须把标签推送到 GitHub。
 
 普通分支开发可提交 PR 来运行完整检查；可移植核心工作流还会检查其他分支的 push。artifact 默认保留 14 天。平台包先经 CPack 压缩，再作为 Actions artifact 上传；下载 artifact 后里面才是最终的 `.tar.gz`、`.deb` 或 `.dmg`。
 
@@ -43,12 +45,22 @@ ZzRkDevTool-continuous-macos-arm64-x86_64.dmg
 ### 正式版发布步骤
 
 1. 修改根 `CMakeLists.txt` 的 `project(... VERSION x.y.z ...)`，准备更新说明。
-2. 在主分支创建提交，提交标题以 `[Release]` 开头，例如 `[Release] 发布 0.2.0`。
-3. 自行 push 到 GitHub，等待三个平台构建完成。
+2. 在主分支提交版本修改，并自行 push 到 GitHub；这一步照常更新持续构建。
+3. 为需要发布的提交创建 `vX.Y.Z` 标签并推送到 GitHub，等待三个平台构建完成。
 4. 在 Releases 中检查 `v0.2.0` 草稿附件是否齐全，编辑标题和更新说明。
 5. 完成平台、真机及签名验收后，手动发布草稿。
 
-版本号从 CMake 读取，不需要在 CI 中再写一份。正式版构建不会被后续日常提交取消，也不要求构建完成时仍位于分支尖端；它始终绑定 `[Release]` 提交。不同提交不得复用同一版本标签。已公开发布的正式版不能通过重跑 CI 改写附件，脚本会报错；需要更新时应升版本。
+例如项目版本已提交为 `0.2.0`，并且当前 HEAD 就是要发布的提交时：
+
+```bash
+# github 是示例远端名，请替换成实际指向 GitHub 的远端。
+git tag -a v0.2.0 -m "发布 0.2.0"
+git push github v0.2.0
+```
+
+轻量标签和附注标签均支持，建议使用上述附注标签。当前仅接受三段版本号，不接受 `-rc1` 等后缀；标签可以指向指定提交，CI 不额外要求该提交仍在主分支尖端。
+
+版本号从 CMake 读取，不需要在 CI 中再写一份。正式版构建与主分支构建按 ref 隔离，不会被后续日常提交取消；它始终构建标签指向的提交。CI 不创建或移动正式版标签，远端标签缺失或已指向其他提交时会拒绝发布。不同提交不得复用同一版本标签。已公开发布的正式版不能通过重跑 CI 改写附件，脚本会报错；需要更新时应升版本。
 
 第一次运行前确认 GitHub 仓库已启用 Actions，仓库或组织策略允许工作流申请 `contents: write`。本地 `origin` 当前指向 GitCode，GitHub Actions 只在推送到 GitHub 的仓库中运行；本次开发不会替你 push。Release 使用 GitHub 自动提供的 `GITHUB_TOKEN`，不需要额外保存 GitHub PAT。
 
@@ -94,7 +106,7 @@ shellcheck .github/scripts/*.sh .github/scripts/tests/*.sh
 bash .github/scripts/tests/publish-release-test.sh
 ```
 
-隔离测试模拟 `gh`，覆盖持续构建、正式版草稿、后续开发提交、过期持续构建、标签冲突、已发布版本、API 故障、附件缺失和首次创建竞争，不会访问 GitHub API 或创建 Release。
+隔离测试模拟 `gh`，覆盖持续构建、标签触发的正式版草稿、后续开发提交、过期持续构建、标签版本不符、来源类型错误、标签缺失或变更、已发布版本、API 故障、附件缺失和首次创建竞争，不会访问 GitHub API 或创建 Release。
 
 Linux 的真实发布包还可执行：
 

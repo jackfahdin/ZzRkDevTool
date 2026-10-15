@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   publish:
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -30,7 +30,7 @@ jobs:
       actions: read
     # 不能让不同平台共用同一 concurrency group，否则待运行的平台会被取消。
     concurrency:
-      group: publish-${{ inputs.platform }}-${{ github.ref }}-${{ startsWith(github.event.head_commit.message, '[Release]') && github.sha || 'continuous' }}
+      group: publish-${{ inputs.platform }}-${{ github.ref }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
@@ -47,6 +47,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_PLATFORM: ${{ inputs.platform }}
           RELEASE_VERSION: ${{ inputs.version }}
-          # 提交信息只参与表达式判断，不直接拼接到 shell 中执行。
-          RELEASE_KIND: ${{ startsWith(github.event.head_commit.message, '[Release]') && 'stable' || 'continuous' }}
-        run: bash .github/scripts/publish-release.sh
+          # 正式版只认版本标签，与提交信息无关。
+          RELEASE_KIND: ${{ github.ref_type == 'tag' && 'stable' || 'continuous' }}
+        run: |
+          # checkout 将轻量/附注标签都解析为提交；校验时统一使用提交 SHA。
+          GITHUB_SHA=$(git rev-parse HEAD)
+          export GITHUB_SHA
+          bash .github/scripts/publish-release.sh
