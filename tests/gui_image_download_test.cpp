@@ -340,7 +340,7 @@ int main() {
     auto *table =
         window->findChild<QTableWidget *>(QStringLiteral("downloadImageTable"));
     auto *device =
-        window->findChild<QComboBox *>(QStringLiteral("downloadDeviceCombo"));
+        window->findChild<QComboBox *>(QStringLiteral("statusDeviceCombo"));
     if (tabs == nullptr || tabs->tabText(0) != QStringLiteral("下载镜像") ||
         table == nullptr || device == nullptr ||
         device->currentData().toString() != QStringLiteral("1-5")) {
@@ -445,7 +445,7 @@ int main() {
         observedIndependentProgress =
             observedIndependentProgress || overall != operation;
         const auto *device = window->findChild<QComboBox *>(
-            QStringLiteral("downloadDeviceCombo"));
+            QStringLiteral("statusDeviceCombo"));
         const auto *refresh =
             window->findChild<QToolButton *>(QStringLiteral("refreshButton"));
         observedUsbBusy =

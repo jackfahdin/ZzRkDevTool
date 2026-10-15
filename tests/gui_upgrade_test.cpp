@@ -11,6 +11,7 @@
 #include <ZzPureTools/ZzApplicationWindow.h>
 
 #include <QCheckBox>
+#include <QComboBox>
 #include <QCoreApplication>
 #include <QEventLoop>
 #include <QFileDialog>
@@ -618,13 +619,13 @@ int main() {
       return;
     }
     auto *devices =
-        window->findChild<QTableWidget *>(QStringLiteral("deviceTable"));
-    if (devices == nullptr || devices->rowCount() != 1) {
+        window->findChild<QComboBox *>(QStringLiteral("statusDeviceCombo"));
+    if (devices == nullptr || devices->count() != 1 ||
+        devices->currentData().toString() != QStringLiteral("1-5")) {
       failed = true;
       application.exit(EXIT_FAILURE);
       return;
     }
-    devices->selectRow(0);
     auto *inspect =
         window->findChild<QPushButton *>(QStringLiteral("inspectDeviceButton"));
     if (inspect == nullptr || !inspect->isEnabled()) {

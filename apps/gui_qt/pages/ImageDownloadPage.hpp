@@ -72,14 +72,10 @@ public:
 
   [[nodiscard]] static ImageDownloadPage *buildUi(QWidget *parent);
 
-  [[nodiscard]] QComboBox *deviceCombo() const noexcept;
   [[nodiscard]] QComboBox *layoutCombo() const noexcept;
   [[nodiscard]] QLineEdit *layoutPathEdit() const noexcept;
   [[nodiscard]] QLineEdit *directoryEdit() const noexcept;
   [[nodiscard]] QCheckBox *rebootCheckBox() const noexcept;
-  [[nodiscard]] QString selectedPortPath() const;
-  [[nodiscard]] bool selectedDeviceManageable() const;
-  [[nodiscard]] int selectedDeviceMode() const;
 
   [[nodiscard]] std::vector<PlanChoice> planChoices() const;
   [[nodiscard]] std::optional<PlanTarget> currentTarget() const;
@@ -92,10 +88,9 @@ public:
                    bool operationIndeterminate = false);
   void setStatus(const GuiText &text);
   void setError(const GuiText &text);
-  void setBusy(bool busy, bool canStart, bool canCancel);
+  void setBusy(bool busy, bool canStart, bool canCancel, bool canReadGpt);
 
 signals:
-  void deviceChanged();
   void layoutChanged();
   void chooseParameterRequested();
   void readDeviceGptRequested();
@@ -110,7 +105,6 @@ private:
   explicit ImageDownloadPage(QWidget *parent);
   void handlePlanItemChanged(QTableWidgetItem *item);
 
-  QComboBox *m_deviceCombo = nullptr;
   QComboBox *m_layoutCombo = nullptr;
   QLineEdit *m_layoutPathEdit = nullptr;
   QToolButton *m_chooseParameterButton = nullptr;
