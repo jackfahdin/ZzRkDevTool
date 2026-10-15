@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: MIT
+# 仅由 CPack 的 TGZ 生成器在安装完成后调用，不操作源码或构建产物。
+if(NOT CPACK_GENERATOR STREQUAL "TGZ" OR NOT IS_DIRECTORY "${CPACK_TEMPORARY_DIRECTORY}/usr")
+    message(FATAL_ERROR "Portable layout conversion requires a TGZ staging directory")
+endif()
+find_program(_patchelf patchelf REQUIRED)
+set(_stage "${CPACK_TEMPORARY_DIRECTORY}")
+set(_prefix "${_stage}/usr")
+
+# 插件先移出私有库目录，再整体移动库和文档，保留库文件的符号链接。
+if(IS_DIRECTORY "${_prefix}/@ZZRK_INSTALL_PLUGINDIR@")
+    file(RENAME "${_prefix}/@ZZRK_INSTALL_PLUGINDIR@" "${_stage}/plugins")
+endif()
+file(RENAME "${_prefix}/@ZZRK_PRIVATE_LIBDIR@" "${_stage}/lib")
+file(RENAME "${_prefix}/@ZZRK_INSTALL_DOCDIR@" "${_stage}/docs")
+file(MAKE_DIRECTORY "${_stage}/usb")
+file(RENAME "${_prefix}/lib/udev/rules.d/60-zzrkdevtool.rules"
+            "${_stage}/usb/60-zzrkdevtool.rules")
+file(GLOB _programs "${_prefix}/@CMAKE_INSTALL_BINDIR@/*")
+foreach(_program IN LISTS _programs)
+    get_filename_component(_name "${_program}" NAME)
+    file(RENAME "${_program}" "${_stage}/${_name}")
+endforeach()
+file(COPY_FILE "@PROJECT_SOURCE_DIR@/packaging/linux/PORTABLE.zh-CN.md"
+               "${_stage}/README.zh-CN.md")
+
+# 便携包不注册系统桌面项；未知的新增安装文件必须显式决定去向，不能静默丢失。
+file(REMOVE "${_prefix}/@CMAKE_INSTALL_DATAROOTDIR@/applications/zzrkdevtool.desktop")
+file(GLOB_RECURSE _remaining LIST_DIRECTORIES FALSE "${_prefix}/*")
+if(_remaining)
+    message(FATAL_ERROR "Unmapped files in portable package: ${_remaining}")
+endif()
+file(REMOVE_RECURSE "${_prefix}")
+file(WRITE "${_stage}/qt.conf" "[Paths]\nPrefix=.\nLibraries=lib\nPlugins=plugins\n")
+
+function(_zzrk_patch_rpath file rpath)
+    execute_process(COMMAND "${_patchelf}" --set-rpath "${rpath}" "${file}"
+                    COMMAND_ERROR_IS_FATAL ANY)
+endfunction()
+foreach(_executable IN ITEMS ZzRkDevTool zzrkdevtool-cli)
+    if(EXISTS "${_stage}/${_executable}")
+        _zzrk_patch_rpath("${_stage}/${_executable}" "$ORIGIN/lib")
+    endif()
+endforeach()
+
+# Qt 的库仍在同一目录；插件移至顶层 plugins 后，按各自深度重新计算库路径。
+file(GLOB_RECURSE _plugins "${_stage}/plugins/*.so")
+foreach(_plugin IN LISTS _plugins)
+    get_filename_component(_plugin_dir "${_plugin}" DIRECTORY)
+    file(RELATIVE_PATH _lib_from_plugin "${_plugin_dir}" "${_stage}/lib")
+    _zzrk_patch_rpath("${_plugin}" "$ORIGIN/${_lib_from_plugin}")
+endforeach()

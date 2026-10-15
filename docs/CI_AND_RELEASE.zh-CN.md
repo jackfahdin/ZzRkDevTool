@@ -12,6 +12,8 @@
 | `publish-artifacts.yml` | `ubuntu-latest` | 三个平台共用的发布流程，仅接收本次 CI 的 artifact |
 | `portable.yml` | 三平台官方 Runner | 不依赖 Qt/USB 的核心测试、Linux ASan/UBSan、工作流语法与发布脚本隔离测试 |
 
+Linux 应用只配置、编译并完整测试一次，DEB 和便携 TGZ 均从 `build/linux-release` 生成。CPack 在各自暂存区完成布局和运行库部署，TGZ 额外整理便携目录与相对库路径，不再次编译应用。最终两种包仍分别解包、清除 Qt 环境变量后启动验证，并检查便携插件从包内加载 Qt。完整测试中的 CLI-only 安装检查用于验证另一种功能配置，仍保留。
+
 三个应用工作流都监听 `main`、`master` 的 push 和 PR、`v*` 标签的 push，并支持 Actions 页面的手动运行。版本标签必须严格匹配 `vX.Y.Z`，且与被标记提交的 CMake 项目版本一致；不匹配时在准备源码阶段直接失败。`main` 是本仓库当前主分支；如果以后改成其他名称，需要同步修改触发分支、发布 job 条件和发布脚本的分支校验。
 
 Qt 当前统一为 **6.12.0**，可以修改各平台文件中的 `QT_VERSION`。Qt 的公开头文件、私有头文件、库与部署工具必须来自同一套安装。`qtsvg`、`qttools` 在基础桌面归档中，不能填到 aqt 的附加 `modules` 列表；这样可以避免安装阶段报“模块不存在”。Windows 的 MinGW 编译器工具包单独固定为 `tools_mingw1310`，变更 Qt 套件时应再次检查匹配关系。
