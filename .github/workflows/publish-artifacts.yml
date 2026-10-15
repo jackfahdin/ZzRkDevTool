@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: MIT
+# 官方托管 Runner 优先用最新稳定 Action Major。
+# self-hosted 升级前必须检查：最低 Runner 版本、Node.js runtime、Breaking Changes。
+name: 发布平台产物（公共流程）
+
+# 仅由三个平台 CI 调用；不接收 PR artifact 或外部 workflow_run 的代码。
+on:
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+      artifact:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    # 不能让不同平台共用同一 concurrency group，否则待运行的平台会被取消。
+    concurrency:
+      group: publish-${{ inputs.platform }}-${{ github.ref }}-${{ startsWith(github.event.head_commit.message, '[Release]') && github.sha || 'continuous' }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact }}
+          path: release-input
+      - name: 更新预发布或正式版草稿
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_PLATFORM: ${{ inputs.platform }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          # 提交信息只参与表达式判断，不直接拼接到 shell 中执行。
+          RELEASE_KIND: ${{ startsWith(github.event.head_commit.message, '[Release]') && 'stable' || 'continuous' }}
+        run: bash .github/scripts/publish-release.sh
