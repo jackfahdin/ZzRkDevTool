@@ -2,14 +2,39 @@
 
 name: Portable targets
 
+# 可移植核心不拉取 USB/UI 子模块；这些测试与发布包流程相互独立。
+# 官方托管 Runner 使用最新稳定 Action Major。
+# self-hosted 升级前检查最低 Runner 版本、Node.js runtime 和 Breaking Changes，见 CI 指南。
+
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: portable-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  ci-checks:
+    name: CI 配置与发布脚本检查
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: 安装并运行工作流检查工具
+        run: |
+          # 固定已验证的工具版本；它是检查工具版本，不是 Action Major。
+          GOBIN="$RUNNER_TEMP/ci-tools" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$RUNNER_TEMP/ci-tools/actionlint"
+          shellcheck .github/scripts/*.sh .github/scripts/tests/*.sh
+          bash .github/scripts/tests/publish-release-test.sh
+
   portable:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
@@ -18,14 +43,21 @@ jobs:
       matrix:
         include:
           - name: Linux GCC
-            runner: ubuntu-24.04
+            runner: ubuntu-latest
           - name: Windows MSVC
-            runner: windows-2022
+            runner: windows-latest
           - name: macOS Clang
-            runner: macos-14
+            runner: macos-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # 自动发现已安装的 VS，避免 windows-latest 更新后旧的绝对路径失效。
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
 
       - name: Configure, build, and test
         if: runner.os != 'Windows'
@@ -36,18 +68,22 @@ jobs:
 
       - name: Configure, build, and test with MSVC
         if: runner.os == 'Windows'
-        shell: cmd
+        shell: pwsh
         run: |
-          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64
           cmake --preset portable-debug
+          if ($LASTEXITCODE -ne 0) { throw '配置失败' }
           cmake --build --preset portable-debug --parallel
+          if ($LASTEXITCODE -ne 0) { throw '编译失败' }
           ctest --preset portable-debug
+          if ($LASTEXITCODE -ne 0) { throw '测试失败' }
 
   portable-sanitize:
     name: Linux portable ASan/UBSan
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Configure, build, and test
         run: |

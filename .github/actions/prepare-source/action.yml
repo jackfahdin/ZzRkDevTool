@@ -1,0 +1,30 @@
+name: 准备源码依赖与版本
+description: 通过公开 HTTPS 拉取固定子模块，并从 CMake 项目读取发布版本
+outputs:
+  version:
+    description: CMake project 中的三段版本号
+    value: ${{ steps.version.outputs.version }}
+runs:
+  using: composite
+  steps:
+    # 不改 .gitmodules；-c 配置仅在当前 Git 命令及其子进程中生效。
+    # GitCode 的公开子模块不能使用 GitHub Runner 上不存在的本地 SSH 私钥。
+    - name: 拉取固定版本的子模块
+      shell: bash
+      run: |
+        set -euo pipefail
+        git submodule sync --recursive
+        git -c url.https://github.com/.insteadOf=git@github.com: \
+            -c url.https://gitcode.com/.insteadOf=git@gitcode.com: \
+            submodule update --init --recursive --depth 1
+    - name: 读取应用版本
+      id: version
+      shell: bash
+      run: |
+        set -euo pipefail
+        version=$(sed -nE 's/^    VERSION ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' CMakeLists.txt)
+        if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo '无法从 CMakeLists.txt 读取唯一的三段版本号' >&2
+          exit 1
+        fi
+        echo "version=$version" >> "$GITHUB_OUTPUT"

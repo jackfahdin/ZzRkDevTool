@@ -1,0 +1,138 @@
+# SPDX-License-Identifier: MIT
+# 官方托管 Runner 优先用最新稳定 Action Major。
+# self-hosted 升级前必须检查：最低 Runner 版本、Node.js runtime、Breaking Changes。
+name: CI-Windows
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  # 正式版独立排队；普通提交到达时不会取消尚未完成的正式版编译。
+  group: ci-windows-${{ github.ref }}-${{ startsWith(github.event.head_commit.message, '[Release]') && github.sha || 'continuous' }}
+  cancel-in-progress: true
+env:
+  QT_VERSION: 6.11.1
+
+jobs:
+  build:
+    name: MSVC x64 TGZ
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+    steps:
+      # 官方 Runner 采用最新稳定 Major；不硬编码 VS 安装目录。
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/prepare-source
+        id: source
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          # Svg、LinguistTools 在基础归档中，不添加到 aqt 的 modules 列表。
+          cache: true
+      - name: 编译、测试与 TGZ 打包
+        shell: pwsh
+        run: |
+          # 安装 Action 导出的路径显式传给本项目预设，避免使用开发机默认值。
+          $env:QT_PREFIX_PATH = $env:QT_ROOT_DIR
+          cmake --preset windows-msvc-release
+          if ($LASTEXITCODE -ne 0) { throw '配置失败' }
+          cmake --build --preset windows-msvc-release --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw '编译失败' }
+          ctest --preset windows-msvc-release --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw '测试失败' }
+          cpack --preset windows-msvc-tgz
+          if ($LASTEXITCODE -ne 0) { throw '打包失败' }
+      - name: 解压验证程序入口与依赖
+        shell: pwsh
+        run: |
+          $archive = Get-ChildItem build/windows-msvc-release/ZzRkDevTool-*.tar.gz | Select-Object -First 1
+          if (-not $archive) { throw '没有生成 TGZ 包' }
+          # 使用带空格的目录验证解压后的路径处理。
+          New-Item -ItemType Directory -Force 'build/package check' | Out-Null
+          Push-Location 'build/package check'
+          try {
+            cmake -E tar xzf $archive.FullName
+            if ($LASTEXITCODE -ne 0) { throw '解压失败' }
+          } finally { Pop-Location }
+          $root = Join-Path 'build/package check' ($archive.Name -replace '\.tar\.gz$', '')
+          $gui = Join-Path $root ZzRkDevTool.exe
+          $cli = Join-Path $root zzrkdevtool-cli.exe
+          foreach ($file in @($gui, $cli, (Join-Path $root Qt6Core.dll), (Join-Path $root Qt6Widgets.dll),
+              (Join-Path $root Qt6Svg.dll), (Join-Path $root qt.conf),
+              (Join-Path $root 'plugins/platforms/qwindows.dll'), (Join-Path $root 'plugins/platforms/qoffscreen.dll'))) {
+            if (-not (Test-Path $file)) { throw "包内文件缺失：$file" }
+          }
+          $dependencies = & dumpbin /DEPENDENTS $gui $cli
+          if ($LASTEXITCODE -ne 0 -or $dependencies -match 'libusb.*\.dll') { throw '静态 USB 依赖检查失败' }
+          Remove-Item Env:QT_PLUGIN_PATH, Env:QT_QPA_PLATFORM_PLUGIN_PATH -ErrorAction SilentlyContinue
+          $env:PATH = ($env:PATH -split ';' | Where-Object {
+            -not $_.StartsWith($env:QT_ROOT_DIR, [StringComparison]::OrdinalIgnoreCase)
+          }) -join ';'
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          & $gui --smoke-test
+          if ($LASTEXITCODE -ne 0) { throw '包内 GUI 启动失败' }
+          & $cli --version
+          if ($LASTEXITCODE -ne 0) { throw '包内 CLI 启动失败' }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: packages-windows
+          path: build/windows-msvc-release/ZzRkDevTool-*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  mingw:
+    name: MinGW GUI 兼容检查
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/prepare-source
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_mingw
+          tools: tools_mingw1310
+          cache: true
+      - name: 使用匹配 Qt 的 MinGW 工具链
+        shell: bash
+        run: |
+          set -euo pipefail
+          qt_root=$(cygpath -u "$QT_ROOT_DIR")
+          export QT_PREFIX_PATH="$qt_root"
+          tools_root=$(dirname "$(dirname "$qt_root")")/Tools
+          mingw_gcc=$(find "$tools_root" -path '*/mingw1310_64/bin/gcc.exe' -print -quit)
+          test -n "$mingw_gcc"
+          mingw_bin=$(dirname "$mingw_gcc")
+          export PATH="$mingw_bin:$PATH"
+          # 此 job 只检查 MinGW 构建；对外发布使用上面的 MSVC 包。
+          cmake --preset windows-mingw-release -DCMAKE_PREFIX_PATH="$qt_root"
+          cmake --build --preset windows-mingw-release --parallel 4
+          ctest --preset windows-mingw-release -R '^(gui_framework|gui_smoke)$'
+
+  publish:
+    needs: [build, mingw]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/publish-artifacts.yml
+    with:
+      platform: windows
+      artifact: packages-windows
+      version: ${{ needs.build.outputs.version }}

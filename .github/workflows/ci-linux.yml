@@ -1,0 +1,93 @@
+# SPDX-License-Identifier: MIT
+# 官方托管 Runner 优先用最新稳定 Action Major。
+# self-hosted 升级前必须检查：最低 Runner 版本、Node.js runtime、Breaking Changes。
+name: CI-Linux
+
+# main 是当前主分支；保留 master，方便将来修改默认分支。
+# 手动运行只生成构建产物，不发布；[Release] 前缀仅对主分支 push 生效。
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 普通提交取消旧编译；[Release] 使用独立组，避免后续提交取消正式版构建。
+concurrency:
+  group: ci-linux-${{ github.ref }}-${{ startsWith(github.event.head_commit.message, '[Release]') && github.sha || 'continuous' }}
+  cancel-in-progress: true
+
+env:
+  # Qt 安装包、私有头文件和部署工具必须来自同一版本。
+  QT_VERSION: 6.11.1
+
+jobs:
+  build:
+    name: Linux TGZ 与 DEB
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+    steps:
+      # 官方托管 Runner 优先使用最新稳定 Major；更换 self-hosted 前先读 CI 指南。
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/prepare-source
+        id: source
+      - name: 安装编译与图形运行依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build patchelf libudev-dev \
+            libgl1-mesa-dev libegl1 libxkbcommon-x11-0 libxcb-cursor0 \
+            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 \
+            libxcb-xinerama0 libxcb-xkb1
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          # Svg、LinguistTools 随基础桌面归档安装，不属于 aqt 附加 modules。
+          cache: true
+      - name: 构建并检查 DEB 版本
+        run: |
+          cmake --preset linux-release
+          cmake --build --preset linux-release --parallel 4
+          ctest --preset linux-release --parallel 4
+          cpack --preset linux-deb
+      - name: 构建并检查便携版本
+        run: |
+          cmake --preset linux-portable-release
+          cmake --build --preset linux-portable-release --parallel 4
+          ctest --preset linux-portable-release --parallel 4
+          cpack --preset linux-tgz
+      # 两种布局分别解包后启动；不安装 DEB，也不触碰 USB 设备。
+      - name: 验证最终发布包
+        run: bash .github/scripts/verify-linux-packages.sh
+      - name: 收集发布附件
+        run: |
+          # 多目录直接上传会保留目录层级；先收集到同一目录，供公共发布流程读取。
+          mkdir -p build/release-packages
+          cp build/linux-release/*.deb build/linux-portable-release/ZzRkDevTool-*.tar.gz build/release-packages/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: packages-linux
+          path: build/release-packages/*
+          if-no-files-found: error
+          # 发布包本身已压缩，避免 artifact 再次压缩浪费时间。
+          compression-level: 0
+          retention-days: 14
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    # 只有发布 job 有写权限；PR 和手动构建不会进入此 job。
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/publish-artifacts.yml
+    with:
+      platform: linux
+      artifact: packages-linux
+      version: ${{ needs.build.outputs.version }}
