@@ -4,10 +4,11 @@
 name: CI-Linux
 
 # main 是当前主分支；保留 master，方便将来修改默认分支。
-# 手动运行只生成构建产物，不发布；[Release] 前缀仅对主分支 push 生效。
+# 主分支 push 更新持续构建；vX.Y.Z 标签 push 创建正式版草稿；手动运行不发布。
 on:
   push:
     branches: [main, master]
+    tags: ['v*']
   pull_request:
     branches: [main, master]
   workflow_dispatch:
@@ -15,10 +16,10 @@ on:
 permissions:
   contents: read
 
-# 普通提交取消旧编译；[Release] 使用独立组，避免后续提交取消正式版构建。
+# 按分支或标签隔离；主分支新提交取消旧编译，版本标签构建保留。
 concurrency:
-  group: ci-linux-${{ github.ref }}-${{ startsWith(github.event.head_commit.message, '[Release]') && github.sha || 'continuous' }}
-  cancel-in-progress: true
+  group: ci-linux-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 env:
   # Qt 安装包、私有头文件和部署工具必须来自同一版本。
@@ -81,7 +82,7 @@ jobs:
 
   publish:
     needs: build
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
     # 只有发布 job 有写权限；PR 和手动构建不会进入此 job。
     permissions:
       contents: write
