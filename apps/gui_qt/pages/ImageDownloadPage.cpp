@@ -40,19 +40,13 @@ ImageDownloadPage::ImageDownloadPage(QWidget *parent) : QWidget(parent) {
                                        ui::CardPadding, ui::CardPadding);
   sourceCardLayout->setSpacing(12);
   sourceCardLayout->addWidget(
-      ui::sectionTitle(guiText("设备与镜像来源"), sourceCard));
+      ui::sectionTitle(guiText("镜像与分区布局"), sourceCard));
 
   auto *sourceLayout = new QGridLayout;
   sourceLayout->setHorizontalSpacing(8);
   sourceLayout->setVerticalSpacing(8);
   sourceLayout->setColumnStretch(1, 1);
   sourceLayout->setColumnStretch(4, 1);
-
-  m_deviceCombo = new QComboBox(this);
-  m_deviceCombo->setObjectName(QStringLiteral("downloadDeviceCombo"));
-  m_deviceCombo->setMinimumContentsLength(18);
-  sourceLayout->addWidget(guiLabel(guiText("目标设备"), this), 0, 0);
-  sourceLayout->addWidget(m_deviceCombo, 0, 1, 1, 2);
 
   m_layoutCombo = new QComboBox(this);
   m_layoutCombo->setObjectName(QStringLiteral("downloadLayoutCombo"));
@@ -62,8 +56,8 @@ ImageDownloadPage::ImageDownloadPage(QWidget *parent) : QWidget(parent) {
     const QSignalBlocker blocker(m_layoutCombo);
     m_layoutCombo->setItemText(0, guiText("设备 GPT"));
   });
-  sourceLayout->addWidget(guiLabel(guiText("分区布局"), this), 0, 3);
-  sourceLayout->addWidget(m_layoutCombo, 0, 4);
+  sourceLayout->addWidget(guiLabel(guiText("分区布局"), this), 0, 0);
+  sourceLayout->addWidget(m_layoutCombo, 0, 1, 1, 4);
 
   m_readGptButton = new QToolButton(this);
   m_readGptButton->setObjectName(QStringLiteral("readDownloadGptButton"));
@@ -103,8 +97,7 @@ ImageDownloadPage::ImageDownloadPage(QWidget *parent) : QWidget(parent) {
   sourceLayout->addWidget(guiLabel(guiText("镜像目录"), this), 2, 0);
   sourceLayout->addWidget(m_directoryEdit, 2, 1, 1, 4);
   sourceLayout->addWidget(m_chooseDirectoryButton, 2, 5);
-  for (auto *control : {static_cast<QWidget *>(m_deviceCombo),
-                        static_cast<QWidget *>(m_layoutCombo),
+  for (auto *control : {static_cast<QWidget *>(m_layoutCombo),
                         static_cast<QWidget *>(m_layoutPathEdit),
                         static_cast<QWidget *>(m_directoryEdit)})
     control->setMinimumHeight(ui::ControlHeight);
@@ -224,8 +217,6 @@ ImageDownloadPage::ImageDownloadPage(QWidget *parent) : QWidget(parent) {
   taskLayout->addLayout(actions);
   pageLayout->addWidget(taskCard);
 
-  connect(m_deviceCombo, &QComboBox::currentIndexChanged, this,
-          &ImageDownloadPage::deviceChanged);
   connect(m_layoutCombo, &QComboBox::currentIndexChanged, this,
           &ImageDownloadPage::layoutChanged);
   connect(m_chooseParameterButton, &QToolButton::clicked, this,
@@ -248,9 +239,6 @@ ImageDownloadPage::ImageDownloadPage(QWidget *parent) : QWidget(parent) {
           &ImageDownloadPage::cancelRequested);
 }
 
-QComboBox *ImageDownloadPage::deviceCombo() const noexcept {
-  return m_deviceCombo;
-}
 QComboBox *ImageDownloadPage::layoutCombo() const noexcept {
   return m_layoutCombo;
 }
@@ -262,15 +250,6 @@ QLineEdit *ImageDownloadPage::directoryEdit() const noexcept {
 }
 QCheckBox *ImageDownloadPage::rebootCheckBox() const noexcept {
   return m_rebootCheckBox;
-}
-QString ImageDownloadPage::selectedPortPath() const {
-  return m_deviceCombo->currentData().toString();
-}
-bool ImageDownloadPage::selectedDeviceManageable() const {
-  return m_deviceCombo->currentData(Qt::UserRole + 1).toBool();
-}
-int ImageDownloadPage::selectedDeviceMode() const {
-  return m_deviceCombo->currentData(Qt::UserRole + 2).toInt();
 }
 
 std::vector<ImageDownloadPage::PlanChoice>
@@ -406,13 +385,11 @@ void ImageDownloadPage::setError(const GuiText &text) {
 }
 
 void ImageDownloadPage::setBusy(const bool busy, const bool canStart,
-                                const bool canCancel) {
+                                const bool canCancel, const bool canReadGpt) {
   const bool parameterLayout = m_layoutCombo->currentIndex() == 1;
-  m_deviceCombo->setEnabled(!busy);
   m_layoutCombo->setEnabled(!busy);
   m_chooseParameterButton->setEnabled(!busy && parameterLayout);
-  m_readGptButton->setEnabled(!busy && !parameterLayout &&
-                              selectedDeviceManageable());
+  m_readGptButton->setEnabled(!busy && !parameterLayout && canReadGpt);
   m_chooseDirectoryButton->setEnabled(!busy);
   m_table->setEnabled(!busy);
   const auto target = currentTarget();

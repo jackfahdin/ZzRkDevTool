@@ -4,6 +4,7 @@
 
 #include "FileSelectionDialog.hpp"
 #include "MainWorkspaceController.hpp"
+#include "GuiDeviceStatusBar.hpp"
 #include "WorkspaceUi.hpp"
 #include "pages/DevicePage.hpp"
 #include "pages/FullUpgradePage.hpp"
@@ -80,25 +81,6 @@ QString dataSizeText(const std::uint64_t bytes) {
                                      QLocale::DataSizeTraditionalFormat);
 }
 
-QString devicePortText(const zzrk::transport::UsbDeviceInfo &device) {
-  return device.portPath.empty() ? QStringLiteral("-")
-                                 : QString::fromStdString(device.portPath);
-}
-
-GuiText deviceModeText(const zzrk::transport::DeviceMode mode) {
-  switch (mode) {
-  case zzrk::transport::DeviceMode::Adb:
-    return QStringLiteral("ADB");
-  case zzrk::transport::DeviceMode::Maskrom:
-    return QStringLiteral("Maskrom");
-  case zzrk::transport::DeviceMode::Loader:
-    return QStringLiteral("Loader");
-  case zzrk::transport::DeviceMode::Unknown:
-    return guiText("未知");
-  }
-  return guiText("未知");
-}
-
 bool isSupportedFlashDevice(const zzrk::transport::UsbDeviceInfo &device) {
   if (device.vendorId != 0x2207U || device.productId != 0x350bU)
     return false;
@@ -112,31 +94,6 @@ bool isSupportedManagementDevice(const zzrk::transport::UsbDeviceInfo &device) {
   return device.vendorId == 0x2207U && device.productId == 0x350bU &&
          device.bcdUsb == 0x0201U && device.bcdDevice == 0x0223U &&
          device.mode == zzrk::transport::DeviceMode::Loader;
-}
-
-std::vector<DevicePage::DeviceRow>
-deviceRows(const zzrk::transport::ScanResult &result) {
-  std::vector<DevicePage::DeviceRow> rows;
-  rows.reserve(result.devices.size());
-  for (const auto &device : result.devices) {
-    const QString port = devicePortText(device);
-    rows.push_back({
-        .key = QStringLiteral("%1|%2").arg(device.busNumber).arg(port),
-        .status = guiText("已连接"),
-        .mode = deviceModeText(device.mode),
-        .deviceId = QStringLiteral("%1:%2")
-                        .arg(device.vendorId, 4, 16, QLatin1Char('0'))
-                        .arg(device.productId, 4, 16, QLatin1Char('0'))
-                        .toUpper(),
-        .bus = QString::number(device.busNumber),
-        .portPath = port,
-        .usbVersion = QStringLiteral("%1.%2%3")
-                          .arg((device.bcdUsb >> 8) & 0xff)
-                          .arg((device.bcdUsb >> 4) & 0x0f)
-                          .arg(device.bcdUsb & 0x0f),
-    });
-  }
-  return rows;
 }
 
 const zzrk::transport::UsbDeviceInfo *
@@ -643,44 +600,24 @@ MainWorkspaceController::attachWorkspace(ZzFluentUI::ZzTabWidget *tabs,
     return workspaceFailure(guiText("工作区控制器在页面装配期间被销毁"));
   }
 
-  QWidget *const host = statusBar;
-  m_connectionText =
-      host->findChild<QLabel *>(QStringLiteral("connectionStatusText"));
-  if (m_connectionText == nullptr) {
-    m_connectionText = guiLabel(guiText("正在检测设备..."), host);
-    m_connectionText->setObjectName(QStringLiteral("connectionStatusText"));
-    m_connectionText->setProperty("hotplugAvailable", true);
-    setGuiText(m_connectionText, "accessibleName", guiText("连接状态"));
-  }
-
-  m_refreshButton =
-      host->findChild<QToolButton *>(QStringLiteral("refreshButton"));
-  if (m_refreshButton == nullptr) {
-    m_refreshButton = new QToolButton(host);
-    m_refreshButton->setObjectName(QStringLiteral("refreshButton"));
-    ui::configureToolButton(m_refreshButton, ui::Icon::Refresh);
-    setGuiText(m_refreshButton, "toolTip", guiText("立即刷新设备列表"));
-    setGuiText(m_refreshButton, "accessibleName", guiText("刷新设备列表"));
-  }
-
-  m_lastScanText = host->findChild<QLabel *>(QStringLiteral("lastScanText"));
-  if (m_lastScanText == nullptr) {
-    m_lastScanText = guiLabel(guiText("尚未扫描"), host);
-    m_lastScanText->setObjectName(QStringLiteral("lastScanText"));
-  }
+  m_deviceStatus = new GuiDeviceStatusBar(statusBar);
+  m_connectionText = m_deviceStatus->findChild<QLabel *>(QStringLiteral("connectionStatusText"));
+  m_refreshButton = m_deviceStatus->findChild<QToolButton *>(QStringLiteral("refreshButton"));
+  m_lastScanText = m_deviceStatus->findChild<QLabel *>(QStringLiteral("lastScanText"));
+  connect(m_deviceStatus, &GuiDeviceStatusBar::portSelected, this,
+          &MainWorkspaceController::selectDevice);
+  connect(m_viewModel, &MainWorkspaceViewModel::busyChanged,
+          m_deviceStatus, &GuiDeviceStatusBar::setBusy);
 
   m_hotplugDebounceTimer = new QTimer(this);
   m_hotplugDebounceTimer->setInterval(150);
   m_hotplugDebounceTimer->setSingleShot(true);
-  connect(m_refreshButton, &QToolButton::clicked, this,
+  connect(m_deviceStatus, &GuiDeviceStatusBar::refreshRequested, this,
           &MainWorkspaceController::refreshDevices);
   connect(m_hotplugDebounceTimer, &QTimer::timeout, this,
           &MainWorkspaceController::processPendingDeviceRefresh);
 
   if (m_statusBar != nullptr) {
-    m_statusBar->addWidget(m_connectionText, 1);
-    m_statusBar->addPermanentWidget(m_refreshButton);
-    m_statusBar->addPermanentWidget(m_lastScanText);
     setGuiStatus(m_statusBar, guiText("准备就绪"));
   }
   startMonitoring();
@@ -703,8 +640,6 @@ void MainWorkspaceController::attachPages(ImageDownloadPage *downloadPage,
       disconnect(m_downloadPage, nullptr, this, nullptr);
     m_downloadPage = downloadPage;
     if (m_downloadPage != nullptr) {
-      connect(m_downloadPage, &ImageDownloadPage::deviceChanged, this,
-              &MainWorkspaceController::handleDownloadDeviceChanged);
       connect(m_downloadPage, &ImageDownloadPage::layoutChanged, this,
               &MainWorkspaceController::handleDownloadLayoutChanged);
       connect(m_downloadPage, &ImageDownloadPage::chooseParameterRequested,
@@ -733,11 +668,8 @@ void MainWorkspaceController::attachPages(ImageDownloadPage *downloadPage,
       disconnect(m_devicePage, nullptr, this, nullptr);
     m_devicePage = devicePage;
     if (m_devicePage != nullptr) {
-      connect(m_devicePage, &DevicePage::selectionChanged, this,
-              &MainWorkspaceController::handleDeviceSelectionChanged);
       connect(m_devicePage, &DevicePage::inspectRequested, this,
               &MainWorkspaceController::inspectSelectedDevice);
-      m_devicePage->setDevices(deviceRows(m_lastScanResult));
     }
   }
   if (m_upgradePage != upgradePage) {
@@ -817,6 +749,8 @@ void MainWorkspaceController::refreshDevices() {
     return;
   }
   QPointer<MainWorkspaceController> guard{this};
+  // 先锁定，再通知观察者，防止同步 busyChanged 槽启动第二个 USB 操作。
+  m_operationBusy = true;
   m_viewModel->setBusy(true);
   if (guard == nullptr)
     return;
@@ -856,11 +790,8 @@ void MainWorkspaceController::handleDeviceMonitoringError(
   if (m_hotplugDebounceTimer != nullptr) {
     m_hotplugDebounceTimer->stop();
   }
-  if (m_connectionText != nullptr) {
-    m_connectionText->setProperty("hotplugAvailable", false);
-    setGuiText(m_connectionText, "text", guiText("设备热插拔检测不可用"));
-    m_connectionText->setToolTip(m_deviceMonitoringError);
-  }
+  if (m_deviceStatus != nullptr)
+    m_deviceStatus->setMonitoringError(m_deviceMonitoringError);
   if (m_statusBar != nullptr) {
     setGuiStatus(m_statusBar,
                  guiText("设备热插拔检测不可用：%1；请使用手动刷新")
@@ -881,17 +812,12 @@ void MainWorkspaceController::handleScanFinished() {
     return;
   }
   QPointer<MainWorkspaceController> guard{this};
-  if (m_viewModel != nullptr) {
-    m_viewModel->setBusy(false);
-    if (guard == nullptr)
-      return;
-  }
   applyScanResult(m_scanWatcher.result());
   if (guard == nullptr)
     return;
-  if (m_refreshButton != nullptr) {
-    m_refreshButton->setEnabled(true);
-  }
+  setPagesBusy(false);
+  if (guard == nullptr)
+    return;
   processPendingDeviceRefresh();
   if (guard == nullptr)
     return;
@@ -900,74 +826,78 @@ void MainWorkspaceController::handleScanFinished() {
 
 void MainWorkspaceController::applyScanResult(
     const zzrk::transport::ScanResult &result) {
+  const QString previousPort = selectedPortPath();
+  const auto *before = findDevice(m_lastScanResult, previousPort);
+  const auto *after = findDevice(result, previousPort);
+  // 端口代表物理位置，USB 地址与协议字段代表本次会话；同端口重枚举也要失效。
+  const bool identityChanged = before && after &&
+      (before->vendorId != after->vendorId || before->productId != after->productId ||
+       before->bcdUsb != after->bcdUsb || before->bcdDevice != after->bcdDevice ||
+       before->mode != after->mode || before->deviceAddress != after->deviceAddress);
+  QString nextPort = previousPort;
+  if (!previousPort.isEmpty() && !after) {
+    m_disconnectedPort = previousPort;
+    m_requireDeviceSelection = true;
+    nextPort.clear();
+  }
+  if (nextPort.isEmpty() && !m_requireDeviceSelection && !result.error) {
+    if (result.devices.size() == 1 && !result.devices.front().portPath.empty())
+      nextPort = QString::fromStdString(result.devices.front().portPath);
+    else if (result.devices.size() > 1)
+      m_requireDeviceSelection = true;
+  }
   m_lastScanResult = result;
-  if (m_devicePage != nullptr) {
-    m_devicePage->setDevices(deviceRows(result));
+  QPointer<MainWorkspaceController> guard{this};
+  if (m_viewModel) {
+    m_viewModel->setSelectedPortPath(nextPort);
+    if (!guard) return;
   }
-  if (m_downloadPage != nullptr) {
-    const QSignalBlocker blocker{m_downloadPage->deviceCombo()};
-    const QString selected = m_downloadPage->selectedPortPath();
-    m_downloadPage->deviceCombo()->clear();
-    for (const auto &device : result.devices) {
-      const bool loader = isSupportedManagementDevice(device);
-      const bool maskrom = isSupportedFlashDevice(device) && !loader;
-      if (!loader && !maskrom)
-        continue;
-      const QString port = QString::fromStdString(device.portPath);
-      const QString mode =
-          loader ? QStringLiteral("Loader") : QStringLiteral("Maskrom");
-      m_downloadPage->deviceCombo()->addItem(
-          QStringLiteral("%1 (%2)").arg(port, mode), port);
-      const int index = m_downloadPage->deviceCombo()->count() - 1;
-      m_downloadPage->deviceCombo()->setItemData(index, loader,
-                                                 Qt::UserRole + 1);
-      m_downloadPage->deviceCombo()->setItemData(
-          index, static_cast<int>(device.mode), Qt::UserRole + 2);
-    }
-    const int restored = m_downloadPage->deviceCombo()->findData(selected);
-    if (restored >= 0)
-      m_downloadPage->deviceCombo()->setCurrentIndex(restored);
-  }
+  refreshDeviceStatus();
   if (m_lastScanText != nullptr) {
     setGuiText(m_lastScanText, "text",
                guiText("更新于 %1")
                    .arg(QDateTime::currentDateTime().toString(
                        QStringLiteral("HH:mm:ss"))));
   }
-  if (m_connectionText != nullptr) {
-    const auto count = static_cast<qulonglong>(result.devices.size());
-    setGuiText(
-        m_connectionText, "text",
-        result.error.has_value()
-            ? (count == 0U
-                   ? guiText("设备扫描失败")
-                   : guiText("已检测到 %1 台设备（结果可能不完整）").arg(count))
-            : (count == 0U ? guiText("未检测到 Rockchip 设备")
-                           : guiText("已连接 %1 台 Rockchip 设备").arg(count)));
-  }
-  QPointer<MainWorkspaceController> guard{this};
+  if (m_statusBar)
+    setGuiStatus(m_statusBar, result.error ? guiText("设备扫描失败") : guiText("设备列表已更新"));
+  if (!guard) return;
   emit devicesChanged(result);
   if (guard == nullptr)
     return;
-  handleDownloadDeviceChanged();
-  if (guard == nullptr)
-    return;
-  handleDeviceSelectionChanged();
+  updateSelectedDevice(previousPort != nextPort || identityChanged);
 }
 
-void MainWorkspaceController::handleDeviceSelectionChanged() {
-  if (m_devicePage == nullptr)
+void MainWorkspaceController::refreshDeviceStatus() {
+  if (m_deviceStatus)
+    m_deviceStatus->setDevices(m_lastScanResult, selectedPortPath(), m_disconnectedPort);
+}
+
+void MainWorkspaceController::selectDevice(const QString &port) {
+  // 禁用控件之外也验证请求，拒绝程序化信号在任务中切换烧录目标。
+  if (m_shuttingDown || usbOperationRunning() || !m_viewModel || m_viewModel->busy() ||
+      (!port.isEmpty() && !findDevice(m_lastScanResult, port))) {
+    refreshDeviceStatus();
     return;
-  const QString port = m_devicePage->selectedPortPath();
-  const bool changed =
-      m_viewModel != nullptr && m_viewModel->selectedPortPath() != port;
-  QPointer<MainWorkspaceController> guard{this};
-  if (m_viewModel != nullptr) {
-    m_viewModel->setSelectedPortPath(port);
-    if (guard == nullptr)
-      return;
   }
+  const bool changed = selectedPortPath() != port;
+  m_requireDeviceSelection = true;
+  m_disconnectedPort.clear();
+  QPointer<MainWorkspaceController> guard{this};
+  m_viewModel->setSelectedPortPath(port);
+  if (!guard) return;
+  refreshDeviceStatus();
+  updateSelectedDevice(changed);
+}
+
+void MainWorkspaceController::updateSelectedDevice(bool changed) {
+  const QString port = selectedPortPath();
+  QPointer<MainWorkspaceController> guard{this};
   if (changed) {
+    m_preparedDownload.reset();
+    m_preparedUpgrade.reset();
+    if (m_upgradePage)
+      m_upgradePage->setPlanPreview({});
     clearDeviceInspection();
     if (guard == nullptr)
       return;
@@ -982,14 +912,11 @@ void MainWorkspaceController::handleDeviceSelectionChanged() {
     if (guard == nullptr)
       return;
   }
-  if (!port.isEmpty()) {
-    syncDownloadDeviceFromTable();
-    if (guard == nullptr)
-      return;
-  }
-  if (port.isEmpty()) {
+  handleDownloadDeviceChanged();
+  if (!guard) return;
+  if (m_devicePage && port.isEmpty()) {
     m_devicePage->setInspection(guiText("请选择 Loader 设备"));
-  } else if (!selectedDeviceManageable()) {
+  } else if (m_devicePage && !selectedDeviceManageable()) {
     m_devicePage->setInspection(guiText("当前模式不支持详情与分区操作"));
   }
   updateDownloadControls();
@@ -1018,7 +945,7 @@ void MainWorkspaceController::clearDeviceInspection() {
 }
 
 void MainWorkspaceController::inspectSelectedDevice() {
-  if (m_devicePage == nullptr || usbOperationRunning())
+  if (m_devicePage == nullptr || usbOperationRunning() || !selectedDeviceManageable())
     return;
   const QString port = selectedPortPath();
   if (port.isEmpty())
@@ -1775,33 +1702,13 @@ void MainWorkspaceController::updateUpgradeControls() {
                              !cancellation->load());
 }
 
-void MainWorkspaceController::syncDownloadDeviceFromTable() {
-  if (m_downloadPage == nullptr || m_devicePage == nullptr)
-    return;
-  const int index = m_downloadPage->deviceCombo()->findData(selectedPortPath());
-  if (index < 0 || index == m_downloadPage->deviceCombo()->currentIndex())
-    return;
-  const QSignalBlocker blocker{m_downloadPage->deviceCombo()};
-  m_downloadPage->deviceCombo()->setCurrentIndex(index);
-  handleDownloadDeviceChanged();
-}
-
-void MainWorkspaceController::syncDeviceTableFromDownload() {
-  if (m_downloadPage != nullptr && m_devicePage != nullptr) {
-    m_devicePage->selectPort(downloadPortPath());
-  }
-}
-
 void MainWorkspaceController::handleDownloadDeviceChanged() {
   if (m_downloadPage == nullptr)
     return;
   QPointer<MainWorkspaceController> guard{this};
-  syncDeviceTableFromDownload();
-  if (guard == nullptr)
-    return;
   if (m_downloadPage->layoutCombo()->currentIndex() == 0 &&
       m_viewModel != nullptr &&
-      m_viewModel->downloadLayoutPort() != downloadPortPath()) {
+      m_viewModel->downloadLayoutPort() != selectedPortPath()) {
     m_downloadLayout.reset();
     QPointer<MainWorkspaceController> guard{this};
     m_viewModel->setDownloadLayoutPort({});
@@ -1835,7 +1742,7 @@ void MainWorkspaceController::handleDownloadLayoutChanged() {
     setGuiText(m_downloadPage->layoutPathEdit(), "text", {});
   } else if (m_devicePartitions.has_value() &&
              QString::fromStdString(m_devicePartitions->device.portPath) ==
-                 downloadPortPath()) {
+                 selectedPortPath()) {
     QPointer<MainWorkspaceController> guard{this};
     setDevicePartitionTable(&*m_devicePartitions);
     if (guard == nullptr)
@@ -1861,6 +1768,7 @@ void MainWorkspaceController::handleDownloadLayoutChanged() {
 void MainWorkspaceController::handleDownloadPlanChanged() {
   if (m_downloadPage == nullptr)
     return;
+  m_preserveDownloadDraft = true;
   for (const auto &choice : m_downloadPage->planChoices()) {
     const std::string key = choice.target.toStdString();
     m_downloadSelections.insert_or_assign(key, choice.selected);
@@ -1898,7 +1806,7 @@ void MainWorkspaceController::loadDownloadParameter(const QString &path) {
     m_downloadPage->layoutCombo()->setCurrentIndex(1);
   }
   m_downloadParameterPath = parameterPath;
-  m_downloadDraftRestored = false;
+  m_preserveDownloadDraft = false;
   emit preferencesChanged();
   m_downloadLayout =
       std::get<zzrk::image::RockchipParameterLayout>(std::move(parsed));
@@ -1946,7 +1854,7 @@ void MainWorkspaceController::loadDownloadDirectory(const QString &path) {
     return;
   }
   m_downloadDirectoryPath = filesystemPath(directory.absolutePath());
-  m_downloadDraftRestored = false;
+  m_preserveDownloadDraft = false;
   emit preferencesChanged();
   setGuiText(m_downloadPage->directoryEdit(), "text", directory.absolutePath());
   matchDownloadDirectory();
@@ -2161,8 +2069,10 @@ void MainWorkspaceController::chooseSelectedDownloadImage() {
           : guiText("分区镜像 (*.img *.bin);;所有文件 (*)"),
       target == "Loader" ? QStringLiteral("loader")
                          : QStringLiteral("downloadImage"));
-  if (!path.isEmpty())
+  if (!path.isEmpty()) {
+    m_preserveDownloadDraft = true;
     assignDownloadImage(target, filesystemPath(path));
+  }
 }
 
 void MainWorkspaceController::clearSelectedDownloadImage() {
@@ -2204,7 +2114,7 @@ MainWorkspaceController::imageDownloadPrepareRequest() const {
   } else if (m_downloadLayout.has_value()) {
     request.devicePartitions = m_downloadLayout->partitions;
     if (m_devicePartitions.has_value() && m_viewModel != nullptr &&
-        m_viewModel->downloadLayoutPort() == downloadPortPath()) {
+        m_viewModel->downloadLayoutPort() == selectedPortPath()) {
       request.deviceSectors = m_devicePartitions->deviceSectors;
     }
   }
@@ -2238,9 +2148,10 @@ MainWorkspaceController::imageDownloadPrepareRequest() const {
 
 void MainWorkspaceController::startImageDownload() {
   if (m_downloadPage == nullptr || m_downloadPrepareWatcher.isRunning() ||
-      m_imageDownloadWatcher.isRunning() || usbOperationRunning())
+      m_imageDownloadWatcher.isRunning() || usbOperationRunning() ||
+      !selectedDeviceFlashable())
     return;
-  const QString port = downloadPortPath();
+  const QString port = selectedPortPath();
   const auto request = imageDownloadPrepareRequest();
   if (port.isEmpty() || !request.has_value())
     return;
@@ -2277,6 +2188,7 @@ void MainWorkspaceController::startImageDownload() {
   m_downloadPage->setProgress(0, 0, true, true);
   m_downloadPage->setStatus(guiText("正在检查镜像并计算 MD5..."));
   const auto backend = m_backend;
+  m_operationBusy = true;
   m_downloadPrepareWatcher.setFuture(
       QtConcurrent::run([backend, request = *request] {
         try {
@@ -2296,6 +2208,8 @@ void MainWorkspaceController::handleDownloadPrepareFinished() {
   if (m_shuttingDown || m_downloadPage == nullptr)
     return;
   auto result = m_downloadPrepareWatcher.result();
+  // 准备与执行共用目标锁；只在本槽内交接，期间不处理新的用户事件。
+  m_operationBusy = false;
   if (const auto *error =
           std::get_if<zzrk::workflow::ImageDownloadError>(&result)) {
     m_downloadPage->setProgress(0, 0);
@@ -2325,6 +2239,7 @@ void MainWorkspaceController::handleDownloadPrepareFinished() {
   const auto cancellation =
       m_viewModel != nullptr ? m_viewModel->downloadCancellation() : nullptr;
   if (!cancellation) {
+    updateDownloadControls();
     emit imageDownloadCompleted(false);
     return;
   }
@@ -2334,6 +2249,7 @@ void MainWorkspaceController::handleDownloadPrepareFinished() {
   const auto backend = m_backend;
   const auto request = m_pendingDownloadRequest;
   QPointer<MainWorkspaceController> guard{this};
+  m_operationBusy = true;
   m_imageDownloadWatcher.setFuture(QtConcurrent::run(
       [guard, backend, request, prepared, cancellation]() mutable {
         const auto progress =
@@ -2455,6 +2371,7 @@ void MainWorkspaceController::handleImageDownloadFinished() {
       dialogs::notify(m_downloadPage, guiText("下载完成"), message);
   }
   m_preparedDownload.reset();
+  m_operationBusy = false;
   QPointer<MainWorkspaceController> guard{this};
   updateDownloadControls();
   if (guard == nullptr)
@@ -2479,14 +2396,14 @@ void MainWorkspaceController::updateDownloadControls() {
     return;
   const auto request = imageDownloadPrepareRequest();
   bool maskromHasLoader = true;
-  if (m_downloadPage->selectedDeviceMode() ==
-      static_cast<int>(zzrk::transport::DeviceMode::Maskrom)) {
+  const auto *device = findDevice(m_lastScanResult, selectedPortPath());
+  if (device && device->mode == zzrk::transport::DeviceMode::Maskrom) {
     maskromHasLoader = request.has_value() && !request->loaderPath.empty();
   }
   m_downloadPage->setBusy(busy,
-                          !downloadPortPath().isEmpty() &&
+                          selectedDeviceFlashable() &&
                               request.has_value() && maskromHasLoader,
-                          running);
+                          running, selectedDeviceManageable());
   if (m_devicePage != nullptr)
     m_devicePage->setBusy(busy, selectedDeviceManageable());
   if (m_refreshButton != nullptr)
@@ -2515,7 +2432,7 @@ void MainWorkspaceController::setDevicePartitionTable(
   const QString port = QString::fromStdString(partitions->device.portPath);
   if (m_downloadPage == nullptr ||
       m_downloadPage->layoutCombo()->currentIndex() != 0 ||
-      port != downloadPortPath())
+      port != selectedPortPath())
     return;
   zzrk::image::RockchipParameterLayout layout{};
   layout.model = "device-gpt";
@@ -2537,12 +2454,14 @@ void MainWorkspaceController::setDevicePartitionTable(
   rebuildDownloadTable();
   if (guard == nullptr)
     return;
-  if (m_downloadDraftRestored)
+  if (m_preserveDownloadDraft)
     revalidateDownloadDraft();
   else
     matchDownloadDirectory();
   if (guard == nullptr)
     return;
+  // 之后的目标切换和重新枚举只重新校验草稿，不重新自动匹配覆盖用户选择。
+  m_preserveDownloadDraft = true;
   m_downloadPage->setStatus(
       guiText("已读取设备 GPT，共 %1 个分区")
           .arg(static_cast<qulonglong>(m_downloadLayout->partitions.size())));
@@ -2609,7 +2528,7 @@ void MainWorkspaceController::shutdown() noexcept {
 }
 
 bool MainWorkspaceController::usbOperationRunning() const noexcept {
-  return m_scanWatcher.isRunning() || m_downloadPrepareWatcher.isRunning() ||
+  return m_operationBusy || m_scanWatcher.isRunning() || m_downloadPrepareWatcher.isRunning() ||
          m_imageDownloadWatcher.isRunning() ||
          m_inspectionWatcher.isRunning() ||
          m_partitionTableWatcher.isRunning() ||
@@ -2620,11 +2539,6 @@ bool MainWorkspaceController::usbOperationRunning() const noexcept {
 
 QString MainWorkspaceController::selectedPortPath() const {
   return m_viewModel != nullptr ? m_viewModel->selectedPortPath() : QString{};
-}
-
-QString MainWorkspaceController::downloadPortPath() const {
-  return m_downloadPage != nullptr ? m_downloadPage->selectedPortPath()
-                                   : QString{};
 }
 
 bool MainWorkspaceController::selectedDeviceFlashable() const {
@@ -2638,6 +2552,8 @@ bool MainWorkspaceController::selectedDeviceManageable() const {
 }
 
 void MainWorkspaceController::setPagesBusy(const bool busy) {
+  // 异步工作可能已经返回，但完成槽尚未处理；此时也不能切换设备。
+  m_operationBusy = busy;
   QPointer<MainWorkspaceController> guard{this};
   if (m_devicePage != nullptr)
     m_devicePage->setBusy(busy, selectedDeviceManageable());

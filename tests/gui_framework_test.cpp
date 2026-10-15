@@ -468,7 +468,7 @@ bool saveVisualEvidence(ZzPureTools::ZzPureApplication &application,
     themeController->setMode(ZzFluentUI::ZzThemeMode::Light);
     auto empty = std::unique_ptr<zzrk::gui::ImageDownloadPage>(
         zzrk::gui::ImageDownloadPage::buildUi(nullptr));
-    empty->setBusy(false, false, false);
+    empty->setBusy(false, false, false, false);
     empty->resize(980, 740);
     empty->show();
     QApplication::processEvents();
@@ -954,8 +954,7 @@ int runSynchronousShutdownScenario(const QString &scenario) {
             application->beginShutdown();
         },
         Qt::DirectConnection);
-    QMetaObject::invokeMethod(controller, "handleDeviceSelectionChanged",
-                              Qt::DirectConnection);
+    controller->selectDevice({});
   } else if (scenario == QStringLiteral("selectionClearsDeviceGpt")) {
     expect(waitForInitialSelection(),
            "selection GPT shutdown fixture completes its initial scan");
@@ -971,8 +970,7 @@ int runSynchronousShutdownScenario(const QString &scenario) {
             application->beginShutdown();
         },
         Qt::DirectConnection);
-    QMetaObject::invokeMethod(controller, "handleDeviceSelectionChanged",
-                              Qt::DirectConnection);
+    controller->selectDevice({});
   } else if (scenario == QStringLiteral("selectionClearsPartitionTable")) {
     expect(waitForInitialSelection(),
            "selection partition shutdown fixture completes its initial scan");
@@ -988,8 +986,7 @@ int runSynchronousShutdownScenario(const QString &scenario) {
             application->beginShutdown();
         },
         Qt::DirectConnection);
-    QMetaObject::invokeMethod(controller, "handleDeviceSelectionChanged",
-                              Qt::DirectConnection);
+    controller->selectDevice({});
   } else if (scenario == QStringLiteral("devicesChanged")) {
     QObject::connect(
         controller, &zzrk::gui::MainWorkspaceController::devicesChanged,
@@ -1237,7 +1234,7 @@ int main(int argc, char **argv) {
     expect(downloadView->findChild<QProgressBar *>(
                QStringLiteral("operationImageDownloadProgress")) != nullptr,
            "initial page exposes operation download progress");
-    expect(tabs->findChild<QTableWidget *>(QStringLiteral("deviceTable")) !=
+    expect(tabs->findChild<QPushButton *>(QStringLiteral("inspectDeviceButton")) !=
                nullptr,
            "controller adds the device page to the workspace tabs");
 
@@ -1254,8 +1251,7 @@ int main(int argc, char **argv) {
     expect(scanFinished, "controller completes the initial device scan");
     expect(selectedDeviceChanges == 1,
            "initial device selection emits one change");
-    QMetaObject::invokeMethod(controller, "handleDeviceSelectionChanged",
-                              Qt::DirectConnection);
+    controller->selectDevice(controller->selectedPortPath());
     expect(selectedDeviceChanges == 1,
            "unchanged device selection does not emit another change");
     // 初始扫描结束后再开模态窗口，避免提前消费扫描完成信号。

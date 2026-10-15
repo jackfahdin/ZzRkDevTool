@@ -4,27 +4,14 @@
 #include "GuiTranslations.hpp"
 #include "WorkspaceUi.hpp"
 
-#include <QAbstractItemView>
 #include <QGridLayout>
 #include <QHBoxLayout>
-#include <QHeaderView>
 #include <QLabel>
 #include <QPushButton>
-#include <QSignalBlocker>
-#include <QTableWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
-#include <algorithm>
 
 namespace zzrk::gui {
-namespace {
-QTableWidgetItem *item(const QString &text) {
-  auto *value = new QTableWidgetItem(text);
-  value->setFlags(value->flags() & ~Qt::ItemIsEditable);
-  return value;
-}
-} // namespace
-
 DevicePage *DevicePage::buildUi(QWidget *parent) {
   return new DevicePage(parent);
 }
@@ -33,52 +20,7 @@ DevicePage::DevicePage(QWidget *parent) : QWidget(parent) {
   setObjectName(QStringLiteral("devicePage"));
   auto *layout = new QVBoxLayout(this);
   ui::configurePage(this, layout);
-  auto *listCard = ui::card(this);
-  auto *listLayout = new QVBoxLayout(listCard);
-  listLayout->setContentsMargins(ui::CardPadding, ui::CardPadding,
-                                 ui::CardPadding, ui::CardPadding);
-  listLayout->addWidget(ui::sectionTitle(guiText("已连接设备"), listCard));
-  m_table = new QTableWidget(0, ColumnCount, this);
-  m_table->setObjectName(QStringLiteral("deviceTable"));
-  bindGuiTranslation(m_table, [this] {
-    const QSignalBlocker blocker(m_table);
-    const bool sorting = m_table->isSortingEnabled();
-    m_table->setSortingEnabled(false);
-    // 排序后按设备键定位文案，不重建行，保留当前选择和排序。
-    for (int row = 0; row < m_table->rowCount(); ++row) {
-      auto *status = m_table->item(row, StatusColumn);
-      if (!status)
-        continue;
-      const auto found = std::find_if(m_rows.begin(), m_rows.end(),
-                                      [status](const DeviceRow &device) {
-                                        return device.key == status->toolTip();
-                                      });
-      if (found != m_rows.end()) {
-        status->setText(found->status.translated());
-        m_table->item(row, ModeColumn)->setText(found->mode.translated());
-      }
-    }
-    m_table->setSortingEnabled(sorting);
-    m_table->setHorizontalHeaderLabels(
-        {guiText("状态"), guiText("设备模式"), QStringLiteral("VID:PID"),
-         guiText("总线"), guiText("端口路径"), guiText("USB 版本")});
-  });
-  ui::configureTable(m_table);
-  m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-  m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-  m_table->setSelectionMode(QAbstractItemView::SingleSelection);
-  m_table->setShowGrid(false);
-  m_table->setSortingEnabled(true);
-  m_table->verticalHeader()->setVisible(false);
-  auto *header = m_table->horizontalHeader();
-  for (int column = 0; column < ColumnCount; ++column) {
-    header->setSectionResizeMode(column, column == PortColumn
-                                             ? QHeaderView::Stretch
-                                             : QHeaderView::ResizeToContents);
-  }
-  listLayout->addWidget(m_table, 1);
-  layout->addWidget(listCard, 1);
-
+  // 目标设备统一在底部状态栏选择，本页只展示所选设备的详情。
   auto *group = ui::card(this);
   auto *details = new QGridLayout(group);
   details->setContentsMargins(ui::CardPadding, ui::CardPadding, ui::CardPadding,
@@ -157,51 +99,11 @@ DevicePage::DevicePage(QWidget *parent) : QWidget(parent) {
                                                   : Qt::RightArrow);
           });
   layout->addWidget(group);
-  connect(m_table, &QTableWidget::itemSelectionChanged, this,
-          &DevicePage::selectionChanged);
+  layout->addStretch();
   connect(m_inspectButton, &QPushButton::clicked, this,
           &DevicePage::inspectRequested);
 }
 
-QString DevicePage::selectedPortPath() const {
-  const int row = m_table->currentRow();
-  const auto *value = row < 0 ? nullptr : m_table->item(row, StatusColumn);
-  return value == nullptr ? QString{} : value->data(Qt::UserRole).toString();
-}
-void DevicePage::selectPort(const QString &port) {
-  for (int row = 0; row < m_table->rowCount(); ++row) {
-    const auto *value = m_table->item(row, StatusColumn);
-    if (value != nullptr && value->data(Qt::UserRole).toString() == port) {
-      m_table->selectRow(row);
-      return;
-    }
-  }
-}
-void DevicePage::setDevices(std::vector<DeviceRow> devices) {
-  const QSignalBlocker blocker{m_table};
-  m_rows = devices;
-  const QString selected = selectedPortPath();
-  m_table->setSortingEnabled(false);
-  m_table->clearContents();
-  m_table->setRowCount(static_cast<int>(devices.size()));
-  int row = 0;
-  for (const auto &device : devices) {
-    auto *status = item(device.status.translated());
-    status->setData(Qt::UserRole, device.portPath);
-    status->setToolTip(device.key);
-    m_table->setItem(row, StatusColumn, status);
-    m_table->setItem(row, ModeColumn, item(device.mode.translated()));
-    m_table->setItem(row, DeviceIdColumn, item(device.deviceId));
-    m_table->setItem(row, BusColumn, item(device.bus));
-    m_table->setItem(row, PortColumn, item(device.portPath));
-    m_table->setItem(row, UsbVersionColumn, item(device.usbVersion));
-    ++row;
-  }
-  m_table->setSortingEnabled(true);
-  selectPort(selected);
-  if (m_table->currentRow() < 0 && m_table->rowCount() > 0)
-    m_table->selectRow(0);
-}
 void DevicePage::setInspection(const GuiText &status, const GuiText &chipInfo,
                                const GuiText &capability,
                                const GuiText &flashId, const GuiText &capacity,
@@ -219,7 +121,6 @@ void DevicePage::setInspection(const GuiText &status, const GuiText &chipInfo,
              usbInterface.isEmpty() ? GuiText("-") : usbInterface);
 }
 void DevicePage::setBusy(const bool busy, const bool canInspect) {
-  m_table->setEnabled(!busy);
   m_inspectButton->setEnabled(!busy && canInspect);
 }
 

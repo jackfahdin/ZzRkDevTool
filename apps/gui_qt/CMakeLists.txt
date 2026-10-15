@@ -25,6 +25,8 @@ qt_add_library(
     GuiSettings.hpp
     GuiAppearanceSettings.cpp
     GuiAppearanceSettings.hpp
+    GuiDeviceStatusBar.cpp
+    GuiDeviceStatusBar.hpp
     GuiTranslations.cpp
     GuiTranslations.hpp
     SettingsLocationDialog.cpp

@@ -3,6 +3,14 @@
 <TS version="2.1" language="en" sourcelanguage="zh_CN">
   <context>
     <name>ZzRkDevTool</name>
+    <message><source>操作状态</source><translation>Operation status</translation></message>
+    <message><source>请选择设备</source><translation>Select device</translation></message>
+    <message><source>设备 %1 已断开，请重新选择</source><translation>Device %1 disconnected; select a target</translation></message>
+    <message><source>已连接 %1 台设备，请选择目标</source><translation>%1 devices connected; select a target</translation></message>
+    <message><source>扫描结果不完整</source><translation>Incomplete scan results</translation></message>
+    <message><source>热插拔不可用，请手动刷新</source><translation>Hotplug unavailable; refresh manually</translation></message>
+    <message><source>设备列表已更新</source><translation>Device list updated</translation></message>
+    <message><source>镜像与分区布局</source><translation>Images and partition layout</translation></message>
     <message><source>字体</source><translation>Font</translation></message>
     <message><source>字号</source><translation>Font size</translation></message>
     <message><source>高亮颜色</source><translation>Accent color</translation></message>

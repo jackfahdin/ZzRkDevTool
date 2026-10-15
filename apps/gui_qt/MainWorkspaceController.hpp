@@ -40,6 +40,7 @@ class FullUpgradePage;
 class ImageDownloadPage;
 class PartitionPage;
 class GuiSettingsStore;
+class GuiDeviceStatusBar;
 
 /**
  * @brief 控制器销毁后仍可读取的关闭生命周期状态。
@@ -111,7 +112,7 @@ public:
 
   [[nodiscard]] bool usbOperationRunning() const noexcept;
   [[nodiscard]] QString selectedPortPath() const;
-  [[nodiscard]] QString downloadPortPath() const;
+  void selectDevice(const QString &port);
   [[nodiscard]] bool selectedDeviceFlashable() const;
   [[nodiscard]] bool selectedDeviceManageable() const;
   void setPagesBusy(bool busy);
@@ -148,7 +149,6 @@ signals:
 
 private slots:
   void handleScanFinished();
-  void handleDeviceSelectionChanged();
   void inspectSelectedDevice();
   void handleInspectionFinished();
   void handlePartitionTableFinished();
@@ -179,8 +179,8 @@ private:
   void applyScanResult(const zzrk::transport::ScanResult &result);
   void startMonitoring();
   void clearDeviceInspection();
-  void syncDownloadDeviceFromTable();
-  void syncDeviceTableFromDownload();
+  void updateSelectedDevice(bool changed);
+  void refreshDeviceStatus();
   void matchDownloadDirectory();
   void assignDownloadImage(const std::string &target,
                            const std::filesystem::path &path,
@@ -224,12 +224,16 @@ private:
   std::unique_ptr<ZzPureTools::ZzPageInstance> m_partitionPageInstance;
   ZzFluentUI::ZzTabWidget *m_tabs = nullptr;
   QStatusBar *m_statusBar = nullptr;
+  GuiDeviceStatusBar *m_deviceStatus = nullptr;
   QLabel *m_connectionText = nullptr;
   QToolButton *m_refreshButton = nullptr;
   QLabel *m_lastScanText = nullptr;
   QTimer *m_hotplugDebounceTimer = nullptr;
   zzrk::transport::ScanResult m_lastScanResult;
   QString m_deviceMonitoringError;
+  QString m_disconnectedPort;
+  bool m_requireDeviceSelection = false;
+  bool m_operationBusy = false;
   GuiText m_partitionTableStatus{guiText("尚未读取分区表")};
   bool m_hotplugRefreshPending = false;
   bool m_showModalDialogs = true;
@@ -253,7 +257,7 @@ private:
   std::unordered_map<std::string, bool> m_downloadVerifications;
   std::unordered_set<std::string> m_validDownloadImages;
   std::shared_ptr<GuiSettingsStore> m_settings;
-  bool m_downloadDraftRestored = false;
+  bool m_preserveDownloadDraft = false;
 };
 
 } // namespace zzrk::gui

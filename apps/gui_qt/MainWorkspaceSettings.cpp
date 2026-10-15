@@ -176,7 +176,7 @@ void MainWorkspaceController::restoreSettings() {
     for (auto it = images.cbegin(); it != images.cend(); ++it)
       assignDownloadImage(it.key().toStdString(),
                           settingsPath(it.value().toString()), false, false);
-    m_downloadDraftRestored = !images.isEmpty();
+    m_preserveDownloadDraft = !images.isEmpty();
     const auto selections =
         m_settings->value(QStringLiteral("download/selections")).toMap();
     for (auto it = selections.cbegin(); it != selections.cend(); ++it)
