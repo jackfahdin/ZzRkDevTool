@@ -1156,8 +1156,26 @@ int main(int argc, char **argv) {
            "framework window initially includes the download page title");
     expect(!window->windowIcon().isNull(),
            "framework window preserves its application icon");
-    expect(window->minimumSize() == QSize(800, 700) &&
-               window->size() == QSize(980, 820),
+    const bool requiredWindowSize = window->minimumSize() == QSize(800, 700) &&
+                                    window->size() == QSize(980, 820);
+    if (!requiredWindowSize) {
+      const auto sizeText = [](const QSize &size) {
+        return QStringLiteral("%1x%2").arg(size.width()).arg(size.height());
+      };
+      // 构建器已显示过窗口；保留原断言并记录原生窗口和屏幕的实际约束。
+      std::cerr << "Window sizing: actual="
+                << sizeText(window->size()).toStdString()
+                << " minimum=" << sizeText(window->minimumSize()).toStdString()
+                << " normal="
+                << sizeText(window->normalGeometry().size()).toStdString()
+                << " frame="
+                << sizeText(window->frameGeometry().size()).toStdString()
+                << " screen="
+                << sizeText(window->screen()->availableGeometry().size())
+                       .toStdString()
+                << '\n';
+    }
+    expect(requiredWindowSize,
            "framework window uses the required minimum and initial sizes");
     expect(qobject_cast<ZzFluentUI::ZzFluentTitleBar *>(window->menuWidget()) ==
                window->titleBar(),
