@@ -1253,6 +1253,9 @@ zzrk_status zzrk_read_partitions(const char* port_path,
     return ZZRK_OK;
 }
 
+} // extern "C"
+
+// 内部回调适配器返回 C++ 类型，必须使用 C++ 链接，不能包含在 C ABI 中。
 namespace {
 
 zzrk_status runPartitionOperation(
@@ -1274,11 +1277,6 @@ zzrk_status runPartitionOperation(
     out_outcome->verified = success.verified;
     return ZZRK_OK;
 }
-
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4190)
-#endif
 
 [[nodiscard]] workflow::PartitionOperationProgressCallback
 makePartitionProgress(const zzrk_partition_progress_fn progress_fn,
@@ -1308,10 +1306,6 @@ makePartitionCancellation(const zzrk_cancellation* cancellation)
     return [flag] { return flag->load(std::memory_order_relaxed); };
 }
 
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
-
 [[nodiscard]] bool validPartitionArgs(const char* port_path,
                                       const char* partition,
                                       zzrk_partition_outcome* out_outcome,
@@ -1336,6 +1330,8 @@ makePartitionCancellation(const zzrk_cancellation* cancellation)
 }
 
 } // namespace
+
+extern "C" {
 
 zzrk_status zzrk_read_partition(
     const char* port_path, const char* partition, const char* output_path,
