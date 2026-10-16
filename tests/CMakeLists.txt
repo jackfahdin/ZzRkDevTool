@@ -195,12 +195,24 @@ if(TARGET zzrk_ffi)
     add_test(NAME ffi_smoke COMMAND ffi_smoke_test)
 endif()
 
+# QWindowKit 的 macOS 后端依赖真实 Cocoa 窗口；offscreen 仅用于其他平台。
+# 原生 GUI 测试共用一把资源锁，避免多个进程争抢菜单、焦点与模态窗口。
+function(zzrk_configure_gui_test test_name)
+    if(APPLE)
+        set_tests_properties(${test_name} PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=cocoa"
+            RESOURCE_LOCK zzrk_cocoa_gui
+        )
+    else()
+        set_tests_properties(${test_name} PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        )
+    endif()
+endfunction()
+
 if(TARGET ZzRkDevTool)
     add_test(NAME gui_smoke COMMAND ZzRkDevTool --smoke-test)
-    set_tests_properties(
-        gui_smoke
-        PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-    )
+    zzrk_configure_gui_test(gui_smoke)
 endif()
 
 if(TARGET zzrk_gui_support)
@@ -226,10 +238,7 @@ if(TARGET zzrk_gui_support)
                 zzrk_project_warnings
         )
         add_test(NAME "${test_name}" COMMAND "${test_name}_test")
-        set_tests_properties(
-            "${test_name}"
-            PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-        )
+        zzrk_configure_gui_test("${test_name}")
     endfunction()
 
     zzrk_add_gui_test(gui_framework gui_framework_test.cpp)
@@ -242,12 +251,13 @@ if(TARGET zzrk_gui_support)
     zzrk_add_gui_test(gui_device_status gui_device_status_test.cpp)
     set_tests_properties(gui_device_status PROPERTIES TIMEOUT 20)
     add_test(NAME gui_device_status_single COMMAND gui_device_status_test --single)
-    set_tests_properties(gui_device_status_single PROPERTIES TIMEOUT 20 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    set_tests_properties(gui_device_status_single PROPERTIES TIMEOUT 20)
+    zzrk_configure_gui_test(gui_device_status_single)
     set_tests_properties(gui_appearance PROPERTIES TIMEOUT 30)
     add_test(NAME gui_settings_english COMMAND gui_settings_restore_test --english)
-    set_tests_properties(gui_settings_english PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    zzrk_configure_gui_test(gui_settings_english)
     add_test(NAME gui_live_language COMMAND gui_settings_restore_test --live)
-    set_tests_properties(gui_live_language PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    zzrk_configure_gui_test(gui_live_language)
     zzrk_add_gui_test(gui_settings_dialog gui_settings_dialog_test.cpp)
     add_executable(zzrk_gui_settings_test gui_settings_test.cpp)
     target_link_libraries(zzrk_gui_settings_test PRIVATE zzrk::gui zzrk_project_warnings)
