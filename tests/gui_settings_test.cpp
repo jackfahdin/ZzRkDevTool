@@ -2,6 +2,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QSettings>
 #include <QTemporaryDir>
@@ -20,10 +21,8 @@ void writeFile(const QString &path, const QByteArray &bytes) {
   expect(file.open(QIODevice::WriteOnly), "fixture opens");
   expect(file.write(bytes) == bytes.size(), "fixture writes");
 }
-} // namespace
-int main(int argc, char **argv) {
-  QCoreApplication app(argc, argv);
-  QTemporaryDir temp;
+void runSettingsTests(const QString &root) {
+  QTemporaryDir temp(root + "/settings-XXXXXX");
   const QString user = temp.filePath("user"),
                 application = temp.filePath("app"),
                 custom = temp.filePath("custom");
@@ -33,6 +32,8 @@ int main(int argc, char **argv) {
   expect(!QFile::exists(user + "/settings.ini"), "first run writes nothing");
   expect(store.initialize(GuiSettingsLocation::User).hasValue(),
          "initialize user location");
+  expect(store.directory() == QFileInfo(user).canonicalFilePath(),
+         "created user location uses physical directory");
   const QVariantMap draft{{"boot", "/tmp/镜像.img"}, {"enabled", true}};
   store.setValue("draft/files", draft);
   store.setValue("appearance/theme", "dark");
@@ -59,7 +60,8 @@ int main(int argc, char **argv) {
   expect(QFile::exists(user + "/settings.ini"), "migration retains source");
   GuiSettingsStore migrated(user, application);
   found = migrated.locate();
-  expect(found && found.value() && migrated.directory() == custom,
+  expect(found && found.value() &&
+             migrated.directory() == QFileInfo(custom).canonicalFilePath(),
          "locator switches after save");
   expect(migrated.value("draft/files").toMap() == draft,
          "migration preserves drafts");
@@ -67,14 +69,14 @@ int main(int argc, char **argv) {
   expect(!migrated.relocate(GuiSettingsLocation::Custom,
                             temp.filePath("blocked/child")),
          "target failure reported");
-  expect(migrated.directory() == custom,
+  expect(migrated.directory() == QFileInfo(custom).canonicalFilePath(),
          "target failure retains active location");
   expect(!migrated.relocate(GuiSettingsLocation::Custom, "relative"),
          "custom requires absolute path");
   expect(!migrated.relocate(GuiSettingsLocation::User),
          "existing destination rejected");
   expect(migrated.reset().hasValue(), "reset saves defaults");
-  expect(migrated.directory() == custom &&
+  expect(migrated.directory() == QFileInfo(custom).canonicalFilePath() &&
              !migrated.value("draft/files").isValid(),
          "reset keeps directory but clears draft");
   migrated.setValue("appearance/theme", "broken");
@@ -89,7 +91,8 @@ int main(int argc, char **argv) {
          "move portable application directory");
   GuiSettingsStore portable(user, moved);
   found = portable.locate();
-  expect(found && found.value() && portable.directory() == moved,
+  expect(found && found.value() &&
+             portable.directory() == QFileInfo(moved).canonicalFilePath(),
          "portable marker follows moved application and beats stale locator");
   const QString bad = temp.filePath("bad");
   QDir().mkpath(bad);
@@ -109,13 +112,13 @@ int main(int argc, char **argv) {
   const QString failed = temp.filePath("failed");
   expect(!portable.relocate(GuiSettingsLocation::Custom, failed),
          "locator commit failure reported");
-  expect(portable.directory() == moved &&
+  expect(portable.directory() == QFileInfo(moved).canonicalFilePath() &&
              !QFile::exists(failed + "/settings.ini"),
          "locator failure rolls back target and active location");
   writeFile(moved + "/settings.ini", "schemaVersion=99\ndata=unused\n");
   expect(!portable.sync(), "external future schema prevents overwrite by sync");
   // 捕获初始化已有目录时误重置配置，以及读取异常枚举不归一化的回归。
-  QTemporaryDir previous;
+  QTemporaryDir previous(root + "/previous-XXXXXX");
   GuiSettingsStore original(previous.filePath("user"),
                             previous.filePath("app"));
   expect(
@@ -147,12 +150,16 @@ int main(int argc, char **argv) {
              .hasValue(),
          "same canonical directory migration is a no-op");
   // 同一物理目录切换模式也必须更新便携标记，不能误当迁移无操作。
-  QTemporaryDir modes;
+  QTemporaryDir modes(root + "/modes-XXXXXX");
   const QString modeApp = modes.filePath("app"),
                 modeUser = modes.filePath("user");
   GuiSettingsStore switching(modeUser, modeApp);
   expect(switching.initialize(GuiSettingsLocation::Custom, modeApp).hasValue(),
          "custom application folder initialized");
+  const QString physicalApp = QFileInfo(modeApp).canonicalFilePath();
+  expect(switching.directory() == physicalApp &&
+             switching.applicationDirectory() == physicalApp,
+         "application path stays physical after custom folder creation");
   switching.setValue("appearance/theme", "dark");
   expect(switching.sync().hasValue(), "same folder draft saved");
   expect(switching.relocate(GuiSettingsLocation::Application).hasValue(),
@@ -162,7 +169,8 @@ int main(int argc, char **argv) {
   GuiSettingsStore inPortable(modeUser, modeApp);
   auto modeLocated = inPortable.locate();
   expect(modeLocated && modeLocated.value() &&
-             inPortable.location() == GuiSettingsLocation::Application,
+             inPortable.location() == GuiSettingsLocation::Application &&
+             inPortable.directory() == switching.directory(),
          "restart uses portable mode after same-folder switch");
   expect(switching.relocate(GuiSettingsLocation::Custom, modeApp).hasValue(),
          "same folder switches back to custom");
@@ -174,7 +182,7 @@ int main(int argc, char **argv) {
              inCustom.location() == GuiSettingsLocation::Custom &&
              inCustom.value("appearance/theme").toString() == "dark",
          "restart retains custom mode and data after same-folder switch");
-  QTemporaryDir blockedUser;
+  QTemporaryDir blockedUser(root + "/blocked-user-XXXXXX");
   writeFile(blockedUser.filePath("user-file"), "blocked");
   GuiSettingsStore fullyPortable(blockedUser.filePath("user-file/child"),
                                  blockedUser.filePath("app"));
@@ -192,7 +200,7 @@ int main(int argc, char **argv) {
   expect(!switching.sync(), "missing active config refuses sync");
   expect(!QDir(modeApp).exists(),
          "sync does not recreate missing active directory");
-  QTemporaryDir markerFailure;
+  QTemporaryDir markerFailure(root + "/marker-failure-XXXXXX");
   const QString failureApp = markerFailure.filePath("app"),
                 failureUser = markerFailure.filePath("user");
   GuiSettingsStore markerStore(failureUser, failureApp);
@@ -204,7 +212,7 @@ int main(int argc, char **argv) {
   expect(!markerStore.relocate(GuiSettingsLocation::Application),
          "portable marker commit failure reported");
   expect(
-      markerStore.directory() == failureUser &&
+      markerStore.directory() == QFileInfo(failureUser).canonicalFilePath() &&
           !QFile::exists(failureApp + "/settings.ini"),
       "failed portable marker retains source and removes staged destination");
   {
@@ -215,15 +223,32 @@ int main(int argc, char **argv) {
   const QString rejected = markerFailure.filePath("custom");
   expect(!markerStore.relocate(GuiSettingsLocation::Custom, rejected),
          "marker removal failure reported");
-  expect(markerStore.directory() == failureUser &&
+  expect(markerStore.directory() == QFileInfo(failureUser).canonicalFilePath() &&
              !QFile::exists(rejected + "/settings.ini"),
          "successful locator rollback keeps source and removes unused "
          "destination");
   {
     QSettings locator(failureUser + "/startup.ini", QSettings::IniFormat);
     expect(locator.value("location").toString() == "user" &&
-               locator.value("directory").toString() == failureUser,
+               locator.value("directory").toString() ==
+                   QFileInfo(failureUser).canonicalFilePath(),
            "marker removal failure restores previous locator");
   }
+}
+} // namespace
+int main(int argc, char **argv) {
+  QCoreApplication app(argc, argv);
+  QTemporaryDir root;
+  expect(root.isValid(), "test root created");
+  runSettingsTests(root.path());
+#ifdef Q_OS_UNIX
+  // 模拟 macOS /var → /private/var：所有尚未创建的设置目录都经过别名。
+  QTemporaryDir aliases;
+  const QString alias = aliases.filePath("alias");
+  const bool linked = QFile::link(root.path(), alias);
+  expect(linked, "directory symlink fixture created");
+  if (linked)
+    runSettingsTests(alias);
+#endif
   return failures;
 }

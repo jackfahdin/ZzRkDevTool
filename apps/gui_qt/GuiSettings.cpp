@@ -41,9 +41,21 @@ QVariantMap defaults() {
           {"download/layout", "device"}};
 }
 QString cleanDirectory(const QString &path) {
-  const QFileInfo info(path);
-  return info.exists() ? info.canonicalFilePath()
-                       : QDir::cleanPath(info.absoluteFilePath());
+  QFileInfo info(path);
+  const QString absolute = QDir::cleanPath(info.absoluteFilePath());
+  QStringList missing;
+  // 未创建的目录也解析已有祖先的符号链接，避免创建后路径身份改变。
+  while (!info.exists()) {
+    missing.prepend(info.fileName());
+    const QString parent = info.absolutePath();
+    if (parent == info.absoluteFilePath())
+      return absolute;
+    info.setFile(parent);
+  }
+  const QString physical = info.canonicalFilePath();
+  return physical.isEmpty()
+             ? absolute
+             : QDir::cleanPath(QDir(physical).filePath(missing.join('/')));
 }
 ZzResult<void> writable(const QString &dir) {
   if (!QDir().mkpath(dir))
