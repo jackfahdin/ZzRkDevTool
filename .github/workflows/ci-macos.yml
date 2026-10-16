@@ -52,8 +52,25 @@ jobs:
             -DZZRK_MACOS_CODESIGN_IDENTITY=- \
             -DZZRK_WARNINGS_AS_ERRORS=ON
           cmake --build build/macos-release --parallel 4
-          ctest --test-dir build/macos-release --output-on-failure --parallel 4
+          mkdir -p build/macos-release/diagnostics
+          ctest --test-dir build/macos-release --output-on-failure --parallel 4 \
+            --output-junit "$PWD/build/macos-release/diagnostics/ctest.xml"
           cpack --config build/macos-release/CPackConfig.cmake -G DragNDrop
+      # SegFault 必须保留调用栈，不能只根据 Linux 的通过结果猜测 Cocoa 根因。
+      # 此步骤只收集证据；原测试失败仍使整个 job 失败。
+      - name: 收集 macOS GUI 崩溃回溯
+        if: failure()
+        continue-on-error: true
+        timeout-minutes: 3
+        run: python3 .github/scripts/macos-gui-diagnostics.py build/macos-release
+      - name: 保存失败测试与系统崩溃报告
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-gui-diagnostics
+          path: build/macos-release/diagnostics/
+          if-no-files-found: warn
+          retention-days: 14
       - name: 验证 DMG 内的应用和签名
         run: bash .github/scripts/verify-macos-package.sh
       - uses: actions/upload-artifact@v7

@@ -34,6 +34,7 @@ jobs:
           "$RUNNER_TEMP/ci-tools/actionlint"
           shellcheck .github/scripts/*.sh .github/scripts/tests/*.sh
           bash .github/scripts/tests/publish-release-test.sh
+          python3 .github/scripts/tests/macos-gui-diagnostics-test.py
 
   portable:
     name: ${{ matrix.name }}

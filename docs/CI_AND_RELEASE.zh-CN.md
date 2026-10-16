@@ -16,6 +16,8 @@ Linux 应用只配置、编译并完整测试一次，DEB 和便携 TGZ 均从 `
 
 macOS 窗口框架依赖 Cocoa，GUI 测试使用 `QT_QPA_PLATFORM=cocoa`，通过 CTest 资源锁避免多个原生 GUI 进程同时争抢菜单和焦点。Linux、Windows 继续使用 `offscreen`。Qt 6.12 官方库最低支持 macOS 14.4，部署目标与依赖保持一致。
 
+macOS 测试失败时会上传 `macos-gui-diagnostics` 附件，保留原始 CTest 日志、JUnit 结果及应用的系统崩溃报告，并在 LLDB 下重跑 GUI 冒烟和配置恢复测试，输出全部线程的崩溃调用栈。每个调试进程最多运行 40 秒；调试工具不可用或超时也会记录到日志。该步骤只收集证据，不覆盖或放行原测试失败；Linux 上测试通过也不能替代 Cocoa 的原生验证。
+
 三个应用工作流都监听 `main`、`master` 的 push 和 PR、`v*` 标签的 push，并支持 Actions 页面的手动运行。版本标签必须严格匹配 `vX.Y.Z`，且与被标记提交的 CMake 项目版本一致；不匹配时在准备源码阶段直接失败。`main` 是本仓库当前主分支；如果以后改成其他名称，需要同步修改触发分支、发布 job 条件和发布脚本的分支校验。
 
 Qt 当前统一为 **6.12.0**，可以修改各平台文件中的 `QT_VERSION`。Qt 的公开头文件、私有头文件、库与部署工具必须来自同一套安装。`qtsvg`、`qttools` 在基础桌面归档中，不能填到 aqt 的附加 `modules` 列表；这样可以避免安装阶段报“模块不存在”。Windows 的 MinGW 编译器工具包单独固定为 `tools_mingw1310`，变更 Qt 套件时应再次检查匹配关系。
@@ -110,6 +112,7 @@ Linux/macOS 可用 `./bin/Runner.Listener --version` 查看 Runner 版本，Wind
 actionlint
 shellcheck .github/scripts/*.sh .github/scripts/tests/*.sh
 bash .github/scripts/tests/publish-release-test.sh
+python3 .github/scripts/tests/macos-gui-diagnostics-test.py
 ```
 
 隔离测试模拟 `gh`，覆盖持续构建、标签触发的正式版草稿、后续开发提交、过期持续构建、标签版本不符、来源类型错误、标签缺失或变更、已发布版本、API 故障、附件缺失和首次创建竞争，不会访问 GitHub API 或创建 Release。
