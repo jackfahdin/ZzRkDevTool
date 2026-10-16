@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "GuiTestHarness.hpp"
+#include "FilePickerTestSupport.hpp"
 #include "GuiTranslations.hpp"
 #include "MainWorkspaceController.hpp"
 #include "MainWorkspaceViewModel.hpp"
@@ -10,6 +11,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileDialog>
+#include <QDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -305,8 +307,14 @@ int main(int argc, char **argv) {
     auto *browser = modal ? modal->findChild<QFileDialog *>() : nullptr;
     expect(browser != nullptr, "manual image chooser opens");
     if (browser) {
-      browser->selectFile(custom.fileName());
-      QMetaObject::invokeMethod(browser, "accept", Qt::DirectConnection);
+      const bool ready =
+          gui::test::enterFilePickerPath(browser, custom.fileName());
+      expect(ready, "manual image is ready in the real file model");
+      if (ready)
+        gui::test::filePickerAcceptButton(browser)->click();
+      // 确认失败也必须退出模态循环，输出断言而不是一直等待 CTest 超时。
+      if (modal->isVisible())
+        qobject_cast<QDialog *>(modal)->reject();
     } else if (modal)
       modal->close();
   });
