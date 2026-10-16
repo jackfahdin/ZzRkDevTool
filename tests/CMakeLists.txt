@@ -242,6 +242,9 @@ if(TARGET zzrk_gui_support)
     endfunction()
 
     zzrk_add_gui_test(gui_framework gui_framework_test.cpp)
+    add_test(NAME gui_framework_rollback
+             COMMAND gui_framework_test --workspace-rollback)
+    zzrk_configure_gui_test(gui_framework_rollback)
     zzrk_add_gui_test(gui_test_harness gui_test_harness_test.cpp)
     zzrk_add_gui_test(gui_notice_lifetime gui_notice_lifetime_test.cpp)
     find_package(Qt6 REQUIRED COMPONENTS Test)

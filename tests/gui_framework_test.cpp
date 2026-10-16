@@ -1086,19 +1086,24 @@ int runSynchronousShutdownScenario(const QString &scenario) {
 } // namespace
 
 int main(int argc, char **argv) {
+  if (argc == 2 && QString::fromLocal8Bit(argv[1]) ==
+                       QStringLiteral("--workspace-rollback")) {
+    const auto bootstrap = ZzWindowKit::ZzWindowKitBootstrap::prepare();
+    expect(static_cast<bool>(bootstrap),
+           "WindowKit bootstrap supports rollback fixture");
+    if (!bootstrap)
+      return failures;
+    expectWorkspaceAttachFailureRollsBack();
+    return failures ? 1 : 0;
+  }
   if (argc == 3 && QString::fromLocal8Bit(argv[1]) ==
                        QStringLiteral("--synchronous-shutdown")) {
     return runSynchronousShutdownScenario(QString::fromLocal8Bit(argv[2]));
   }
   const QString executable =
       QFileInfo{QString::fromLocal8Bit(argv[0])}.absoluteFilePath();
-  const auto bootstrap = ZzWindowKit::ZzWindowKitBootstrap::prepare();
-  expect(static_cast<bool>(bootstrap),
-         "WindowKit bootstrap supports rollback fixture");
-  if (!bootstrap)
-    return failures;
-  expectWorkspaceAttachFailureRollsBack();
-
+  // 每个进程只创建一个 QApplication，与 Cocoa 应用的实际生命周期一致。
+  // 回滚场景由独立 CTest 模式覆盖，避免重启进程级原生单例和窗口钩子。
   auto backend = std::make_shared<FrameworkFakeBackend>();
   auto harness = zzrk::gui::test::GuiTestHarness::create(backend);
   expect(harness != nullptr, "GUI test harness creates an application");
