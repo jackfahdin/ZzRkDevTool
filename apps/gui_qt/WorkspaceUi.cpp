@@ -94,24 +94,25 @@ private:
 // 长路径会让通知换行；窗口改变宽度后同步最小高度，防止只保护首行。
 class NoticeSizing final : public QObject {
 public:
-  explicit NoticeSizing(ZzFluentUI::ZzInfoBar *notice)
-      : QObject(notice), m_notice(notice) {
+  explicit NoticeSizing(ZzFluentUI::ZzInfoBar *notice) : QObject(notice) {
     notice->installEventFilter(this);
   }
 
 protected:
   bool eventFilter(QObject *watched, QEvent *event) override {
-    if (m_notice->isOpen() && (event->type() == QEvent::Resize ||
-                               event->type() == QEvent::LayoutRequest)) {
-      const int height = m_notice->heightForWidth(m_notice->width());
-      if (m_notice->minimumHeight() != height)
-        m_notice->setMinimumHeight(height);
+    if (event->type() == QEvent::Resize ||
+        event->type() == QEvent::LayoutRequest) {
+      // QWidget 基类析构仍会发送事件，但此时 ZzInfoBar 私有数据已销毁。
+      // 先筛选事件，再确认派生对象仍然存在；QPointer 无法保护这个阶段。
+      if (auto *notice = qobject_cast<ZzFluentUI::ZzInfoBar *>(watched);
+          notice && notice->isOpen()) {
+        const int height = notice->heightForWidth(notice->width());
+        if (notice->minimumHeight() != height)
+          notice->setMinimumHeight(height);
+      }
     }
     return QObject::eventFilter(watched, event);
   }
-
-private:
-  ZzFluentUI::ZzInfoBar *m_notice;
 };
 
 // Qt 在主题快照通知之后才把新字体传播到子控件；依据表格自己的
