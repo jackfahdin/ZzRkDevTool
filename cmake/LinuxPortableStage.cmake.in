@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: MIT
+# 此脚本也由 CPack 独立加载，使用与根工程一致的策略基线。
+cmake_minimum_required(VERSION 3.25)
+
 # 仅由 CPack 的 TGZ 生成器在安装完成后调用，不操作源码或构建产物。
 if(NOT CPACK_GENERATOR STREQUAL "TGZ" OR NOT IS_DIRECTORY "${CPACK_TEMPORARY_DIRECTORY}/usr")
     message(FATAL_ERROR "Portable layout conversion requires a TGZ staging directory")
