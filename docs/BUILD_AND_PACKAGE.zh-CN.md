@@ -23,7 +23,7 @@ Qt 6.10 及以上使用插件筛选参数；Qt 6.8/6.9 使用默认完整插件�
 - Windows x86_64 TGZ 与 macOS DMG 已建立 CMake/CPack 和 CI 配置，需在对应系统或 CI runner 上完成首次验证。
 - Windows TGZ 尚未正式签名，也不包含 USB 驱动安装程序。
 - macOS CI 产物只使用 ad-hoc 签名，尚未完成 Developer ID 签名和 Apple 公证。
-- macOS GUI 的最低系统版本为 13.3，由 ZzPureTools 要求；macOS 预设和 CI 均显式设置部署目标，避免依赖 CMake 的默认值。
+- 使用 Qt 6.12 官方预编译库时，macOS GUI 的最低系统版本为 14.4；macOS 预设和 CI 均显式设置部署目标。不能只把应用目标降低到框架的 13.3：依赖的 Qt 库也必须支持该版本。参见 [Qt 官方 macOS 支持说明](https://doc.qt.io/qt-6/macos.html#supported-configurations)。
 
 所有命令都应在仓库根目录执行。不要使用 root 或管理员身份运行 ZzRkDevTool 本身；管理员权限只用于安装系统依赖、软件包或 USB 访问规则。
 
