@@ -23,6 +23,23 @@ SPEC.loader.exec_module(DIAGNOSTICS)
 
 
 class CaptureTests(unittest.TestCase):
+    def test_debugs_the_failed_gui_scenarios(self):
+        targets = DIAGNOSTICS.debug_targets(
+            Path("build"), "22:gui_framework\n36:gui_upgrade\n"
+        )
+        self.assertEqual(
+            [(str(executable), arguments) for executable, arguments, _ in targets],
+            [("build/tests/gui_framework_test", []),
+             ("build/tests/gui_upgrade_test", [])],
+        )
+
+    def test_rollback_debugging_keeps_its_process_mode(self):
+        targets = DIAGNOSTICS.debug_targets(
+            Path("build"), "23:gui_framework_rollback\n"
+        )
+        self.assertEqual(targets[0][0], Path("build/tests/gui_framework_test"))
+        self.assertEqual(targets[0][1], ["--workspace-rollback"])
+
     def test_preserves_failure_and_both_output_streams(self):
         with tempfile.TemporaryDirectory() as temporary:
             log = Path(temporary) / "failure.log"

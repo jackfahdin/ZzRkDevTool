@@ -65,6 +65,29 @@ def capture(command, log, timeout=40):
         return status
 
 
+def debug_targets(build, failures):
+    smoke = (build / "apps/gui_qt/ZzRkDevTool.app/Contents/MacOS/ZzRkDevTool",
+             ["--smoke-test"], "gui-smoke-lldb.log")
+    restore = (build / "tests/gui_settings_restore_test", [],
+               "settings-restore-lldb.log")
+    known = {
+        "gui_smoke": smoke,
+        "gui_settings_restore": restore,
+        "gui_framework": (build / "tests/gui_framework_test", [],
+                          "framework-lldb.log"),
+        "gui_framework_rollback": (build / "tests/gui_framework_test",
+                                   ["--workspace-rollback"], "rollback-lldb.log"),
+        "gui_upgrade": (build / "tests/gui_upgrade_test", [], "upgrade-lldb.log"),
+    }
+    selected = []
+    for line in failures.splitlines():
+        name = line.partition(":")[2].strip()
+        if name in known and known[name] not in selected:
+            selected.append(known[name])
+    # 每项最多 40 秒；最多两项，保持现有诊断步骤的总超时预算。
+    return selected[:2] or [smoke, restore]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("build_dir", type=Path)
@@ -82,20 +105,26 @@ def main():
     capture(["sw_vers"], output / "system.log")
     capture(["uname", "-a"], output / "architecture.log")
     os.environ["QT_QPA_PLATFORM"] = "cocoa"
-    # 一个真实应用、一个最小测试：区分公共 Cocoa 崩溃与测试装配问题。
-    targets = (
-        (build / "apps/gui_qt/ZzRkDevTool.app/Contents/MacOS/ZzRkDevTool",
-         ["--smoke-test"], "gui-smoke-lldb.log"),
-        (build / "tests/gui_settings_restore_test", [], "settings-restore-lldb.log"),
-    )
+    # 优先重跑实际失败的场景，避免反复收集已经通过的 smoke/restore。
+    failure_log = output / "LastTestsFailed.log"
+    failures = failure_log.read_text(encoding="utf-8") if failure_log.is_file() else ""
+    targets = debug_targets(build, failures)
     for executable, arguments, name in targets:
         if not executable.is_file():
             print(f"未生成程序，无法收集回溯：{executable}", flush=True)
             continue
         log = output / name
+        geometry_trace = []
+        if name == "framework-lldb.log":
+            # Qt 原生窗口日志保留初始化、几何设置及回写顺序，不放宽尺寸断言。
+            geometry_trace = [
+                "--one-line",
+                "settings set target.env-vars QT_LOGGING_RULES=qt.qpa.window.debug=true",
+            ]
         capture([
             "xcrun", "lldb", "--batch",
             "--one-line", "settings set target.disable-aslr false",
+            *geometry_trace,
             "--one-line", "run",
             "--one-line-on-crash", "thread backtrace all",
             "--one-line-on-crash", "register read",
