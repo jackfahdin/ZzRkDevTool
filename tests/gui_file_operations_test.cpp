@@ -11,6 +11,7 @@
 #include <QFileInfo>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QTabBar>
 #include <QTabWidget>
@@ -143,8 +144,13 @@ int main() {
       const auto index = tree->currentIndex();
       const auto position = tree->visualRect(index).center();
       bool messageHandled = false;
+      int confirmationResult = -1;
+      int originalMessageResult = -1;
+      QString confirmationText;
       QTimer::singleShot(
-          0, picker, [picker, browser, confirmDeletion, &messageHandled] {
+          0, picker, [picker, browser, confirmDeletion, &messageHandled,
+                      &confirmationResult, &originalMessageResult,
+                      &confirmationText] {
             auto *menu =
                 qobject_cast<QMenu *>(QApplication::activePopupWidget());
             auto *remove = browser->findChild<QAction *>("qt_delete_action");
@@ -159,13 +165,32 @@ int main() {
             poll->setInterval(10);
             QObject::connect(
                 poll, &QTimer::timeout, picker,
-                [picker, poll, confirmDeletion] {
+                [picker, browser, poll, confirmDeletion, &confirmationResult,
+                 &originalMessageResult, &confirmationText] {
                   auto *confirmation =
                       qobject_cast<ZzFluentUI::ZzContentDialog *>(
                           QApplication::activeModalWidget());
                   if (!confirmation || confirmation == picker)
                     return;
                   poll->stop();
+                  confirmationText = confirmation->text();
+                  expect(confirmationText.contains("temporary-folder"),
+                         "directory confirmation targets the renamed folder");
+                  QObject::connect(
+                      confirmation, &QDialog::finished, picker,
+                      [confirmation, &confirmationResult] {
+                        confirmationResult =
+                            static_cast<int>(confirmation->dialogResult());
+                      });
+                  // 同时观察桥接后的原始返回码，区分输入、按钮映射和文件系统问题。
+                  auto *original = browser->findChild<QMessageBox *>();
+                  expect(original != nullptr,
+                         "directory confirmation bridges a Qt message box");
+                  if (original)
+                    QObject::connect(original, &QDialog::finished, picker,
+                                     [&originalMessageResult](int result) {
+                                       originalMessageResult = result;
+                                     });
                   auto *button = confirmation->findChild<QPushButton *>(
                       confirmDeletion ? "zzContentDialogPrimaryButton"
                                       : "zzContentDialogCloseButton");
@@ -186,8 +211,43 @@ int main() {
       QApplication::sendEvent(tree->viewport(), &context);
       expect(waitFor([&] { return messageHandled; }),
              "window input completes directory confirmation");
-      expect(QFileInfo::exists(directory) != confirmDeletion,
+      expect(waitFor([&] {
+               return confirmationResult != -1 && originalMessageResult != -1;
+             }),
+             "both confirmation dialogs finish before checking deletion");
+      const bool confirmationMatches =
+          confirmationResult ==
+          static_cast<int>(confirmDeletion
+                               ? ZzFluentUI::ZzContentDialogResult::Primary
+                               : ZzFluentUI::ZzContentDialogResult::Close);
+      const bool originalMessageMatches =
+          originalMessageResult ==
+          (confirmDeletion ? QMessageBox::Yes : QMessageBox::No);
+      expect(confirmationMatches,
+             "window input chooses the intended Fluent confirmation action");
+      expect(originalMessageMatches,
+             "confirmation choice preserves the original Qt return code");
+      // Windows 的 RemoveDirectory 可在句柄关闭前返回成功；等待可见文件状态，
+      // 不把菜单输入返回当作目录已经消失的信号。取消仍必须保留原目录。
+      const bool directoryStateMatches =
+          confirmDeletion
+              ? waitFor([&] { return !QFileInfo::exists(directory); })
+              : QFileInfo::exists(directory);
+      expect(directoryStateMatches,
              "only confirming deletion removes the directory");
+      expect(QFileInfo::exists(fixture.filePath("existing-folder")),
+             "deletion preserves the unselected directory");
+      if (!directoryStateMatches || !confirmationMatches ||
+          !originalMessageMatches) {
+        std::cerr << "Deletion diagnostics: confirm=" << confirmDeletion
+                  << " fluentResult=" << confirmationResult
+                  << " qtResult=" << originalMessageResult
+                  << " path=" << directory.toStdString()
+                  << " exists=" << QFileInfo::exists(directory)
+                  << " selection="
+                  << browser->selectedFiles().join(',').toStdString()
+                  << " prompt=" << confirmationText.toStdString() << '\n';
+      }
       stage = "close browser after deletion";
       expect(QApplication::activeModalWidget() == picker,
              "deletion leaves only the file picker modal");
