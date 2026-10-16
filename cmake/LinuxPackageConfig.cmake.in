@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: MIT
+# CPack 独立执行脚本，不继承根工程的策略；显式启用最低支持版本的策略，
+# 避免 CMake 3.x 按 CMP0012 OLD 将布尔常量 ON 误当作变量名。
+cmake_minimum_required(VERSION 3.25)
+
 # CPack 在每个生成器开始时加载此文件；DEB 沿用系统安装布局。
 if(CPACK_GENERATOR STREQUAL "TGZ")
     if(NOT "@ZZRK_BUNDLE_RUNTIME@")
