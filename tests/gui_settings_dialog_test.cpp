@@ -60,8 +60,11 @@ int main() {
   });
   const bool selected =
       zzrk::gui::chooseSettingsLocation(store, harness->window());
+  // 配置存储会解析已有祖先目录，包括 macOS 的 /var -> /private/var。
+  const auto customDirectory =
+      QFileInfo(fixture.filePath("配置 文件夹")).canonicalFilePath();
   if (!selected || !observedFailure || !QFileInfo(store.filePath()).isFile() ||
-      store.directory() != fixture.filePath("配置 文件夹")) {
+      customDirectory.isEmpty() || store.directory() != customDirectory) {
     std::cerr << "FAIL: first launch validates and saves custom directory\n";
     return 1;
   }
