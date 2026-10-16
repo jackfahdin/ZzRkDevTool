@@ -246,6 +246,13 @@ if(TARGET zzrk_gui_support)
              COMMAND gui_framework_test --workspace-rollback)
     zzrk_configure_gui_test(gui_framework_rollback)
     zzrk_add_gui_test(gui_test_harness gui_test_harness_test.cpp)
+    zzrk_add_gui_test(gui_startup_geometry gui_startup_geometry_test.cpp)
+    add_test(NAME gui_startup_geometry_restored
+             COMMAND gui_startup_geometry_test --restored)
+    zzrk_configure_gui_test(gui_startup_geometry_restored)
+    add_test(NAME gui_startup_geometry_maximized
+             COMMAND gui_startup_geometry_test --restored --maximized)
+    zzrk_configure_gui_test(gui_startup_geometry_maximized)
     zzrk_add_gui_test(gui_notice_lifetime gui_notice_lifetime_test.cpp)
     find_package(Qt6 REQUIRED COMPONENTS Test)
     zzrk_add_gui_test(gui_file_operations gui_file_operations_test.cpp)

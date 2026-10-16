@@ -9,8 +9,10 @@
 
 #include <QObject>
 #include <QPointer>
+#include <QRect>
 
 #include <memory>
+#include <optional>
 class QTimer;
 
 class QWidget;
@@ -75,6 +77,9 @@ private:
   GuiAppearanceSettings *appearance_ = nullptr;
   QTimer *saveTimer_ = nullptr;
   bool restoring_ = false;
+  QSize initialWindowSize_;
+  std::optional<QRect> initialRestoredGeometry_;
+  bool initialWindowShown_ = false;
 };
 
 } // namespace zzrk::gui

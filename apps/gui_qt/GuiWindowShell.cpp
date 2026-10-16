@@ -202,6 +202,7 @@ GuiWindowShell::GuiWindowShell(ZzPureTools::ZzApplicationWindow &window,
                                std::shared_ptr<GuiSettingsStore> settings)
     : QObject(&window), window_(&window), backend_(std::move(backend)),
       showModalDialogs_(showModalDialogs), settings_(std::move(settings)) {
+  initialWindowSize_ = window.size();
   setObjectName(QStringLiteral("guiWindowShell"));
   saveTimer_ = new QTimer(this);
   saveTimer_->setSingleShot(true);
@@ -385,6 +386,20 @@ void GuiWindowShell::scheduleSave() {
 }
 
 bool GuiWindowShell::eventFilter(QObject *watched, QEvent *event) {
+  if (watched == window_ && event->type() == QEvent::Show &&
+      !initialWindowShown_) {
+    initialWindowShown_ = true;
+    // Cocoa/WindowKit 装配期间可能用尚未同步的原生尺寸覆盖隐藏 QWidget。
+    // Show 在 QWidget 标记可见后、原生窗口显示前发出，此时设置会同步到 QWindow。
+    // 只在首次显示应用启动尺寸，避免之后隐藏/显示时覆盖用户调整的大小。
+    const auto state = window_->windowState();
+    if (initialRestoredGeometry_)
+      window_->setGeometry(*initialRestoredGeometry_);
+    else
+      window_->resize(initialWindowSize_);
+    if (window_->windowState() != state)
+      window_->setWindowState(state);
+  }
   if (watched == window_ && event->type() == QEvent::LanguageChange &&
       workspace_) {
     // 固定标签只修改标题，页面实例、当前索引及后台任务保持不变。
@@ -473,6 +488,8 @@ void GuiWindowShell::restorePreferences() {
                                  available.right() - geometry.width() + 1));
     geometry.moveTop(std::clamp(geometry.top(), available.top(),
                                 available.bottom() - geometry.height() + 1));
+    if (!initialWindowShown_)
+      initialRestoredGeometry_ = geometry;
     window_->setGeometry(geometry);
   }
   if (settings_->value(QStringLiteral("window/maximized"), false).toBool())
