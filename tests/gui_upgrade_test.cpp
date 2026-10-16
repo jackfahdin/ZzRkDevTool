@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 
+#include "FilePickerTestSupport.hpp"
 #include "GuiOperationBackend.hpp"
 #include "GuiTestHarness.hpp"
 #include "GuiTranslations.hpp"
@@ -13,9 +14,11 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCoreApplication>
+#include <QDir>
 #include <QEventLoop>
 #include <QFileDialog>
 #include <QLabel>
+#include <QLineEdit>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QTableWidget>
@@ -28,6 +31,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -427,11 +431,13 @@ int main() {
   auto &application = *harness->application();
   auto *window = harness->window();
   auto *controller = harness->controller();
-  QTemporaryFile partitionImage;
+  QTemporaryFile partitionImage(
+      QDir::temp().filePath(QStringLiteral("zzrk-partition-XXXXXX.img")));
   if (!partitionImage.open() || partitionImage.write("partition") != 9)
     return EXIT_FAILURE;
   partitionImage.flush();
   window->show();
+  const char *stage = "initial scan";
 
   const auto cancellationButtonsStayDisabled = [&]() {
     QEventLoop scanLoop;
@@ -456,6 +462,7 @@ int main() {
           preparationFinished = success;
           preparationLoop.quit();
         });
+    stage = "prepare cancellation fixture";
     harness->loadFirmwareImage(QStringLiteral("cancel-test.img"));
     QTimer::singleShot(2000, &preparationLoop, &QEventLoop::quit);
     preparationLoop.exec();
@@ -468,6 +475,7 @@ int main() {
       return false;
 
     backend->holdUpgrade.store(true);
+    stage = "start cancellable upgrade";
     startUpgrade->click();
     QEventLoop upgradeStartedLoop;
     QTimer pollUpgrade;
@@ -481,6 +489,7 @@ int main() {
     upgradeStartedLoop.exec();
     if (!backend->upgradeEntered.load())
       return false;
+    stage = "cancel upgrade";
     cancelUpgrade->click();
     QCoreApplication::processEvents();
     const bool upgradeCancellationRequested =
@@ -507,6 +516,7 @@ int main() {
           tableFinished = success;
           tableLoop.quit();
         });
+    stage = "read cancellation fixture partitions";
     readPartitions->click();
     QTimer::singleShot(2000, &tableLoop, &QEventLoop::quit);
     tableLoop.exec();
@@ -521,6 +531,7 @@ int main() {
       return false;
     partitions->selectRow(0);
     backend->holdPartition.store(true);
+    stage = "start cancellable partition erase";
     erasePartition->click();
     QEventLoop partitionStartedLoop;
     QTimer pollPartition;
@@ -535,6 +546,7 @@ int main() {
     partitionStartedLoop.exec();
     if (!backend->partitionEntered.load())
       return false;
+    stage = "cancel partition erase";
     cancelPartition->click();
     QCoreApplication::processEvents();
     const bool partitionCancellationRequested =
@@ -551,8 +563,10 @@ int main() {
     partitionFinishedLoop.exec();
     return upgradeCancelDisabled && partitionCancelDisabled;
   };
-  if (!cancellationButtonsStayDisabled())
+  if (!cancellationButtonsStayDisabled()) {
+    std::cerr << "FAIL: cancellation controls at " << stage << '\n';
     return EXIT_FAILURE;
+  }
 
   backend->scans.store(0);
   backend->preparations.store(0);
@@ -584,6 +598,7 @@ int main() {
                    &zzrk::gui::MainWorkspaceController::scanCompleted,
                    &application, [&] {
     ++completedScans;
+    stage = "scan completion";
     if (completedScans == 1) {
       if (backend->monitoringStarts.load() != 1) {
         failed = true;
@@ -633,6 +648,7 @@ int main() {
       application.exit(EXIT_FAILURE);
       return;
     }
+    stage = "device inspection";
     inspect->click();
   });
 
@@ -654,6 +670,7 @@ int main() {
           application.exit(EXIT_FAILURE);
           return;
         }
+        stage = "partition table";
         readPartitions->click();
       });
 
@@ -687,14 +704,14 @@ int main() {
           application.exit(EXIT_FAILURE);
           return;
         }
+        stage = "partition erase";
         erase->click();
       });
 
   QObject::connect(
       controller,
       &zzrk::gui::MainWorkspaceController::partitionOperationCompleted,
-      &application,
-      [&](const bool success) {
+      &application, [&](const bool success) {
         const auto *progress = window->findChild<QProgressBar *>(
             QStringLiteral("partitionProgress"));
         const auto *status =
@@ -715,6 +732,7 @@ int main() {
             return;
           }
           QCoreApplication::sendPostedEvents(nullptr, QEvent::LanguageChange);
+          stage = "firmware preparation";
           harness->loadFirmwareImage(QStringLiteral("automated-update.img"));
           return;
         }
@@ -728,32 +746,51 @@ int main() {
           return;
         }
         QTimer::singleShot(0, window, [&] {
-          auto *dialog = window->findChild<QDialog *>(QStringLiteral("fileSelectionDialog"));
-          auto *browser = dialog != nullptr ? dialog->findChild<QFileDialog *>() : nullptr;
+          auto *dialog = window->findChild<QDialog *>(
+              QStringLiteral("fileSelectionDialog"));
+          auto *browser =
+              dialog != nullptr ? dialog->findChild<QFileDialog *>() : nullptr;
           if (browser == nullptr) {
             failed = true;
             application.exit(EXIT_FAILURE);
             return;
           }
+          // 对话框可见且文件名框获得焦点，模拟用户实际编辑文件名的状态。
+          auto *fileName = browser->findChild<QLineEdit *>("fileNameEdit");
+          if (fileName) {
+            fileName->setFocus();
+            QCoreApplication::processEvents();
+          }
+          if (!zzrk::gui::test::enterFilePickerPath(
+                  browser, partitionImage.fileName())) {
+            std::cerr << "FAIL: partition image selection is not ready\n";
+            failed = true;
+            dialog->reject();
+            application.exit(EXIT_FAILURE);
+            return;
+          }
           QTimer::singleShot(2000, dialog, &QDialog::reject);
-          browser->selectFile(partitionImage.fileName());
-          QMetaObject::invokeMethod(browser, "accept", Qt::DirectConnection);
+          zzrk::gui::test::filePickerAcceptButton(browser)->click();
         });
-        window->findChild<QPushButton *>(QStringLiteral("writePartitionButton"))->click();
+        stage = "partition image picker";
+        window->findChild<QPushButton *>(QStringLiteral("writePartitionButton"))
+            ->click();
       });
 
-  QObject::connect(controller,
-                   &zzrk::gui::MainWorkspaceController::firmwarePreparationCompleted,
-                   &application, [&](const bool success) {
-                     auto *start = window->findChild<QPushButton *>(
-                         QStringLiteral("startUpgradeButton"));
-                     if (!success || start == nullptr || !start->isEnabled()) {
-                       failed = true;
-                       application.exit(EXIT_FAILURE);
-                       return;
-                     }
-                     start->click();
-                   });
+  QObject::connect(
+      controller,
+      &zzrk::gui::MainWorkspaceController::firmwarePreparationCompleted,
+      &application, [&](const bool success) {
+        auto *start = window->findChild<QPushButton *>(
+            QStringLiteral("startUpgradeButton"));
+        if (!success || start == nullptr || !start->isEnabled()) {
+          failed = true;
+          application.exit(EXIT_FAILURE);
+          return;
+        }
+        stage = "firmware upgrade";
+        start->click();
+      });
 
   QObject::connect(
       controller, &zzrk::gui::MainWorkspaceController::upgradeProgressChanged,
@@ -808,8 +845,17 @@ int main() {
   controller->refreshDevices();
 
   QTimer::singleShot(5000, &application, [&] {
+    std::cerr << "FAIL: upgrade workflow timed out at " << stage
+              << " scans=" << completedScans
+              << " preparations=" << backend->preparations.load()
+              << " upgrades=" << backend->upgrades.load()
+              << " partitionOperations=" << backend->partitionOperations.load()
+              << '\n';
     failed = true;
     application.exit(EXIT_FAILURE);
   });
-  return application.exec();
+  const int result = application.exec();
+  if (result != EXIT_SUCCESS)
+    std::cerr << "FAIL: upgrade workflow at " << stage << '\n';
+  return result;
 }

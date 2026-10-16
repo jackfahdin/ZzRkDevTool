@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 
+#include "FilePickerTestSupport.hpp"
 #include "GuiOperationBackend.hpp"
 #include "GuiTestHarness.hpp"
 #include "MainWorkspaceController.hpp"
@@ -11,6 +12,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QLineEdit>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QTabWidget>
@@ -395,7 +397,8 @@ int main() {
         QStringLiteral("chooseDownloadImageButton"));
     QTimer::singleShot(0, &application, [&] {
       auto *modal = application.activeModalWidget();
-      auto *dialog = modal != nullptr ? modal->findChild<QFileDialog *>() : nullptr;
+      auto *dialog =
+          modal != nullptr ? modal->findChild<QFileDialog *>() : nullptr;
       if (dialog == nullptr) {
         std::cerr << "FAIL: image chooser dialog did not open\n";
         failed = true;
@@ -403,8 +406,19 @@ int main() {
           outer->reject();
         return;
       }
-      dialog->selectFile(exactBootBPath);
-      QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection);
+      // 覆盖可见文件名框已获得焦点的原生桌面状态。
+      if (auto *fileName = dialog->findChild<QLineEdit *>("fileNameEdit")) {
+        fileName->setFocus();
+        QCoreApplication::processEvents();
+      }
+      if (!zzrk::gui::test::enterFilePickerPath(dialog, exactBootBPath)) {
+        std::cerr << "FAIL: image download selection is not ready\n";
+        failed = true;
+        if (auto *outer = qobject_cast<QDialog *>(modal))
+          outer->reject();
+        return;
+      }
+      zzrk::gui::test::filePickerAcceptButton(dialog)->click();
     });
     if (choose == nullptr) {
       failed = true;
