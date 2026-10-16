@@ -50,6 +50,7 @@
 #include <QLineEdit>
 #include <QKeyEvent>
 #include <QMessageBox>
+#include <QPersistentModelIndex>
 #include <QPointer>
 #include <QProcess>
 #include <QProgressBar>
@@ -212,7 +213,19 @@ void checkFileOperationDialogs(QWidget *window) {
         picker->reject();
       return;
     }
-    QModelIndex selected;
+    const bool selectionReady =
+        zzrk::gui::test::enterFilePickerPath(browser, path);
+    expect(selectionReady, "delete fixture directory and file model are ready");
+    if (!selectionReady) {
+      std::cerr << "Delete selection: directory="
+                << browser->directory().absolutePath().toStdString()
+                << " root=" << tree->rootIndex().data().toString().toStdString()
+                << " filters=" << browser->nameFilters().join(';').toStdString()
+                << '\n';
+      picker->reject();
+      return;
+    }
+    QPersistentModelIndex selected;
     waitFor([&] {
       for (int row = 0; row < tree->model()->rowCount(tree->rootIndex()); ++row) {
         const auto index = tree->model()->index(row, 0, tree->rootIndex());
@@ -224,6 +237,10 @@ void checkFileOperationDialogs(QWidget *window) {
       return false;
     });
     expect(selected.isValid(), "delete fixture is selected in the real file model");
+    if (!selected.isValid()) {
+      picker->reject();
+      return;
+    }
     tree->selectionModel()->setCurrentIndex(
         selected, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
     remove->setEnabled(true); // 与 Qt 打开右键菜单后的操作状态一致。
