@@ -97,13 +97,25 @@ int main(int argc, char **argv) {
   const QFont original = QApplication::font();
   const QColor originalAccent = theme->accentColor();
   QString alternate;
-  for (const auto &candidate : QFontDatabase::families())
-    if (candidate != original.family()) {
+  int alternateIndex = -1;
+  // CoreText 可能在下拉框创建后注册私有回退字体。
+  // 从设置实际提供的公共字体中选择，避免 findData 返回无效索引。
+  for (int index = 1; index < family->count(); ++index) {
+    const auto candidate = family->itemData(index).toString();
+    if (candidate != original.family() &&
+        !QFontDatabase::isPrivateFamily(candidate)) {
       alternate = candidate;
+      alternateIndex = index;
       break;
     }
-  expect(!alternate.isEmpty(), "an installed alternate font is available");
-  family->setCurrentIndex(family->findData(alternate));
+  }
+  expect(alternateIndex >= 0 && !alternate.isEmpty(),
+         "an installed public alternate font is available in settings");
+  if (alternateIndex < 0 || alternate.isEmpty())
+    return 1;
+  family->setCurrentIndex(alternateIndex);
+  expect(family->currentData().toString() == alternate,
+         "settings select the alternate font family");
   size->setValue(14.0);
   color->setSelectedColor(QColor("#a43bb7"));
   QCoreApplication::processEvents();
