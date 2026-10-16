@@ -27,7 +27,8 @@ GuiTestHarness::create(std::shared_ptr<IGuiOperationBackend> backend,
 
   static char applicationName[] = "gui_test";
   static char *applicationArguments[] = {applicationName, nullptr};
-  int argumentCount = 1;
+  // QApplication 在整个生命周期内持有 argc 的引用；不能引用工厂函数的局部变量。
+  static int argumentCount = 1;
   auto application = std::make_unique<ZzPureTools::ZzPureApplication>(
       argumentCount, applicationArguments);
 
