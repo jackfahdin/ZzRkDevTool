@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "GuiTestHarness.hpp"
+#include "FilePickerTestSupport.hpp"
 #include "FileSelectionDialog.hpp"
 #include "GuiDialogs.hpp"
 #include "GuiTranslations.hpp"
@@ -53,6 +54,7 @@
 #include <QProcess>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QScreen>
 #include <QStatusBar>
 #include <QStyle>
 #include <QTableWidget>
@@ -111,20 +113,30 @@ void checkFilePickers(QWidget *window, ZzFluentUI::ZzThemeController *theme) {
       auto *dialog = qobject_cast<ZzFluentUI::ZzContentDialog *>(
           QApplication::activeModalWidget());
       expect(dialog != nullptr, "all file picker modes use the Fluent host");
-      auto *browser = dialog != nullptr ? dialog->findChild<QFileDialog *>() : nullptr;
+      auto *browser =
+          dialog != nullptr ? dialog->findChild<QFileDialog *>() : nullptr;
       expect(browser != nullptr, "Fluent file picker retains Qt file browsing");
       if (browser == nullptr) {
-        if (auto *modal = qobject_cast<QDialog *>(QApplication::activeModalWidget()))
+        if (auto *modal =
+                qobject_cast<QDialog *>(QApplication::activeModalWidget()))
           modal->reject();
         return;
       }
-      browser->selectFile(selectedPath);
+      const bool selectionReady =
+          zzrk::gui::test::enterFilePickerPath(browser, selectedPath);
+      expect(selectionReady,
+             "file picker selection is ready in the real file model");
+      if (!selectionReady) {
+        dialog->reject();
+        return;
+      }
       expect(browser->testOption(QFileDialog::DontUseNativeDialog),
              "file picker stays within the framework on every platform");
       expect(browser->palette().color(QPalette::Base) ==
                  QApplication::palette().color(QPalette::Base),
              "file browsing follows the application theme");
-      const auto screenshotDirectory = qEnvironmentVariable("ZZRK_GUI_SCREENSHOT_DIR");
+      const auto screenshotDirectory =
+          qEnvironmentVariable("ZZRK_GUI_SCREENSHOT_DIR");
       if (!screenshotDirectory.isEmpty() && !capture.isEmpty()) {
         if (auto *tree = browser->findChild<QTreeView *>(QStringLiteral("treeView")))
           waitFor([tree] { return tree->model()->rowCount(tree->rootIndex()) > 0; });
@@ -222,7 +234,9 @@ void checkFileOperationDialogs(QWidget *window) {
       QObject::connect(poll, &QTimer::timeout, picker, [=] {
         auto *modal = QApplication::activeModalWidget();
         auto *content = qobject_cast<ZzFluentUI::ZzContentDialog *>(modal);
-        if (content == picker || modal == nullptr)
+        if (content == picker || modal == nullptr ||
+            (qobject_cast<QMessageBox *>(modal) &&
+             modal->property("fluentMessageQueued").toBool()))
           return;
         poll->stop();
         expect(content != nullptr, "Qt file delete confirmation uses the Fluent host");
@@ -273,12 +287,21 @@ void checkFileOperationDialogs(QWidget *window) {
       expect(browser != nullptr, "save browser is available for overwrite testing");
       if (!browser)
         return;
-      browser->selectFile(path);
+      const bool selectionReady =
+          zzrk::gui::test::enterFilePickerPath(browser, path);
+      expect(selectionReady,
+             "overwrite selection is ready in the real file model");
+      if (!selectionReady) {
+        picker->reject();
+        return;
+      }
       auto *poll = new QTimer(picker);
       poll->setInterval(10);
       QObject::connect(poll, &QTimer::timeout, picker, [=] {
         auto *modal = QApplication::activeModalWidget();
-        if (modal == picker || !modal)
+        if (modal == picker || !modal ||
+            (qobject_cast<QMessageBox *>(modal) &&
+             modal->property("fluentMessageQueued").toBool()))
           return;
         poll->stop();
         auto *content = qobject_cast<ZzFluentUI::ZzContentDialog *>(modal);
