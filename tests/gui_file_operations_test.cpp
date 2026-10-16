@@ -121,7 +121,8 @@ int main() {
       editor->selectAll();
       QTest::keyClicks(editor, "temporary-folder");
       QTest::keyClick(editor, Qt::Key_Return);
-      const auto directory = fixture.filePath("temporary-folder");
+      // 同一目录可有不同路径拼写；不要把模型的规范路径文字当成文件身份。
+      const auto directory = fixture.filePath("./temporary-folder");
       expect(waitFor([&] { return QFileInfo::exists(directory); }),
              "new directory is renamed through the file model");
       // 切换排序列以完成新目录的待排序批次，再固定重排前的顺序。
@@ -161,16 +162,31 @@ int main() {
       // 普通 QModelIndex 重排后可能仍报告原名称，却携带已经失效的行号。
       // 用持久索引保留身份，再走真实窗口输入，并检查 Qt 删除实际消费的行选择。
       tree->scrollTo(directoryIndex);
-      click(tree->viewport(), tree->visualRect(directoryIndex).center());
+      const auto selectionPosition = tree->visualRect(directoryIndex).center();
+      click(tree->viewport(), selectionPosition);
       const bool targetSelected = waitFor([&] {
         const auto rows = tree->selectionModel()->selectedRows();
-        return rows.size() == 1 &&
-               rows.constFirst().data(QFileSystemModel::FilePathRole).toString() ==
-                   directory;
+        return rows.size() == 1 && rows.constFirst() == directoryIndex;
       });
-      expect(targetSelected,
-             "window input selects the intended directory after model reordering");
+      expect(
+          targetSelected,
+          "window input selects the intended directory after model reordering");
       if (!targetSelected) {
+        std::cerr << "Selection diagnostics: confirm=" << confirmDeletion
+                  << " expected=" << directory.toStdString() << " canonical="
+                  << QFileInfo(directory).canonicalFilePath().toStdString()
+                  << " hit="
+                  << tree->indexAt(selectionPosition)
+                         .data(QFileSystemModel::FilePathRole)
+                         .toString()
+                         .toStdString()
+                  << " selected=";
+        for (const auto &row : tree->selectionModel()->selectedRows())
+          std::cerr << row.data(QFileSystemModel::FilePathRole)
+                           .toString()
+                           .toStdString()
+                    << ';';
+        std::cerr << '\n';
         picker->reject();
         return;
       }
