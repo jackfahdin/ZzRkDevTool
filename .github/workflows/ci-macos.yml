@@ -43,11 +43,11 @@ jobs:
       - name: 构建 Universal 应用并打包
         run: |
           # 同一个 .app 包含 arm64 和 x86_64；Qt macOS 套件本身是 Universal。
-          # ZzPureTools 要求最低 macOS 13.3；新版 CMake 不再自动填充此值。
+          # Qt 6.12 官方预编译库最低要求 macOS 14.4；不能只降低应用部署目标。
           cmake -S . -B build/macos-release -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64' \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.4 \
             -DZZRK_BUNDLE_RUNTIME=ON \
             -DZZRK_MACOS_CODESIGN_IDENTITY=- \
             -DZZRK_WARNINGS_AS_ERRORS=ON
