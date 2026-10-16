@@ -161,8 +161,18 @@ int main() {
              "directory reordering moves the intended deletion target");
       // 普通 QModelIndex 重排后可能仍报告原名称，却携带已经失效的行号。
       // 用持久索引保留身份，再走真实窗口输入，并检查 Qt 删除实际消费的行选择。
+      // 模拟待处理的视图布局：模型身份已确定，窗口输入前仍可能改变行位置。
+      QTimer::singleShot(0, tree, [tree] {
+        tree->model()->sort(0, Qt::AscendingOrder);
+      });
+      QCoreApplication::processEvents();
+      // 先处理窗口/表头的布局请求，再取坐标；持久索引只保留身份，不固定位置。
+      QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+      tree->doItemsLayout();
       tree->scrollTo(directoryIndex);
       const auto selectionPosition = tree->visualRect(directoryIndex).center();
+      expect(tree->indexAt(selectionPosition) == directoryIndex,
+             "input coordinates still hit the target after pending layout");
       click(tree->viewport(), selectionPosition);
       const bool targetSelected = waitFor([&] {
         const auto rows = tree->selectionModel()->selectedRows();
