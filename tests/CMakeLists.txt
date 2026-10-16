@@ -243,6 +243,7 @@ if(TARGET zzrk_gui_support)
 
     zzrk_add_gui_test(gui_framework gui_framework_test.cpp)
     zzrk_add_gui_test(gui_test_harness gui_test_harness_test.cpp)
+    zzrk_add_gui_test(gui_notice_lifetime gui_notice_lifetime_test.cpp)
     find_package(Qt6 REQUIRED COMPONENTS Test)
     zzrk_add_gui_test(gui_file_operations gui_file_operations_test.cpp)
     target_link_libraries(gui_file_operations_test PRIVATE Qt6::Test)
