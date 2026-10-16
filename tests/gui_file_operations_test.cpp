@@ -9,9 +9,11 @@
 #include <QElapsedTimer>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFileSystemModel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPersistentModelIndex>
 #include <QPushButton>
 #include <QTabBar>
 #include <QTabWidget>
@@ -122,8 +124,18 @@ int main() {
       const auto directory = fixture.filePath("temporary-folder");
       expect(waitFor([&] { return QFileInfo::exists(directory); }),
              "new directory is renamed through the file model");
+      // 切换排序列以完成新目录的待排序批次，再固定重排前的顺序。
+      tree->model()->sort(1, Qt::AscendingOrder);
+      tree->model()->sort(0, Qt::AscendingOrder);
+      expect(waitFor([&] {
+               return tree->model()
+                          ->index(1, 0, tree->rootIndex())
+                          .data()
+                          .toString() == "temporary-folder";
+             }),
+             "renamed directory is sorted after the existing directory");
       // 重命名后模型可能排序，重新按名称定位目标，避免点击旧行。
-      QModelIndex directoryIndex;
+      QPersistentModelIndex directoryIndex;
       expect(waitFor([&] {
                for (int row = 0;
                     row < tree->model()->rowCount(tree->rootIndex()); ++row) {
@@ -137,12 +149,33 @@ int main() {
                return false;
              }),
              "renamed directory remains in the parameter browser");
-      tree->selectionModel()->setCurrentIndex(
-          directoryIndex,
-          QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+      // 强制重现异步重命名排序发生在定位目标与选择目标之间的时序。
+      tree->model()->sort(0, Qt::DescendingOrder);
+      expect(waitFor([&] {
+               return tree->model()
+                          ->index(0, 0, tree->rootIndex())
+                          .data()
+                          .toString() == "temporary-folder";
+             }),
+             "directory reordering moves the intended deletion target");
+      // 普通 QModelIndex 重排后可能仍报告原名称，却携带已经失效的行号。
+      // 用持久索引保留身份，再走真实窗口输入，并检查 Qt 删除实际消费的行选择。
+      tree->scrollTo(directoryIndex);
+      click(tree->viewport(), tree->visualRect(directoryIndex).center());
+      const bool targetSelected = waitFor([&] {
+        const auto rows = tree->selectionModel()->selectedRows();
+        return rows.size() == 1 &&
+               rows.constFirst().data(QFileSystemModel::FilePathRole).toString() ==
+                   directory;
+      });
+      expect(targetSelected,
+             "window input selects the intended directory after model reordering");
+      if (!targetSelected) {
+        picker->reject();
+        return;
+      }
       stage = "open context menu";
-      const auto index = tree->currentIndex();
-      const auto position = tree->visualRect(index).center();
+      const auto position = tree->visualRect(directoryIndex).center();
       bool messageHandled = false;
       int confirmationResult = -1;
       int originalMessageResult = -1;
@@ -227,8 +260,7 @@ int main() {
              "window input chooses the intended Fluent confirmation action");
       expect(originalMessageMatches,
              "confirmation choice preserves the original Qt return code");
-      // Windows 的 RemoveDirectory 可在句柄关闭前返回成功；等待可见文件状态，
-      // 不把菜单输入返回当作目录已经消失的信号。取消仍必须保留原目录。
+      // 以最终文件状态判断删除结果；取消必须保留原目录。
       const bool directoryStateMatches =
           confirmDeletion
               ? waitFor([&] { return !QFileInfo::exists(directory); })
