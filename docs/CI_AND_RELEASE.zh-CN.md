@@ -24,7 +24,7 @@ Qt 当前统一为 **6.12.0**，可以修改各平台文件中的 `QT_VERSION`�
 
 Windows 的 Qt 6.11+ 下载仓库按架构拆分，`install-qt-action@v4` 默认安装的 aqt 3.3.0 会请求不存在的旧路径。Windows 工作流通过 `AQT_SOURCE` 固定到 aqt 官方修复提交 [`7e5a5c3`](https://github.com/miurahr/aqtinstall/commit/7e5a5c3d95cf962cfc2f36c86ffa0d2c07f1a0d4)，MSVC 和 MinGW 共用；它是尚未正式发布的 aqt 修复版本。待 aqt 稳定版包含该修复后，可移除 `aqtsource` 覆盖并重新验证下载。不改为跟踪上游 `master`，也不关闭下载校验。
 
-CI 通过 `.github/actions/prepare-source/action.yml` 拉取固定子模块。它只对当前 Git 命令使用 HTTPS 地址转换，不修改 `.gitmodules`，本地仍可使用 SSH。目前三个子模块均可公开通过 HTTPS 获取；若以后改成私有仓库，需要另行配置只读凭据。
+CI 通过 `.github/actions/prepare-source/action.yml` 调用 `.github/scripts/prepare-submodules.sh` 拉取固定子模块。`.gitmodules` 使用 GitCode HTTPS；CI 只对当前 Git 命令及子进程应用公开 GitHub 镜像转换，不修改 `.gitmodules`，也不持久化转换规则。ZzPureTools、Zzlibusb 映射到 `jackfahdin` 下的同名仓库，spdlog 映射到 `gabime/spdlog`。镜像必须包含主仓库固定的提交；分支名相同不能保证提交存在。若以后改成私有仓库，需要另行配置只读凭据。
 
 ## 2. 触发与产物
 
@@ -111,6 +111,7 @@ Linux/macOS 可用 `./bin/Runner.Listener --version` 查看 Runner 版本，Wind
 ```bash
 actionlint
 shellcheck .github/scripts/*.sh .github/scripts/tests/*.sh
+bash .github/scripts/tests/prepare-submodules-test.sh
 bash .github/scripts/tests/publish-release-test.sh
 python3 .github/scripts/tests/macos-gui-diagnostics-test.py
 ```

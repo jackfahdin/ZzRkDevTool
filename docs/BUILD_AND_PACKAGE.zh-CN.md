@@ -33,7 +33,10 @@ GitHub 自动构建、`continuous-build` 预发布、版本标签触发的正式
 
 首次获取源码后递归初始化固定版本的所有子模块，包括 spdlog 和完整的 ZzPureTools 框架：
 
+三个子模块的来源统一为 GitCode HTTPS，无需子模块 SSH 密钥。已有 checkout 修改地址后，先执行 `git submodule sync --recursive` 同步本地记录；该命令只更新地址，不升级固定的子模块提交。GitHub CI 按仓库映射到公开的 GitHub 镜像。
+
 ```bash
+git submodule sync --recursive
 git submodule update --init --recursive
 git submodule status --recursive
 ```

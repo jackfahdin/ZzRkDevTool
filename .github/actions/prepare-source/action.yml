@@ -16,13 +16,8 @@ runs:
         version=$(sed -nE 's/^    VERSION ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' CMakeLists.txt)
         bash .github/scripts/validate-version-ref.sh "$version"
         echo "version=$version" >> "$GITHUB_OUTPUT"
-    # 不改 .gitmodules；-c 配置仅在当前 Git 命令及其子进程中生效。
-    # GitCode 的公开子模块不能使用 GitHub Runner 上不存在的本地 SSH 私钥。
+    # .gitmodules 保留本地 GitCode 来源；CI 按仓库映射到公开 GitHub 镜像。
+    # 不需要本地 SSH 私钥；转换规则不会写入仓库或全局 Git 配置。
     - name: 拉取固定版本的子模块
       shell: bash
-      run: |
-        set -euo pipefail
-        git submodule sync --recursive
-        git -c url.https://github.com/.insteadOf=git@github.com: \
-            -c url.https://gitcode.com/.insteadOf=git@gitcode.com: \
-            submodule update --init --recursive --depth 1
+      run: bash .github/scripts/prepare-submodules.sh

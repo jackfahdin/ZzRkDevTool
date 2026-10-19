@@ -78,7 +78,7 @@ cd ZzRkDevTool
 git submodule update --init --recursive
 ```
 
-ZzPureTools 和 Zzlibusb 子模块分别使用 GitHub、GitCode SSH 地址，需要配置对应的 SSH 访问。子模块提交由仓库固定；首次配置应用目标时，spdlog 会下载 SHA-256 固定的 fmt 12.1.0。
+三个子模块均使用 GitCode HTTPS 地址，无需为子模块配置 SSH 密钥；主仓库使用上述 SSH 克隆方式时仍需配置 GitCode SSH。子模块提交由仓库固定，GitHub CI 使用对应的公开 GitHub 镜像；首次配置应用目标时，spdlog 会下载 SHA-256 固定的 fmt 12.1.0。
 
 ### 2. 构建 Qt GUI 与 CLI（Linux）
 

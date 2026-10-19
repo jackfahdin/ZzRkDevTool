@@ -33,6 +33,7 @@ jobs:
           GOBIN="$RUNNER_TEMP/ci-tools" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
           "$RUNNER_TEMP/ci-tools/actionlint"
           shellcheck .github/scripts/*.sh .github/scripts/tests/*.sh
+          bash .github/scripts/tests/prepare-submodules-test.sh
           bash .github/scripts/tests/publish-release-test.sh
           python3 .github/scripts/tests/macos-gui-diagnostics-test.py
 
