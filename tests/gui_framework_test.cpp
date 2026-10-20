@@ -562,6 +562,7 @@ public:
   std::atomic_int completedScans = 0;
   std::atomic_int scanDelayMilliseconds = 0;
   std::atomic_int partitionReads = 0;
+  std::atomic_int partitionDelayMilliseconds = 0;
   std::atomic_bool preparationFails = true;
 
   [[nodiscard]] zzrk::transport::ScanResult scanDevices() override {
@@ -645,6 +646,8 @@ public:
   [[nodiscard]] zzrk::workflow::DevicePartitionTableResult
   readPartitions(const std::string &portPath) override {
     ++partitionReads;
+    if (const int delay = partitionDelayMilliseconds.load(); delay > 0)
+      std::this_thread::sleep_for(std::chrono::milliseconds{delay});
     zzrk::transport::UsbDeviceInfo device{
         .vendorId = 0x2207U,
         .productId = 0x350bU,
@@ -1526,14 +1529,29 @@ int main(int argc, char **argv) {
         QStringLiteral("readDownloadGptButton"));
     expect(readGptButton != nullptr && readGptButton->isEnabled(),
            "selected Loader device can read its GPT");
+    // 原生事件队列或慢机器上，100 毫秒不代表后台读取和页面更新已经完成。
+    backend->partitionDelayMilliseconds.store(250);
+    QEventLoop gptLoop;
+    bool gptFinished = false;
+    bool gptSucceeded = false;
+    QObject::connect(
+        controller, &zzrk::gui::MainWorkspaceController::partitionTableCompleted,
+        &gptLoop, [&](bool success) {
+          gptFinished = true;
+          gptSucceeded = success;
+          gptLoop.quit();
+        });
     if (readGptButton != nullptr)
       readGptButton->click();
-    QEventLoop gptLoop;
-    QTimer::singleShot(100, &gptLoop, &QEventLoop::quit);
-    gptLoop.exec();
+    if (!gptFinished) {
+      QTimer::singleShot(2000, &gptLoop, &QEventLoop::quit);
+      gptLoop.exec();
+    }
+    backend->partitionDelayMilliseconds.store(0);
     const auto *layoutPath = downloadView->findChild<QLineEdit *>(
         QStringLiteral("downloadParameterPath"));
-    expect(backend->partitionReads.load() == 1 && layoutPath != nullptr &&
+    expect(gptFinished && gptSucceeded && backend->partitionReads.load() == 1 &&
+               layoutPath != nullptr &&
                layoutPath->text() == QStringLiteral("1-5 / 设备 GPT") &&
                downloadTable->rowCount() == 3,
            "controller reads and applies device GPT in the framework window");
