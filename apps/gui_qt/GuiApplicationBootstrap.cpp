@@ -20,6 +20,7 @@
 #include <QCoreApplication>
 #include <QIcon>
 #include <QPointer>
+#include <QScreen>
 #include <QStatusBar>
 
 #include <memory>
@@ -102,7 +103,11 @@ ZzCore::ZzResult<ZzPureTools::ZzApplicationWindow *> buildGuiApplication(
         window.setWindowTitle(QStringLiteral("ZzRkDevTool"));
         window.setWindowIcon(ui::icon(ui::Icon::Device));
         window.setMinimumSize(800, 700);
-        window.resize(980, 820);
+        // 默认大小是期望值；小屏幕和高缩放桌面应先按可用空间收缩，
+        // 同时保留业务页面的最小尺寸，避免首次显示后再被原生窗口系统改写。
+        const auto available = window.screen()->availableGeometry().size();
+        window.resize(QSize(980, 820).boundedTo(available)
+                          .expandedTo(window.minimumSize()));
         window.statusBar()->showMessage(guiText("准备就绪"));
 
         auto attached = GuiWindowShell::attach(

@@ -6,14 +6,28 @@
 #include <ZzWindowKit/ZzWindowKitBootstrap.h>
 
 #include <QApplication>
+#include <QElapsedTimer>
 #include <QEvent>
 #include <QResizeEvent>
+#include <QScreen>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QWindow>
 
+#include <functional>
 #include <iostream>
 
 namespace {
+bool waitFor(const std::function<bool()> &condition) {
+  QElapsedTimer timer;
+  timer.start();
+  while (!condition() && timer.elapsed() < 2000) {
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    QThread::msleep(1);
+  }
+  return condition();
+}
+
 // 模拟 Cocoa 在首次显示时回写原生窗口的旧尺寸，走真实 QWidgetWindow 分发。
 // 如果启动尺寸只在隐藏阶段设置，旧回写就会覆盖用户配置。
 class NativeResizeBeforeShow final : public QObject {
@@ -63,11 +77,17 @@ int main(int argc, char **argv) {
     return 1;
   auto *window = built.value();
   QApplication::processEvents();
-  const QSize expected = restored ? QSize(800, 700) : QSize(980, 820);
-  bool passed = interference.applied &&
-                (maximized ? window->isMaximized() &&
-                                 window->normalGeometry().size() == expected
-                           : window->size() == expected);
+  // 小屏幕（包括 macOS Runner）可以缩小默认尺寸，但不能小于业务窗口下限。
+  const auto available = window->screen()->availableGeometry().size();
+  const QSize expected = (restored ? QSize(800, 700) : QSize(980, 820))
+                             .boundedTo(available)
+                             .expandedTo(QSize(800, 700));
+  bool passed = waitFor([&] {
+    return interference.applied &&
+           (maximized ? window->isMaximized() &&
+                            window->normalGeometry().size() == expected
+                      : window->size() == expected);
+  });
   if (!passed)
     std::cerr << "FAIL: native startup resize overwrote "
               << (restored ? "restored" : "default") << " geometry: "
@@ -75,11 +95,16 @@ int main(int argc, char **argv) {
 
   // 启动修正只能执行一次；之后用户改变尺寸、隐藏再显示时不能恢复旧尺寸。
   window->showNormal();
+  passed = waitFor([&] {
+             return !window->isMaximized() && window->size() == expected;
+           }) && passed;
   window->hide();
-  window->resize(910, 710);
+  const auto userSize = QSize(910, 710)
+                            .boundedTo(available)
+                            .expandedTo(QSize(800, 700));
+  window->resize(userSize);
   window->show();
-  QApplication::processEvents();
-  if (window->size() != QSize(910, 710)) {
+  if (!waitFor([&] { return window->size() == userSize; })) {
     passed = false;
     std::cerr << "FAIL: showing an existing window overwrote user geometry\n";
   }

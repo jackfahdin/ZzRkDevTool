@@ -1178,8 +1178,11 @@ int main(int argc, char **argv) {
            "framework window initially includes the download page title");
     expect(!window->windowIcon().isNull(),
            "framework window preserves its application icon");
+    const auto available = window->screen()->availableGeometry().size();
+    const QSize expectedWindowSize =
+        QSize(980, 820).boundedTo(available).expandedTo(QSize(800, 700));
     const bool requiredWindowSize = window->minimumSize() == QSize(800, 700) &&
-                                    window->size() == QSize(980, 820);
+                                    window->size() == expectedWindowSize;
     if (!requiredWindowSize) {
       const auto sizeText = [](const QSize &size) {
         return QStringLiteral("%1x%2").arg(size.width()).arg(size.height());
