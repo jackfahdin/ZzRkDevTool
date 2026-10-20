@@ -134,21 +134,6 @@ int main() {
                           .toString() == "temporary-folder";
              }),
              "renamed directory is sorted after the existing directory");
-      // 重命名后模型可能排序，重新按名称定位目标，避免点击旧行。
-      QModelIndex directoryIndex;
-      expect(waitFor([&] {
-               for (int row = 0;
-                    row < tree->model()->rowCount(tree->rootIndex()); ++row) {
-                 const auto candidate =
-                     tree->model()->index(row, 0, tree->rootIndex());
-                 if (candidate.data().toString() == "temporary-folder") {
-                   directoryIndex = candidate;
-                   return true;
-                 }
-               }
-               return false;
-             }),
-             "renamed directory remains in the parameter browser");
       // 强制重现异步重命名排序发生在定位目标与选择目标之间的时序。
       tree->sortByColumn(0, Qt::DescendingOrder);
       expect(waitFor([&] {
@@ -159,8 +144,10 @@ int main() {
              }),
              "directory reordering moves the intended deletion target");
       // 模拟待处理的排序；通过视图排序，同时更新表头与文件模型的排序方向。
-      QTimer::singleShot(0, tree, [tree] {
+      bool pendingSortApplied = false;
+      QTimer::singleShot(0, tree, [tree, &pendingSortApplied] {
         tree->sortByColumn(0, Qt::AscendingOrder);
+        pendingSortApplied = true;
       });
       // 文件模型、代理模型和视图分批完成重排；持久索引也不能代表视图布局就绪。
       // 每次按真实文件身份重新定位，再验证该坐标实际命中的文件，最后才发送输入。
@@ -171,6 +158,9 @@ int main() {
       };
       QPoint selectionPosition;
       const bool inputReady = waitFor([&] {
+        // waitFor 会先求值再处理事件，不能在计划的异步排序执行前提前通过。
+        if (!pendingSortApplied)
+          return false;
         QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
         tree->doItemsLayout();
         for (int row = 0; row < tree->model()->rowCount(tree->rootIndex()); ++row) {
@@ -184,7 +174,6 @@ int main() {
               !tree->viewport()->rect().contains(selectionPosition) ||
               !isTarget(tree->indexAt(selectionPosition)))
             return false;
-          directoryIndex = candidate;
           return true;
         }
         return false;
@@ -222,7 +211,9 @@ int main() {
         return;
       }
       stage = "open context menu";
-      const auto position = tree->visualRect(directoryIndex).center();
+      const auto position =
+          tree->visualRect(tree->selectionModel()->selectedRows().constFirst())
+              .center();
       bool messageHandled = false;
       int confirmationResult = -1;
       int originalMessageResult = -1;
