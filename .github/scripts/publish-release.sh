@@ -69,6 +69,19 @@ else
     title='Continuous Build'
     notes="主分支 $GITHUB_REF_NAME 的持续构建，提交 $GITHUB_SHA。各平台附件在编译通过后分别更新，仅用于测试；正式发布请使用版本标签。"
     create_flags=(--prerelease --latest=false)
+    # 镜像同步可能删除仅由 GitHub CI 创建的标签，已有 release 并不保证 ref 存在。
+    # 只为持续构建补建标签；403 等错误直接失败，不能当作标签缺失处理。
+    if ! tag_response=$(gh api "repos/$GH_REPO/git/ref/tags/$tag" 2>&1); then
+        if [[ "$tag_response" != *'(HTTP 404)'* ]]; then
+            printf '%s\n' "$tag_response" >&2
+            exit 1
+        fi
+        if ! gh api --method POST "repos/$GH_REPO/git/refs" \
+            -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" >/dev/null; then
+            # 多个平台可能同时补建；只有确认标签已存在才接受创建冲突。
+            gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null
+        fi
+    fi
 fi
 
 # 三个平台可能同时首次创建同一 release；创建失败后必须确认它确实已存在。
@@ -99,7 +112,8 @@ else
     # continuous-build 是唯一可移动标签；正式版本标签永不强制移动。
     gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$tag" \
         -f sha="$GITHUB_SHA" -F force=true >/dev/null
-    gh release edit "$tag" --title "$title" --notes "$notes" --prerelease --latest=false
+    # 持续构建应公开为预发布，兼容迁移后残留的同名草稿；正式版仍保留草稿流程。
+    gh release edit "$tag" --title "$title" --notes "$notes" --draft=false --prerelease --latest=false
 fi
 
 assets=()

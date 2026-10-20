@@ -14,6 +14,15 @@ gh() {
             if [[ "$TEST_CASE" == stale || "$TEST_CASE" == stable-stale ]]; then echo newer; else echo abc123; fi ;;
         'api repos/test/repo/git/ref/tags/v0.1.0')
             [[ "$TEST_CASE" != missing-tag ]] ;;
+        'api repos/test/repo/git/ref/tags/continuous-build')
+            if [[ "$TEST_CASE" == tag-api-error ]]; then
+                echo 'gh: Forbidden (HTTP 403)' >&2
+                return 1
+            fi
+            if ! test -f "$MOCK_TAG_STATE"; then
+                echo 'gh: Not Found (HTTP 404)' >&2
+                return 1
+            fi ;;
         'api repos/test/repo/commits/v0.1.0 --jq .sha')
             if [[ "$TEST_CASE" == collision ]]; then echo other; else echo abc123; fi ;;
         'release view v0.1.0 --json isDraft --jq .isDraft')
@@ -25,7 +34,15 @@ gh() {
         'release create '*)
             touch "$MOCK_STATE"
             [[ "$TEST_CASE" != race ]] ;;
-        'api --method POST '*|'api --method PATCH '*|'release edit '*|'release upload '*) ;;
+        'api --method POST repos/test/repo/git/refs -f ref=refs/tags/continuous-build -f sha=abc123')
+            touch "$MOCK_TAG_STATE"
+            [[ "$TEST_CASE" != tag-race ]] ;;
+        'api --method PATCH repos/test/repo/git/refs/tags/continuous-build -f sha=abc123 -F force=true')
+            test -f "$MOCK_TAG_STATE" || {
+                echo 'gh: Reference does not exist (HTTP 422)' >&2
+                return 1
+            } ;;
+        'release edit '*|'release upload '*) ;;
         *) echo "未预期的 gh 调用：$*" >&2; return 1 ;;
     esac
 }
@@ -34,11 +51,16 @@ export GH_REPO=test/repo GITHUB_SHA=abc123 GITHUB_REF_NAME=main
 export GITHUB_REF_TYPE=branch GITHUB_EVENT_NAME=push
 export RELEASE_VERSION=0.1.0 RELEASE_PLATFORM=linux
 
-for scenario in continuous stable stable-stale stale collision published api-error missing race fresh missing-tag stable-branch continuous-tag mismatch invalid-tag manual; do
+for scenario in continuous continuous-missing-tag tag-race tag-api-error stable stable-stale stale collision published api-error missing race fresh missing-tag stable-branch continuous-tag mismatch invalid-tag manual; do
     (
         export TEST_CASE="$scenario"
         export MOCK_LOG="$test_root/$scenario.log" MOCK_STATE="$test_root/$scenario.state"
+        export MOCK_TAG_STATE="$test_root/$scenario.tag"
         touch "$MOCK_LOG"
+        case "$scenario" in
+            continuous-missing-tag|tag-race) ;;
+            *) touch "$MOCK_TAG_STATE" ;;
+        esac
         mkdir -p "$test_root/$scenario/release-input"
         cd "$test_root/$scenario"
         touch release-input/ZzRkDevTool-0.1.0-linux-x86_64-portable.tar.gz
@@ -60,16 +82,23 @@ for scenario in continuous stable stable-stale stale collision published api-err
         result=0
         bash "$script_dir/publish-release.sh" > output.log 2>&1 || result=$?
         case "$scenario" in
-            collision|published|api-error|missing|missing-tag|stable-branch|continuous-tag|mismatch|invalid-tag|manual)
+            collision|published|api-error|tag-api-error|missing|missing-tag|stable-branch|continuous-tag|mismatch|invalid-tag|manual)
                 test "$result" -ne 0
-                ! grep -q '^release upload ' "$MOCK_LOG" ;;
+                ! grep -q '^release upload ' "$MOCK_LOG"
+                if [[ "$scenario" == tag-api-error ]]; then
+                    if grep -q '^api --method POST ' "$MOCK_LOG"; then exit 1; fi
+                fi ;;
             stale)
                 test "$result" -eq 0
                 ! grep -Eq '^release (create|edit|upload)|^api --method' "$MOCK_LOG" ;;
-            continuous|race)
+            continuous|continuous-missing-tag|tag-race|race)
                 test "$result" -eq 0
                 grep -q '^api --method PATCH .*continuous-build' "$MOCK_LOG"
+                grep -q '^release edit continuous-build .*--draft=false' "$MOCK_LOG"
                 grep -q '^release upload continuous-build .*ZzRkDevTool-continuous-linux-' "$MOCK_LOG"
+                if [[ "$scenario" == continuous-missing-tag || "$scenario" == tag-race ]]; then
+                    grep -q '^api --method POST .*ref=refs/tags/continuous-build' "$MOCK_LOG"
+                fi
                 test -f release-output/zzrkdevtool_continuous_amd64.deb ;;
             stable|stable-stale|fresh)
                 test "$result" -eq 0
