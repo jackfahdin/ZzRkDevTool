@@ -13,7 +13,6 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
-#include <QPersistentModelIndex>
 #include <QPushButton>
 #include <QTabBar>
 #include <QTabWidget>
@@ -126,8 +125,8 @@ int main() {
       expect(waitFor([&] { return QFileInfo::exists(directory); }),
              "new directory is renamed through the file model");
       // 切换排序列以完成新目录的待排序批次，再固定重排前的顺序。
-      tree->model()->sort(1, Qt::AscendingOrder);
-      tree->model()->sort(0, Qt::AscendingOrder);
+      tree->sortByColumn(1, Qt::AscendingOrder);
+      tree->sortByColumn(0, Qt::AscendingOrder);
       expect(waitFor([&] {
                return tree->model()
                           ->index(1, 0, tree->rootIndex())
@@ -136,7 +135,7 @@ int main() {
              }),
              "renamed directory is sorted after the existing directory");
       // 重命名后模型可能排序，重新按名称定位目标，避免点击旧行。
-      QPersistentModelIndex directoryIndex;
+      QModelIndex directoryIndex;
       expect(waitFor([&] {
                for (int row = 0;
                     row < tree->model()->rowCount(tree->rootIndex()); ++row) {
@@ -151,7 +150,7 @@ int main() {
              }),
              "renamed directory remains in the parameter browser");
       // 强制重现异步重命名排序发生在定位目标与选择目标之间的时序。
-      tree->model()->sort(0, Qt::DescendingOrder);
+      tree->sortByColumn(0, Qt::DescendingOrder);
       expect(waitFor([&] {
                return tree->model()
                           ->index(0, 0, tree->rootIndex())
@@ -159,24 +158,46 @@ int main() {
                           .toString() == "temporary-folder";
              }),
              "directory reordering moves the intended deletion target");
-      // 普通 QModelIndex 重排后可能仍报告原名称，却携带已经失效的行号。
-      // 用持久索引保留身份，再走真实窗口输入，并检查 Qt 删除实际消费的行选择。
-      // 模拟待处理的视图布局：模型身份已确定，窗口输入前仍可能改变行位置。
+      // 模拟待处理的排序；通过视图排序，同时更新表头与文件模型的排序方向。
       QTimer::singleShot(0, tree, [tree] {
-        tree->model()->sort(0, Qt::AscendingOrder);
+        tree->sortByColumn(0, Qt::AscendingOrder);
       });
-      QCoreApplication::processEvents();
-      // 先处理窗口/表头的布局请求，再取坐标；持久索引只保留身份，不固定位置。
-      QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
-      tree->doItemsLayout();
-      tree->scrollTo(directoryIndex);
-      const auto selectionPosition = tree->visualRect(directoryIndex).center();
-      expect(tree->indexAt(selectionPosition) == directoryIndex,
-             "input coordinates still hit the target after pending layout");
+      // 文件模型、代理模型和视图分批完成重排；持久索引也不能代表视图布局就绪。
+      // 每次按真实文件身份重新定位，再验证该坐标实际命中的文件，最后才发送输入。
+      const auto isTarget = [&](const QModelIndex &index) {
+        return index.isValid() &&
+               QFileInfo(index.data(QFileSystemModel::FilePathRole).toString()) ==
+                   QFileInfo(directory);
+      };
+      QPoint selectionPosition;
+      const bool inputReady = waitFor([&] {
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+        tree->doItemsLayout();
+        for (int row = 0; row < tree->model()->rowCount(tree->rootIndex()); ++row) {
+          const auto candidate = tree->model()->index(row, 0, tree->rootIndex());
+          if (!isTarget(candidate))
+            continue;
+          tree->scrollTo(candidate);
+          const auto rectangle = tree->visualRect(candidate);
+          selectionPosition = rectangle.center();
+          if (!rectangle.isValid() ||
+              !tree->viewport()->rect().contains(selectionPosition) ||
+              !isTarget(tree->indexAt(selectionPosition)))
+            return false;
+          directoryIndex = candidate;
+          return true;
+        }
+        return false;
+      });
+      expect(inputReady, "input coordinates hit the target after pending layout");
+      if (!inputReady) {
+        picker->reject();
+        return;
+      }
       click(tree->viewport(), selectionPosition);
       const bool targetSelected = waitFor([&] {
         const auto rows = tree->selectionModel()->selectedRows();
-        return rows.size() == 1 && rows.constFirst() == directoryIndex;
+        return rows.size() == 1 && isTarget(rows.constFirst());
       });
       expect(
           targetSelected,
