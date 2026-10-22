@@ -1,0 +1,46 @@
+# SPDX-License-Identifier: MIT
+# 独立运行：cmake -P tests/libwdi_cmake_smoke.cmake
+cmake_minimum_required(VERSION 3.25)
+get_filename_component(_repo "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+set(_root "${CMAKE_CURRENT_BINARY_DIR}/libwdi-cmake-smoke")
+file(MAKE_DIRECTORY "${_root}/source")
+file(WRITE "${_root}/source/CMakeLists.txt" "
+cmake_minimum_required(VERSION 3.25)
+project(LibwdiSmoke NONE)
+set(WIN32 \${TEST_WINDOWS})
+set(CMAKE_HOST_WIN32 FALSE)
+include(\"${_repo}/cmake/Libwdi.cmake\")
+if(TARGET zzrk_libwdi)
+  message(FATAL_ERROR \"Disabled dependency created a build target\")
+endif()
+if(DEFINED ZZRK_LIBWDI_INCLUDE_DIR)
+  message(FATAL_ERROR \"Disabled dependency exposed Windows headers\")
+endif()
+if(EXISTS \"\${CMAKE_BINARY_DIR}/_deps\")
+  message(FATAL_ERROR \"Disabled dependency downloaded sources\")
+endif()
+")
+foreach(_case linux windows-disabled)
+    set(_args -DTEST_WINDOWS=OFF)
+    if(_case STREQUAL windows-disabled)
+        set(_args -DTEST_WINDOWS=ON -DZZRK_ENABLE_WINDOWS_DRIVER_MANAGEMENT=OFF)
+    endif()
+    execute_process(COMMAND "${CMAKE_COMMAND}" -S "${_root}/source"
+        -B "${_root}/${_case}" ${_args}
+        RESULT_VARIABLE _result OUTPUT_VARIABLE _out ERROR_VARIABLE _err)
+    if(NOT _result EQUAL 0)
+        message(FATAL_ERROR "${_case}: ${_out}${_err}")
+    endif()
+    message(STATUS "${_case}: no source download, headers, or build target")
+endforeach()
+execute_process(COMMAND "${CMAKE_COMMAND}" -S "${_root}/source"
+    -B "${_root}/cross-unsupported" -DTEST_WINDOWS=ON
+    -DZZRK_ENABLE_WINDOWS_DRIVER_MANAGEMENT=ON
+    RESULT_VARIABLE _result OUTPUT_VARIABLE _out ERROR_VARIABLE _err)
+if(_result EQUAL 0 OR NOT _err MATCHES "requires a native Windows")
+    message(FATAL_ERROR "Unsupported cross-build was not rejected: ${_out}${_err}")
+endif()
+if(EXISTS "${_root}/cross-unsupported/_deps")
+    message(FATAL_ERROR "Unsupported cross-build downloaded dependencies")
+endif()
+message(STATUS "cross-unsupported: actionable error before dependency download")
