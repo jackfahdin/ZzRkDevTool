@@ -304,6 +304,8 @@ if(TARGET zzrk_gui_support)
              COMMAND upgrade_progress_tracker_test)
 
     zzrk_add_gui_test(gui_upgrade gui_upgrade_test.cpp)
+    add_test(NAME gui_upgrade_loader_error COMMAND gui_upgrade_test --loader-error)
+    zzrk_configure_gui_test(gui_upgrade_loader_error)
     zzrk_add_gui_test(gui_image_download gui_image_download_test.cpp)
 endif()
 

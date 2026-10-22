@@ -2,6 +2,14 @@
 
 Windows 发布基线是包含 GUI、CLI、Qt 运行库、插件、驱动管理辅助程序和 `libwdi.dll` 的 x86_64 TGZ。解压不会自动安装驱动，普通设备操作也不会申请管理员权限。目前仍是待 Windows 实机验收的验证产物。
 
+## 当前已知问题（2026-10-22）
+
+Windows 实机已经完成原厂 RockUSB 驱动备份和 WinUSB 绑定，但 RK3588 Maskrom 的首个 DDR `0x471` 控制传输出现 5 秒超时，完成长度为 0。失败发生在 RAM Loader 准备阶段，尚未进入 eMMC 写入。成功打开、声明并释放接口的 probe 不能证明 Loader 下载可用。
+
+[nusb 上游记录](https://github.com/kevinmehall/nusb/pull/234) 报告过 RK3588 Maskrom 被 WinUSB 初始化的 `GET_STATUS` 请求影响、改用 libusb0 后可下载的现象；该 PR 未合入，属于兼容性调查线索，不能直接证明本机超时的根因。目前内置资源仅有 WinUSB，不包含 libusb0/libusbK。待验证冷启动复测，以及替代驱动的来源、签名、再分发和完整恢复闭环，不能把当前 Windows 烧录标注为已通过。
+
+安装窗口显示不定进度动画和已等待时间，不伪造 Windows 未提供的百分比。上次操作记录与当前绑定分别展示；升级失败会显示 Loader 已下载字节和底层 USB 错误，CLI JSON 与报告也保留对应诊断字段。
+
 ## 构建与打包
 
 安装 Visual Studio 2022 或更新版本 / Build Tools、**MSVC v143 的 x86/x64 工具和 Windows SDK**、PowerShell 5.1+、CMake、Ninja，以及 ABI 匹配的 Qt。VS 2026 和 MinGW 构建应用时，内置 libwdi 仍需单独具备 v143。Zzlibusb 从固定子模块静态构建，不需要 vcpkg 或 `libusb-1.0.dll`。

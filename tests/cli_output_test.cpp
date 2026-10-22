@@ -564,6 +564,21 @@ void testJsonFlashLinesGoldenOutput() {
   expect(errorOutput.str() ==
              "{\"schemaVersion\":1,\"type\":\"result\",\"command\":\"flash-image\",\"success\":false,\"result\":null,\"error\":{\"code\":\"flash-failed\",\"message\":\"write failed\",\"stage\":\"flash\",\"target\":\"boot_a\",\"completedBytes\":256}}\n",
          "flash JSON Lines error uses the versioned golden contract");
+  error.code = zzrk::workflow::FirmwareUpgradeErrorCode::loaderDownloadFailed;
+  error.loaderError = zzrk::image::MaskromLoaderError{
+      .code = zzrk::image::MaskromLoaderErrorCode::transferFailed,
+      .stage = "DDR code",
+      .completedBytes = 0,
+      .transportError = zzrk::session::TransportError{
+          .code = zzrk::session::TransportErrorCode::timedOut,
+          .nativeCode = -7,
+          .bytesTransferred = 0}};
+  std::ostringstream loaderOutput;
+  zzrk::cli::printFirmwareUpgradeErrorJson(error, "download failed",
+                                           loaderOutput);
+  expect(loaderOutput.str().find("\"loaderTransportNativeCode\":-7") !=
+             std::string::npos,
+         "CLI JSON retains RAM Loader USB timeout diagnostics");
 }
 
 void testJsonInfoGoldenOutput() {

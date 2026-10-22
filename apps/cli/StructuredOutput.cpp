@@ -414,7 +414,22 @@ void printFirmwareUpgradeErrorJson(
   writeJsonString(workflow::toString(error.stage), output);
   output << ",\"target\":";
   writeJsonString(error.target, output);
-  output << ",\"completedBytes\":" << error.completedBytes << "}}\n";
+  output << ",\"completedBytes\":" << error.completedBytes;
+  if (error.loaderError) {
+    const auto &loader = *error.loaderError;
+    output << ",\"loaderErrorCode\":" << static_cast<int>(loader.code)
+           << ",\"loaderStage\":";
+    writeJsonString(loader.stage, output);
+    output << ",\"loaderCompletedBytes\":" << loader.completedBytes;
+    if (loader.transportError)
+      output << ",\"loaderTransportCode\":"
+             << static_cast<int>(loader.transportError->code)
+             << ",\"loaderTransportNativeCode\":"
+             << loader.transportError->nativeCode
+             << ",\"loaderTransportBytesTransferred\":"
+             << loader.transportError->bytesTransferred;
+  }
+  output << "}}\n";
 }
 
 void printPartitions(const storage::GptPartitionTable &table,

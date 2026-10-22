@@ -753,6 +753,11 @@ Qt GUI 已通过可注入的操作 backend 与生产 workflow 解耦，并增加
 
 已实现待验收的内置驱动管理：设备页查询、用户确认/UAC、原包备份、WinUSB 安装、绑定核实和原包恢复；基于固定 libwdi 1.5.1 源码构建，Linux/macOS 不引入该依赖。Linux 构建与无硬件测试不能替代以下 Windows 验收，完整步骤见 [Windows 打包与驱动管理](../packaging/windows/README.md)。
 
+2026-10-22 实机结果：WinUSB 绑定和接口声明成功，但 Maskrom 首个 DDR 控制传输 5 秒超时，尚未写入 eMMC。已补安装等待动画、耗时和底层错误展示。驱动绑定记录不能代替烧录验收。
+
+- [ ] 冷启动进入 Maskrom 复测 `--prepare-only`，排除前次传输失败遗留状态；保存 libusb debug 日志和报告。
+- [ ] 核实 RK3588 Maskrom 与 WinUSB 初始化请求的兼容性线索（[上游报告](https://github.com/kevinmehall/nusb/pull/234)），评估 libusb0 替代驱动的签名、再分发、构建资源和原驱动恢复闭环。未完成前不声明已支持 Windows 完整升级。
+
 - [ ] 在 Windows 10 22H2 x64 和 Windows 11 x64 上完成 MSVC Release 构建、全部无硬件测试、TGZ 解压启动、源码 Zzlibusb 热插拔能力和 Qt / helper / libwdi 运行依赖检查；VS 2026 与 MinGW 也需具备 v143 x86/x64 以构建 libwdi。
 - [ ] 使用内置入口查询原厂驱动 → 备份原包 → 切换 WinUSB → probe → `info` / `--prepare-only` → 完整升级与回读 → 恢复原包 → 原厂 RK 工具重新识别；检查 Loader/Maskrom 重新枚举后的身份。
 - [ ] 验证 UAC 取消、中文路径、安装失败后的无绑定恢复、重启要求、设备拔出和不可信备份。第二块板空闲后，确认同时连接同硬件 ID 板卡会阻止安装，且没有误改另一块板。

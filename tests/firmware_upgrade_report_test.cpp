@@ -443,5 +443,35 @@ int main()
     testFailureReportStructure();
     testStringEscaping();
     testOpenFailure();
+    // Windows DDR 失败必须保留底层 libusb 原因，阶段名本身不足以诊断。
+    auto report = makeSuccessReport();
+    zzrk::workflow::FirmwareUpgradeError failure{};
+    failure.code =
+        zzrk::workflow::FirmwareUpgradeErrorCode::loaderDownloadFailed;
+    failure.stage = zzrk::workflow::FirmwareUpgradeStage::downloadLoader;
+    failure.target = "DDR code";
+    failure.loaderError = zzrk::image::MaskromLoaderError{
+        .code = zzrk::image::MaskromLoaderErrorCode::transferFailed,
+        .stage = "DDR code",
+        .completedBytes = 4096,
+        .transportError = zzrk::session::TransportError{
+            .code = zzrk::session::TransportErrorCode::timedOut,
+            .nativeCode = -7,
+            .bytesTransferred = 64}};
+    report.error = failure;
+    report.success.reset();
+    report.status = zzrk::workflow::FirmwareUpgradeReportStatus::failed;
+    const auto directory = makeTempDirectory("loader-transport");
+    const auto path = directory / "report.json";
+    const auto error = zzrk::workflow::writeFirmwareUpgradeReport(report, path);
+    const auto json = readTextFile(path);
+    expect(!error &&
+               json.find("\"loaderTransportNativeCode\": -7") !=
+                   std::string::npos &&
+               json.find("\"loaderTransportBytesTransferred\": 64") !=
+                   std::string::npos,
+           "RAM Loader report preserves the native error and partial transfer "
+           "count");
+    std::filesystem::remove_all(directory);
     return failures == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

@@ -57,6 +57,7 @@ public:
   std::atomic_bool upgradeEntered{false};
   std::atomic_bool holdPartition{false};
   std::atomic_bool partitionEntered{false};
+  bool failRamLoader{};
 
   [[nodiscard]] zzrk::transport::ScanResult scanDevices() override {
     ++scans;
@@ -156,6 +157,22 @@ public:
       const zzrk::workflow::FirmwareUpgradeCancellationCallback &cancellation)
       override {
     ++upgrades;
+    if (failRamLoader) {
+      zzrk::workflow::FirmwareUpgradeError error{};
+      error.code =
+          zzrk::workflow::FirmwareUpgradeErrorCode::loaderDownloadFailed;
+      error.stage = zzrk::workflow::FirmwareUpgradeStage::downloadLoader;
+      error.target = "DDR code";
+      error.loaderError = zzrk::image::MaskromLoaderError{
+          .code = zzrk::image::MaskromLoaderErrorCode::transferFailed,
+          .stage = "DDR code",
+          .completedBytes = 4096,
+          .transportError = zzrk::session::TransportError{
+              .code = zzrk::session::TransportErrorCode::timedOut,
+              .nativeCode = -7,
+              .bytesTransferred = 0}};
+      return error;
+    }
     upgradeEntered.store(true);
     while (holdUpgrade.load()) {
       std::this_thread::sleep_for(2ms);
@@ -421,7 +438,7 @@ private:
 
 } // namespace
 
-int main() {
+int main(int argc, char **argv) {
   auto backend = std::make_shared<AutomatedGuiBackend>();
   auto harness = zzrk::gui::test::GuiTestHarness::create(backend);
   if (harness == nullptr || harness->application() == nullptr ||
@@ -431,6 +448,52 @@ int main() {
   auto &application = *harness->application();
   auto *window = harness->window();
   auto *controller = harness->controller();
+  if (argc == 2 && std::string_view(argv[1]) == "--loader-error") {
+    // 控制器必须将真实工作流返回的底层错误展示给用户，不能只留下 DDR 阶段名。
+    backend->failRamLoader = true;
+    QObject::connect(
+        controller, &zzrk::gui::MainWorkspaceController::scanCompleted,
+        &application, [&] { harness->loadFirmwareImage("error.img"); });
+    QObject::connect(
+        controller,
+        &zzrk::gui::MainWorkspaceController::firmwarePreparationCompleted,
+        &application, [&](bool success) {
+          if (!success) {
+            application.exit(EXIT_FAILURE);
+            return;
+          }
+          window->findChild<QPushButton *>("startUpgradeButton")->click();
+        });
+    QObject::connect(
+        controller, &zzrk::gui::MainWorkspaceController::upgradeCompleted,
+        &application, [&] {
+          const auto text =
+              window->findChild<QLabel *>("upgradeStatus")->text();
+          const bool diagnostic =
+              text.contains("DDR code") && text.contains("-7") &&
+              text.contains("4096") && text.contains(QStringLiteral("超时"));
+          if (!diagnostic)
+            std::cerr << "FAIL: GUI discarded RAM Loader diagnostics: "
+                      << text.toStdString() << '\n';
+          // 错误已经显示后切换语言，嵌套的 Loader/USB 详情也必须即时更新。
+          auto *translations = zzrk::gui::GuiTranslations::active();
+          const bool installed = translations && translations->install("en");
+          QCoreApplication::sendPostedEvents(nullptr, QEvent::LanguageChange);
+          const auto english =
+              window->findChild<QLabel *>("upgradeStatus")->text();
+          const bool translated = installed &&
+                                  english.contains("USB transfer timed out") &&
+                                  english.contains("downloaded 4096 bytes");
+          if (!translated)
+            std::cerr << "FAIL: Loader diagnostics did not change language: "
+                      << english.toStdString() << '\n';
+          application.exit(diagnostic && translated ? EXIT_SUCCESS
+                                                    : EXIT_FAILURE);
+        });
+    QTimer::singleShot(5000, &application,
+                       [&] { application.exit(EXIT_FAILURE); });
+    return application.exec();
+  }
   QTemporaryFile partitionImage(
       QDir::temp().filePath(QStringLiteral("zzrk-partition-XXXXXX.img")));
   if (!partitionImage.open() || partitionImage.write("partition") != 9)

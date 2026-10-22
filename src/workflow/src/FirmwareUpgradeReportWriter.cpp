@@ -729,6 +729,16 @@ void writeErrorObject(JsonWriter& writer,
         writer.stringValue(error.loaderError->stage);
         writer.key("loaderCompletedBytes");
         writer.integerValue(error.loaderError->completedBytes);
+        if (error.loaderError->transportError) {
+          const auto &transport = *error.loaderError->transportError;
+          writer.key("loaderTransportCode");
+          writer.integerValue(static_cast<std::int64_t>(transport.code));
+          writer.key("loaderTransportNativeCode");
+          writer.integerValue(static_cast<std::int64_t>(transport.nativeCode));
+          writer.key("loaderTransportBytesTransferred");
+          writer.integerValue(
+              static_cast<std::uint64_t>(transport.bytesTransferred));
+        }
     }
     if (error.sessionError.has_value()) {
         writer.key("sessionErrorCode");

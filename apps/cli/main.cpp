@@ -1666,6 +1666,16 @@ int flashImage(const std::string_view portPath,
     if (error->completedBytes != 0U) {
       message << " after " << error->completedBytes << " bytes";
     }
+    if (error->loaderError) {
+      const auto &loader = *error->loaderError;
+      message << "; Loader error " << static_cast<int>(loader.code)
+              << ", downloaded " << loader.completedBytes << " bytes";
+      if (loader.transportError)
+        message << ", transport error "
+                << static_cast<int>(loader.transportError->code) << " (libusb "
+                << loader.transportError->nativeCode << ", transferred "
+                << loader.transportError->bytesTransferred << " bytes)";
+    }
     if (error->code ==
         zzrk::workflow::FirmwareUpgradeErrorCode::cancelled) {
       zzrk::logging::warning(message.str());

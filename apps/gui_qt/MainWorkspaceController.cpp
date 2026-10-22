@@ -3,14 +3,15 @@
 #include "GuiTranslations.hpp"
 
 #include "FileSelectionDialog.hpp"
-#include "MainWorkspaceController.hpp"
 #include "GuiDeviceStatusBar.hpp"
+#include "MainWorkspaceController.hpp"
 #include "WorkspaceUi.hpp"
-#include "pages/DevicePage.hpp"
 #include "driver/DriverManagementDialog.hpp"
+#include "pages/DevicePage.hpp"
 #include "pages/FullUpgradePage.hpp"
 #include "pages/ImageDownloadPage.hpp"
 #include "pages/PartitionPage.hpp"
+#include <zzrk/logging/Logging.hpp>
 
 #include <ZzFluentUI/ZzTabWidget.h>
 
@@ -46,6 +47,52 @@
 namespace zzrk::gui {
 
 namespace {
+
+// 底层错误不能在 GUI 边界丢失，否则只能看到 DDR
+// 阶段，无法区分超时、断连或驱动问题。
+GuiText
+loaderErrorDetails(const std::optional<image::MaskromLoaderError> &error) {
+  if (!error)
+    return {};
+  auto text = guiText("\nLoader 错误 %1；已下载 %2 字节")
+                  .arg(static_cast<int>(error->code))
+                  .arg(error->completedBytes);
+  if (error->transportError) {
+    const auto &transport = *error->transportError;
+    GuiText reason;
+    using session::TransportErrorCode;
+    switch (transport.code) {
+    case TransportErrorCode::timedOut:
+      reason = guiText("USB 传输超时");
+      break;
+    case TransportErrorCode::disconnected:
+      reason = guiText("USB 设备已断开");
+      break;
+    case TransportErrorCode::accessDenied:
+      reason = guiText("USB 访问被拒绝");
+      break;
+    case TransportErrorCode::stalled:
+      reason = guiText("USB 请求被设备拒绝");
+      break;
+    case TransportErrorCode::notSupported:
+      reason = guiText("USB 驱动不支持此请求");
+      break;
+    case TransportErrorCode::busy:
+      reason = guiText("USB 接口被占用");
+      break;
+    default:
+      reason = guiText("USB 传输失败");
+      break;
+    }
+    const auto details = guiText("\n%1（libusb %2；本次传输 %3 字节）")
+                             .arg(reason)
+                             .arg(transport.nativeCode)
+                             .arg(transport.bytesTransferred);
+    // 保留两段文案的翻译回调，避免 QString 拼接固化当前语言。
+    text = GuiText(QStringLiteral("%1%2")).arg(text, details);
+  }
+  return text;
+}
 
 [[nodiscard]] ZzCore::ZzResult<void> workspaceFailure(QString message) {
   return ZzCore::ZzResult<void>::failure(ZzCore::ZzError(
@@ -292,7 +339,8 @@ imageDownloadErrorText(const zzrk::workflow::ImageDownloadError &error) {
     reason +=
         QStringLiteral("（%1）").arg(QString::fromStdString(error.target));
   }
-  return reason;
+  return GuiText(QStringLiteral("%1%2"))
+      .arg(reason, loaderErrorDetails(error.loaderError));
 }
 
 GuiText
@@ -429,7 +477,8 @@ GuiText workflowErrorText(const zzrk::workflow::FirmwareUpgradeError &error) {
   if (!error.target.empty())
     reason +=
         QStringLiteral("（%1）").arg(QString::fromStdString(error.target));
-  return reason;
+  return GuiText(QStringLiteral("%1%2"))
+      .arg(reason, loaderErrorDetails(error.loaderError));
 }
 
 GuiText partitionPhaseText(zzrk::workflow::PartitionOperationPhase phase) {
@@ -1669,10 +1718,13 @@ void MainWorkspaceController::handleUpgradeFinished() {
   if (const auto *error =
           std::get_if<zzrk::workflow::FirmwareUpgradeError>(&result)) {
     const GuiText message = workflowErrorText(*error);
-    if (error->code == zzrk::workflow::FirmwareUpgradeErrorCode::cancelled)
+    if (error->code == zzrk::workflow::FirmwareUpgradeErrorCode::cancelled) {
+      logging::warning(message.toStdString());
       m_upgradePage->setStatus(message);
-    else
+    } else {
+      logging::error(message.toStdString());
       m_upgradePage->setError(message);
+    }
     if (m_statusBar != nullptr)
       setGuiStatus(m_statusBar, guiText("固件升级未完成"));
     if (m_showModalDialogs &&
