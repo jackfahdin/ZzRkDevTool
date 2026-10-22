@@ -261,7 +261,7 @@ sudo apt install ./build/linux-release/zzrkdevtool_0.1.0_amd64.deb
 
 Linux DEB 包含 Qt GUI、CLI、Qt/ICU 运行库、许可证和 SPDX 组件清单，以及桌面入口与限定 Rockchip 设备的 udev 规则；Zzlibusb 已静态链接。另提供解压即用的 TGZ 便携包。桌面 `uaccess` 或专用 `zzrkdevtool` 组提供 USB 权限，应用以普通用户运行。
 
-Windows TGZ 不安装或替换 USB 驱动，真机访问需要兼容 WinUSB 驱动。macOS CI 配置采用 ad-hoc 签名；正式发布还需 Developer ID 与 Apple 公证。各平台完整命令见[编译、测试与打包指南](docs/BUILD_AND_PACKAGE.zh-CN.md)。
+Windows TGZ 内置基于 libwdi 的驱动管理入口，由用户在“设备”页主动确认后申请管理员权限，将原驱动备份并切换为 WinUSB，也可使用可信备份恢复。解压和启动不会自动修改驱动；该功能仍待 Windows 真机验收，详见 [Windows 驱动管理说明](packaging/windows/README.md)。macOS CI 配置采用 ad-hoc 签名；正式发布还需 Developer ID 与 Apple 公证。各平台完整命令见[编译、测试与打包指南](docs/BUILD_AND_PACKAGE.zh-CN.md)。
 
 ## 📌 当前支持边界
 

@@ -751,10 +751,13 @@ Qt GUI 已通过可注入的操作 backend 与生产 workflow 解耦，并增加
 
 ### 18.2 Windows
 
-- [ ] 在 Windows 10 22H2 x64 和 Windows 11 x64 上完成 MSVC Release 构建、22 项无硬件测试、ZIP 解压启动、libusb 1.0.30 热插拔能力以及 Qt/libusb DLL 检查。
-- [ ] 为测试设备记录现有 USB 驱动，再绑定兼容 WinUSB 驱动，验证 `list`、`info`、`--prepare-only` 和完整升级；同时验证恢复原驱动的流程。
-- [ ] 发布前制作项目自有 INF/CAT，完成可信签名；应用 EXE/DLL 完成 Authenticode SHA-256 签名和时间戳验证。
-- [ ] 在没有 Qt、Visual Studio 和 vcpkg 的干净机器验证 ZIP，确认 GUI、CLI 和 MSVC runtime 均为自包含。
+已实现待验收的内置驱动管理：设备页查询、用户确认/UAC、原包备份、WinUSB 安装、绑定核实和原包恢复；基于固定 libwdi 1.5.1 源码构建，Linux/macOS 不引入该依赖。Linux 构建与无硬件测试不能替代以下 Windows 验收，完整步骤见 [Windows 打包与驱动管理](../packaging/windows/README.md)。
+
+- [ ] 在 Windows 10 22H2 x64 和 Windows 11 x64 上完成 MSVC Release 构建、全部无硬件测试、TGZ 解压启动、源码 Zzlibusb 热插拔能力和 Qt / helper / libwdi 运行依赖检查；VS 2026 与 MinGW 也需具备 v143 x86/x64 以构建 libwdi。
+- [ ] 使用内置入口查询原厂驱动 → 备份原包 → 切换 WinUSB → probe → `info` / `--prepare-only` → 完整升级与回读 → 恢复原包 → 原厂 RK 工具重新识别；检查 Loader/Maskrom 重新枚举后的身份。
+- [ ] 验证 UAC 取消、中文路径、安装失败后的无绑定恢复、重启要求、设备拔出和不可信备份。第二块板空闲后，确认同时连接同硬件 ID 板卡会阻止安装，且没有误改另一块板。
+- [ ] 确定正式驱动签名与分发策略，不能将 libwdi 自签名等同于生产可信签名；应用 EXE/DLL 完成 Authenticode SHA-256 签名和时间戳验证。
+- [ ] 在没有 Qt、Visual Studio 和 vcpkg 的干净机器验证 TGZ，确认 GUI、CLI、MSVC runtime、libwdi 及其完整许可/源码配方齐全。
 
 ### 18.3 macOS
 

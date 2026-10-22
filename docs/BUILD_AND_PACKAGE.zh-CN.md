@@ -280,6 +280,7 @@ build/linux-release/apps/cli/zzrkdevtool-cli partitions 1-5
 - CMake 3.25 或更高版本与 Ninja，并加入 `PATH`。
 - 与 MSVC 工具链 ABI 匹配的 Qt 套件，例如 Qt 6.12.0 `msvc2022_64`。
 - Zzlibusb 子模块；不再需要 vcpkg libusb 或手工复制 USB DLL。
+- Windows 内置驱动管理还需 MSVC **v143 x86/x64**、Windows SDK 和 PowerShell 5.1+。VS 2026 需额外安装 v143；构建时下载固定版本 libwdi 和经 SHA256 校验的微软 WDF 重分发资源，仅在构建目录解压，不向本机安装驱动。可用 `-DZZRK_ENABLE_WINDOWS_DRIVER_MANAGEMENT=OFF` 显式禁用。
 
 在对应版本的 x64 开发者 PowerShell 中设置 Qt 路径：
 
@@ -347,7 +348,7 @@ $env:QT_QPA_PLATFORM = "offscreen"
 
 Windows 和 Linux 便携包统一使用 CPack TGZ 格式（扩展名 `.tar.gz`）。可使用上述 CMake 命令或支持该格式的解压工具打开。程序应直接位于压缩包内的顶层软件目录，Qt DLL、`qt.conf` 与 exe 同级，插件位于 `plugins/`；没有额外的 `bin/`。不要单独拷贝 exe，需保留其 Qt 依赖。libusb 已静态链接，因此不需要 `libusb-1.0.dll`。
 
-TGZ 不安装 USB 驱动。RockUSB 真机访问要求设备绑定兼容 WinUSB 驱动；正式发布必须使用项目自有并可信签名的 INF/CAT。首次切换驱动前应记录原驱动，避免影响 Rockchip 厂商工具。详细策略见 `packaging/windows/README.md`。
+TGZ 解压不安装 USB 驱动，但默认包含 `zzrk-driver-helper.exe` 和 `libwdi.dll`。在“设备”页主动打开“驱动管理”可确认切换 WinUSB 或恢复已备份原驱动；只有变更辅助进程申请 UAC。安装前导出原包，并要求只连接一块相同硬件 ID 的板卡。源码、构建配方及许可位于包内 `share/licenses/libwdi/`。该功能仍待 Windows 真机安装与恢复闭环验证，详细步骤见 [Windows 驱动管理说明](../packaging/windows/README.md)。
 
 正式发布还需要对所有 EXE/DLL 做 Authenticode SHA-256 签名和时间戳验证，然后重新生成 TGZ。证书、密码、token 和私钥不得写入仓库或 CI 日志。
 
@@ -364,7 +365,7 @@ cmake --build --preset windows-mingw-release --parallel
 ctest --preset windows-mingw-release -R "^(gui_framework|gui_smoke)$"
 ```
 
-MinGW 同样使用源码 Zzlibusb，当前预设只验证构建，不启用运行库打包。Windows MinGW、MSVC 和 macOS 需在对应系统或 CI 验证；Linux 上的配置检查不能替代原生编译。在 Windows 桌面会话中还需验证标题栏、系统按钮和 DPI 缩放。
+MinGW 同样使用源码 Zzlibusb，当前预设只验证构建，不启用运行库打包。内置 libwdi 由 MSBuild 独立构建，因此即使应用使用 MinGW，也需安装 v143 x86/x64 和 Windows SDK；它的 Release DLL 使用静态 CRT。Windows MinGW、MSVC 和 macOS 需在对应系统或 CI 验证；Linux 上的配置检查不能替代原生编译。在 Windows 桌面会话中还需验证标题栏、系统按钮和 DPI 缩放。
 
 ## 4. macOS
 
