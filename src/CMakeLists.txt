@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 
 add_subdirectory(core)
+add_subdirectory(driver)
 add_subdirectory(image)
 add_subdirectory(protocol)
 add_subdirectory(session)

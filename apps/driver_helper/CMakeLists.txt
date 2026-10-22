@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: MIT
+if(NOT WIN32 OR NOT ZZRK_ENABLE_WINDOWS_DRIVER_MANAGEMENT)
+    return()
+endif()
+add_executable(zzrk-driver-helper main.cpp WindowsDevice.cpp WindowsDevice.hpp)
+target_include_directories(zzrk-driver-helper SYSTEM PRIVATE "${ZZRK_LIBWDI_INCLUDE_DIR}")
+target_compile_definitions(zzrk-driver-helper PRIVATE UNICODE _UNICODE NOMINMAX _WIN32_WINNT=0x0602)
+target_link_libraries(zzrk-driver-helper PRIVATE zzrk::driver_policy zzrk::transport zzrk_project_warnings LibUSB1::LibUSB1 setupapi cfgmgr32 advapi32 shell32 ole32)
+add_dependencies(zzrk-driver-helper zzrk_libwdi)
+if(MINGW)
+    target_link_options(zzrk-driver-helper PRIVATE -municode)
+endif()
+install(TARGETS zzrk-driver-helper RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")

@@ -190,6 +190,10 @@ if(ZZRK_BUILD_TRANSPORT)
 endif()
 
 add_subdirectory(src)
+if(ZZRK_BUILD_GUI OR ZZRK_BUILD_CLI)
+    include(cmake/Libwdi.cmake)
+    add_subdirectory(apps/driver_helper)
+endif()
 
 if(ZZRK_BUILD_CLI)
     add_subdirectory(apps/cli)
