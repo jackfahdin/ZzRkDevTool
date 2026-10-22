@@ -3,6 +3,47 @@
 <TS version="2.1" language="en" sourcelanguage="zh_CN">
   <context>
     <name>ZzRkDevTool</name>
+    <message><source>已等待 %1 秒</source><translation>Elapsed: %1 seconds</translation></message>
+    <message><source>正在请求管理员授权；请留意 Windows 的 UAC 提示。</source><translation>Requesting administrator approval. Look for the Windows UAC prompt.</translation></message>
+    <message><source>驱动变更正在进行，可能需要数分钟。请勿拔出设备或退出应用。</source><translation>Changing the driver. This may take several minutes. Do not disconnect the device or exit the application.</translation></message>
+    <message><source>当前已绑定 WinUSB；上次操作记录仅表示当时的结果。</source><translation>WinUSB is currently bound. The previous operation record describes its result at that time.</translation></message>
+    <message><source>当前已绑定原驱动，请使用原厂工具验证连接。</source><translation>The original driver is currently bound. Verify the connection with the vendor tool.</translation></message>
+    <message><source>端口：%1
+设备：%2
+服务：%3
+硬件 ID：%4
+实例 ID：%5
+提供商：%6
+版本：%7
+当前包：%8
+位置：%9
+恢复记录：%10
+上次操作记录：%11
+原驱动包：%12</source><translation>Port: %1
+Device: %2
+Service: %3
+Hardware ID: %4
+Instance ID: %5
+Provider: %6
+Version: %7
+Current package: %8
+Location: %9
+Backup record: %10
+Previous operation record: %11
+Original driver package: %12</translation></message>
+    <message><source>
+Loader 错误 %1；已下载 %2 字节</source><translation>
+Loader error %1; downloaded %2 bytes</translation></message>
+    <message><source>
+%1（libusb %2；本次传输 %3 字节）</source><translation>
+%1 (libusb %2; transferred %3 bytes)</translation></message>
+    <message><source>USB 传输超时</source><translation>USB transfer timed out</translation></message>
+    <message><source>USB 设备已断开</source><translation>USB device disconnected</translation></message>
+    <message><source>USB 访问被拒绝</source><translation>USB access denied</translation></message>
+    <message><source>USB 请求被设备拒绝</source><translation>USB request stalled</translation></message>
+    <message><source>USB 驱动不支持此请求</source><translation>The USB driver does not support this request</translation></message>
+    <message><source>USB 接口被占用</source><translation>USB interface busy</translation></message>
+    <message><source>USB 传输失败</source><translation>USB transfer failed</translation></message>
     <message><source>驱动管理</source><translation>Driver management</translation></message>
     <message><source>恢复原驱动后，请使用原厂工具验证连接。</source><translation>After restoring the original driver, verify the connection with the vendor tool.</translation></message>
     <message><source>安装 WinUSB</source><translation>Install WinUSB</translation></message>

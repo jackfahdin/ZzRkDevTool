@@ -14,6 +14,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QProcess>
+#include <QProgressBar>
 #include <QPushButton>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -170,15 +171,31 @@ DriverManagementDialog::DriverManagementDialog(QString selectedPort,
   m_details->setTextFormat(Qt::PlainText);
   m_details->setTextInteractionFlags(Qt::TextSelectableByMouse);
   layout->addWidget(m_details);
+  m_binding = ui::secondaryText({}, body);
+  m_binding->setWordWrap(true);
+  layout->addWidget(m_binding);
   m_status = ui::secondaryText({}, body);
   m_status->setObjectName(QStringLiteral("driverStatus"));
   m_status->setWordWrap(true);
   m_status->setTextFormat(Qt::PlainText);
   layout->addWidget(m_status);
-  auto *verification = ui::secondaryText(
-      guiText("恢复原驱动后，请使用原厂工具验证连接。"), body);
-  verification->setWordWrap(true);
-  layout->addWidget(verification);
+  // 系统驱动安装没有可靠的百分比；使用真实等待动画和耗时，不伪造完成进度。
+  m_progress = new QProgressBar(body);
+  m_progress->setObjectName(QStringLiteral("driverOperationProgress"));
+  m_progress->setRange(0, 0);
+  m_progress->setTextVisible(false);
+  m_progress->hide();
+  layout->addWidget(m_progress);
+  m_elapsed = ui::secondaryText({}, body);
+  m_elapsed->setObjectName(QStringLiteral("driverOperationElapsed"));
+  m_elapsed->hide();
+  layout->addWidget(m_elapsed);
+  m_activityTimer = new QTimer(this);
+  m_activityTimer->setInterval(1000);
+  connect(m_activityTimer, &QTimer::timeout, this, [this] {
+    setGuiText(m_elapsed, "text",
+               guiText("已等待 %1 秒").arg(m_activityClock.elapsed() / 1000));
+  });
   auto *buttons = new QHBoxLayout;
   m_refresh = ui::button(guiText("刷新"), ui::Icon::Refresh, body);
   m_install = ui::button(guiText("安装 WinUSB"), ui::Icon::Device, body, true);
@@ -250,29 +267,38 @@ void DriverManagementDialog::applyInventory(const QByteArray &json) {
     return;
   const auto *selected = selectedDriverDevice(m_inventory, m_selectedPort);
   if (!selected) {
+    setGuiText(m_binding, "text", {});
     setGuiText(m_details, "text",
                guiText("无法唯一匹配当前端口的设备，请关闭后重新选择设备。"));
   } else {
     const auto &d = selected->device;
-    setGuiText(
-        m_details, "text",
-        guiText(
-            "端口：%1\n设备：%2\n服务：%3\n硬件 ID：%4\n实例 "
-            "ID：%5\n提供商：%6\n版本：%7\n"
-            "当前包：%8\n位置：%9\n恢复记录：%10\n最近结果：%11\n原驱动包：%12")
-            .arg(m_selectedPort)
-            .arg(QString::fromStdString(d.description))
-            .arg(QString::fromStdString(d.service))
-            .arg(QString::fromStdString(d.hardwareId))
-            .arg(QString::fromStdString(d.instanceId))
-            .arg(QString::fromStdString(d.provider))
-            .arg(QString::fromStdString(d.version))
-            .arg(QString::fromStdString(d.infName))
-            .arg(QString::fromStdString(d.location))
-            .arg(d.backupAvailable ? GuiText(selected->backupPath)
-                                   : guiText("无"))
-            .arg(selected->lastMessage)
-            .arg(QString::fromStdString(d.originalInfName)));
+    setGuiText(m_details, "text",
+               guiText("端口：%1\n设备：%2\n服务：%3\n硬件 ID：%4\n实例 "
+                       "ID：%5\n提供商：%6\n版本：%7\n"
+                       "当前包：%8\n位置：%9\n恢复记录：%10\n上次操作记录：%"
+                       "11\n原驱动包：%12")
+                   .arg(m_selectedPort)
+                   .arg(QString::fromStdString(d.description))
+                   .arg(QString::fromStdString(d.service))
+                   .arg(QString::fromStdString(d.hardwareId))
+                   .arg(QString::fromStdString(d.instanceId))
+                   .arg(QString::fromStdString(d.provider))
+                   .arg(QString::fromStdString(d.version))
+                   .arg(QString::fromStdString(d.infName))
+                   .arg(QString::fromStdString(d.location))
+                   .arg(d.backupAvailable ? GuiText(selected->backupPath)
+                                          : guiText("无"))
+                   .arg(selected->lastMessage)
+                   .arg(QString::fromStdString(d.originalInfName)));
+    if (d.bindingKnown && QString::fromStdString(d.service).compare(
+                              "WinUSB", Qt::CaseInsensitive) == 0)
+      setGuiText(m_binding, "text",
+                 guiText("当前已绑定 WinUSB；上次操作记录仅表示当时的结果。"));
+    else if (d.originalBound)
+      setGuiText(m_binding, "text",
+                 guiText("当前已绑定原驱动，请使用原厂工具验证连接。"));
+    else
+      setGuiText(m_binding, "text", {});
   }
   updateControls();
 }
@@ -292,6 +318,16 @@ void DriverManagementDialog::updateControls() {
   setGuiText(m_restore, "toolTip", reasonText(restore.reason));
   m_refresh->setEnabled(!busy);
   m_dialog->setCloseButtonEnabled(!m_running);
+  const bool active = m_running || m_query;
+  m_progress->setVisible(active);
+  m_elapsed->setVisible(active);
+  if (active && !m_activityTimer->isActive()) {
+    m_activityClock.start();
+    setGuiText(m_elapsed, "text", guiText("已等待 %1 秒").arg(0));
+    m_activityTimer->start();
+  } else if (!active) {
+    m_activityTimer->stop();
+  }
 }
 void DriverManagementDialog::refresh() {
   if (!m_running && !m_query)
@@ -418,17 +454,15 @@ void DriverManagementDialog::startAction(zzrk::driver::DriverAction action) {
   info.lpFile = executable.c_str();
   info.lpParameters = parameters.c_str();
   info.nShow = SW_HIDE;
-  m_installing = install;
-  m_operationInstance = instanceId;
-  m_running = true; // UAC 确认期间也禁止退出和重复启动。
-  updateControls();
+  beginOperation(install, instanceId);
   if (!ShellExecuteExW(&info) || !info.hProcess) {
     finishOperation(GetLastError() == ERROR_CANCELLED ? 20UL : 22UL);
     return;
   }
   m_processHandle = info.hProcess;
-  setGuiText(m_status, "text",
-             guiText("驱动变更正在进行，请勿拔出设备或退出应用。"));
+  setGuiText(
+      m_status, "text",
+      guiText("驱动变更正在进行，可能需要数分钟。请勿拔出设备或退出应用。"));
   updateControls();
   auto *poll = new QTimer(this);
   connect(poll, &QTimer::timeout, this, [this, poll] {
@@ -447,6 +481,16 @@ void DriverManagementDialog::startAction(zzrk::driver::DriverAction action) {
 #else
   setGuiText(m_status, "text", guiText("此平台未启用 Windows 驱动管理。"));
 #endif
+}
+void DriverManagementDialog::beginOperation(bool installing,
+                                            const QString &instanceId) {
+  m_installing = installing;
+  m_operationInstance = instanceId;
+  m_running = true; // UAC 确认期间也禁止退出和重复启动。
+  m_activityClock.start();
+  setGuiText(m_status, "text",
+             guiText("正在请求管理员授权；请留意 Windows 的 UAC 提示。"));
+  updateControls();
 }
 void DriverManagementDialog::finishOperation(unsigned long code) {
   m_running = false;

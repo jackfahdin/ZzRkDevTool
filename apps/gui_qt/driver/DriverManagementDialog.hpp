@@ -2,6 +2,7 @@
 #pragma once
 
 #include <QByteArray>
+#include <QElapsedTimer>
 #include <QObject>
 #include <QPointer>
 #include <QString>
@@ -11,6 +12,8 @@
 class QLabel;
 class QPushButton;
 class QProcess;
+class QProgressBar;
+class QTimer;
 class QWidget;
 namespace ZzFluentUI {
 class ZzContentDialog;
@@ -54,10 +57,15 @@ private:
   void query(bool probe, const QString &instanceId = {});
   void updateControls();
   void startAction(zzrk::driver::DriverAction action);
+  void beginOperation(bool installing, const QString &instanceId);
   void finishOperation(unsigned long code);
   QPointer<ZzFluentUI::ZzContentDialog> m_dialog;
   QPointer<QWidget> m_owner;
-  QLabel *m_details{}, *m_status{};
+  QLabel *m_details{}, *m_status{}, *m_binding{};
+  QLabel *m_elapsed{};
+  QProgressBar *m_progress{};
+  QTimer *m_activityTimer{};
+  QElapsedTimer m_activityClock;
   QPushButton *m_install{}, *m_restore{}, *m_refresh{};
   QProcess *m_query{};
   QString m_selectedPort, m_operationInstance;
