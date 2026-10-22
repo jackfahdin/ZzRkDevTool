@@ -1,6 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_CN">
+  <context>
+    <name>ZzRkDevTool</name>
+    <message><source>驱动管理</source><translation>驱动管理</translation></message>
+    <message><source>恢复原驱动后，请使用原厂工具验证连接。</source><translation>恢复原驱动后，请使用原厂工具验证连接。</translation></message>
+    <message><source>无法确认当前驱动绑定，禁止变更。</source><translation>无法确认当前驱动绑定，禁止变更。</translation></message>
+    <message><source>安装 WinUSB</source><translation>安装 WinUSB</translation></message>
+    <message><source>恢复原驱动</source><translation>恢复原驱动</translation></message>
+    <message><source>没有可用的原驱动恢复记录。</source><translation>没有可用的原驱动恢复记录。</translation></message>
+    <message><source>无法唯一匹配当前端口的设备，请关闭后重新选择设备。</source><translation>无法唯一匹配当前端口的设备，请关闭后重新选择设备。</translation></message>
+    <message><source>确认驱动变更</source><translation>确认驱动变更</translation></message>
+    <message><source>驱动变更正在进行，请勿拔出设备或退出应用。</source><translation>驱动变更正在进行，请勿拔出设备或退出应用。</translation></message>
+    <message><source>驱动变更完成，需要重启 Windows。</source><translation>驱动变更完成，需要重启 Windows。</translation></message>
+    <message><source>驱动变更已取消。</source><translation>驱动变更已取消。</translation></message>
+    <message><source>绑定待确认，请重新插拔设备后刷新。</source><translation>绑定待确认，请重新插拔设备后刷新。</translation></message>
+    <message><source>另一驱动操作正在进行，请等待完成。</source><translation>另一驱动操作正在进行，请等待完成。</translation></message>
+  </context>
   <!-- Qt 内部文件提示仍用 QFileDialog 的翻译上下文，避免解析或改写文件名。 -->
   <context>
     <name>QFileDialog</name>

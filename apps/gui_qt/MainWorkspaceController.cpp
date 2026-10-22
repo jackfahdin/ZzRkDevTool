@@ -7,6 +7,7 @@
 #include "GuiDeviceStatusBar.hpp"
 #include "WorkspaceUi.hpp"
 #include "pages/DevicePage.hpp"
+#include "driver/DriverManagementDialog.hpp"
 #include "pages/FullUpgradePage.hpp"
 #include "pages/ImageDownloadPage.hpp"
 #include "pages/PartitionPage.hpp"
@@ -670,6 +671,8 @@ void MainWorkspaceController::attachPages(ImageDownloadPage *downloadPage,
     if (m_devicePage != nullptr) {
       connect(m_devicePage, &DevicePage::inspectRequested, this,
               &MainWorkspaceController::inspectSelectedDevice);
+      connect(m_devicePage, &DevicePage::driverManagementRequested, this,
+              &MainWorkspaceController::manageSelectedDeviceDriver);
     }
   }
   if (m_upgradePage != upgradePage) {
@@ -942,6 +945,28 @@ void MainWorkspaceController::clearDeviceInspection() {
   if (m_devicePage != nullptr) {
     m_devicePage->setInspection(guiText("尚未读取详情"));
   }
+}
+
+void MainWorkspaceController::manageSelectedDeviceDriver() {
+#if defined(Q_OS_WIN) && defined(ZZRK_ENABLE_WINDOWS_DRIVER_MANAGEMENT)
+  if (m_shuttingDown || !m_devicePage || usbOperationRunning() ||
+      selectedPortPath().isEmpty())
+    return;
+  const QString port = selectedPortPath();
+  QPointer<MainWorkspaceController> guard{this};
+  setPagesBusy(true); // 模态查询、确认及安装全程与烧录互斥。
+  if (!guard)
+    return;
+  {
+    DriverManagementDialog dialog(port, false, m_devicePage);
+    dialog.exec();
+  } // 先收敛查询进程，再解除设备操作互斥。
+  if (!guard)
+    return;
+  setPagesBusy(false);
+  if (guard)
+    refreshDevices();
+#endif
 }
 
 void MainWorkspaceController::inspectSelectedDevice() {

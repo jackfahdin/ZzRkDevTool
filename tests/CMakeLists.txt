@@ -1,5 +1,22 @@
 # SPDX-License-Identifier: MIT
 
+add_executable(driver_policy_test driver_policy_test.cpp)
+target_link_libraries(driver_policy_test PRIVATE zzrk::driver_policy zzrk_project_warnings)
+add_test(NAME driver_policy COMMAND driver_policy_test)
+add_test(NAME libwdi_cmake_smoke
+    COMMAND ${CMAKE_COMMAND} -P ${PROJECT_SOURCE_DIR}/tests/libwdi_cmake_smoke.cmake)
+if(WIN32 AND TARGET zzrk_libwdi)
+    add_test(NAME libwdi_build_script_smoke
+        COMMAND "${ZZRK_LIBWDI_POWERSHELL}" -NoProfile -NonInteractive
+            -ExecutionPolicy Bypass -File ${PROJECT_SOURCE_DIR}/tests/libwdi_build_script_smoke.ps1)
+endif()
+if(WIN32 AND TARGET zzrk_libwdi)
+    add_test(NAME libwdi_patch
+        COMMAND "${ZZRK_LIBWDI_POWERSHELL}" -NoProfile -NonInteractive
+            -ExecutionPolicy Bypass -File ${PROJECT_SOURCE_DIR}/tests/libwdi_patch_test.ps1
+            -SourceDir "${ZZRK_LIBWDI_INCLUDE_DIR}/..")
+endif()
+
 add_executable(protocol_codec_test protocol_codec_test.cpp)
 target_link_libraries(
     protocol_codec_test
@@ -242,6 +259,7 @@ if(TARGET zzrk_gui_support)
     endfunction()
 
     zzrk_add_gui_test(gui_framework gui_framework_test.cpp)
+    zzrk_add_gui_test(gui_driver_management gui_driver_management_test.cpp)
     add_test(NAME gui_framework_rollback
              COMMAND gui_framework_test --workspace-rollback)
     zzrk_configure_gui_test(gui_framework_rollback)

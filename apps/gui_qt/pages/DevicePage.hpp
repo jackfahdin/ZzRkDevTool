@@ -25,11 +25,13 @@ public:
 
 signals:
   void inspectRequested();
+  void driverManagementRequested();
 
 private:
   explicit DevicePage(QWidget *parent);
 
   QPushButton *m_inspectButton = nullptr;
+  QPushButton *m_driverManagementButton = nullptr;
   QLabel *m_status = nullptr;
   QLabel *m_chipInfo = nullptr;
   QLabel *m_capability = nullptr;

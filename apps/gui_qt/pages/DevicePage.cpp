@@ -38,6 +38,12 @@ DevicePage::DevicePage(QWidget *parent) : QWidget(parent) {
   auto *actions = new QHBoxLayout;
   actions->addWidget(ui::sectionTitle(guiText("所选设备详情"), group));
   actions->addStretch();
+  m_driverManagementButton = ui::button(guiText("驱动管理"), ui::Icon::Device, group);
+  m_driverManagementButton->setObjectName(QStringLiteral("driverManagementButton"));
+#if !defined(Q_OS_WIN) || !defined(ZZRK_ENABLE_WINDOWS_DRIVER_MANAGEMENT)
+  m_driverManagementButton->hide();
+#endif
+  actions->addWidget(m_driverManagementButton);
   actions->addWidget(m_inspectButton);
   details->addLayout(actions, 0, 0, 1, 4);
   details->addWidget(m_status, 1, 0, 1, 4);
@@ -102,6 +108,8 @@ DevicePage::DevicePage(QWidget *parent) : QWidget(parent) {
   layout->addStretch();
   connect(m_inspectButton, &QPushButton::clicked, this,
           &DevicePage::inspectRequested);
+  connect(m_driverManagementButton, &QPushButton::clicked, this,
+          &DevicePage::driverManagementRequested);
 }
 
 void DevicePage::setInspection(const GuiText &status, const GuiText &chipInfo,
@@ -122,6 +130,7 @@ void DevicePage::setInspection(const GuiText &status, const GuiText &chipInfo,
 }
 void DevicePage::setBusy(const bool busy, const bool canInspect) {
   m_inspectButton->setEnabled(!busy && canInspect);
+  m_driverManagementButton->setEnabled(!busy);
 }
 
 } // namespace zzrk::gui

@@ -3,6 +3,59 @@
 <TS version="2.1" language="en" sourcelanguage="zh_CN">
   <context>
     <name>ZzRkDevTool</name>
+    <message><source>驱动管理</source><translation>Driver management</translation></message>
+    <message><source>恢复原驱动后，请使用原厂工具验证连接。</source><translation>After restoring the original driver, verify the connection with the vendor tool.</translation></message>
+    <message><source>安装 WinUSB</source><translation>Install WinUSB</translation></message>
+    <message><source>恢复原驱动</source><translation>Restore original driver</translation></message>
+    <message><source>刷新</source><translation>Refresh</translation></message>
+    <message><source>无</source><translation>None</translation></message>
+    <message><source>设备操作正在进行，请等待完成。</source><translation>A device operation is running. Wait for it to finish.</translation></message>
+    <message><source>驱动安装库不可用，请检查安装包。</source><translation>The driver installation library is unavailable. Check the application package.</translation></message>
+    <message><source>当前已使用 WinUSB。</source><translation>The device already uses WinUSB.</translation></message>
+    <message><source>没有可用的原驱动恢复记录。</source><translation>No original driver backup is available.</translation></message>
+    <message><source>无法确认原驱动包，禁止替换。</source><translation>The original driver package could not be identified. Replacement is blocked.</translation></message>
+    <message><source>已核实当前绑定为原驱动，无需恢复。</source><translation>The original driver binding has been verified. No restoration is needed.</translation></message>
+    <message><source>原驱动绑定已恢复，请使用原厂工具验证连接。</source><translation>The original driver binding has been restored. Verify the connection with the vendor tool.</translation></message>
+    <message><source>此设备不在驱动管理支持范围内。</source><translation>Driver management does not support this device.</translation></message>
+    <message><source>无法确认当前驱动绑定，禁止变更。</source><translation>The current driver binding could not be verified. Changes are blocked.</translation></message>
+    <message><source>无法唯一匹配当前端口的设备，请关闭后重新选择设备。</source><translation>The current port does not uniquely identify a device. Close this dialog and select the device again.</translation></message>
+    <message><source>端口：%1
+设备：%2
+服务：%3
+硬件 ID：%4
+实例 ID：%5
+提供商：%6
+版本：%7
+当前包：%8
+位置：%9
+恢复记录：%10
+最近结果：%11
+原驱动包：%12</source><translation>Port: %1
+Device: %2
+Service: %3
+Hardware ID: %4
+Instance ID: %5
+Provider: %6
+Version: %7
+Current package: %8
+Location: %9
+Backup record: %10
+Last result: %11
+Original driver package: %12</translation></message>
+    <message><source>接口探测失败，请检查驱动或重新插拔设备；不会自动重装。</source><translation>Interface probing failed. Check the driver or reconnect the device. The driver will not be reinstalled automatically.</translation></message>
+    <message><source>驱动查询失败或超时，请检查辅助程序。</source><translation>The driver query failed or timed out. Check the helper program.</translation></message>
+    <message><source>接口探测成功：已打开、声明并释放接口。</source><translation>Interface probe succeeded: opened, claimed, and released the interface.</translation></message>
+    <message><source>设备身份待确认，请重新插拔并刷新。</source><translation>The device identity needs confirmation. Reconnect the device and refresh.</translation></message>
+    <message><source>确认驱动变更</source><translation>Confirm driver change</translation></message>
+    <message><source>将修改实例 %1 的驱动。同硬件 ID 的其他设备也可能受到影响。操作前请仅连接目标板卡，并关闭原厂工具。安装前会备份原驱动包；恢复仅使用已记录的备份。是否继续？</source><translation>The driver for instance %1 will change. Other devices with the same hardware ID may also be affected. Connect only the target board and close vendor tools before continuing. The original package will be backed up before installation; restoration uses only the recorded backup. Continue?</translation></message>
+    <message><source>驱动变更正在进行，请勿拔出设备或退出应用。</source><translation>The driver change is in progress. Do not disconnect the device or exit the application.</translation></message>
+    <message><source>此平台未启用 Windows 驱动管理。</source><translation>Windows driver management is disabled on this platform.</translation></message>
+    <message><source>驱动绑定已验证，正在重新枚举和探测接口。</source><translation>Driver binding verified. Enumerating devices and probing the interface.</translation></message>
+    <message><source>驱动变更完成，需要重启 Windows。</source><translation>The driver change completed. Restart Windows to finish.</translation></message>
+    <message><source>驱动变更已取消。</source><translation>The driver change was canceled.</translation></message>
+    <message><source>绑定待确认，请重新插拔设备后刷新。</source><translation>The binding needs confirmation. Reconnect the device and refresh.</translation></message>
+    <message><source>另一驱动操作正在进行，请等待完成。</source><translation>Another driver operation is running. Wait for it to finish.</translation></message>
+    <message><source>驱动变更失败，请查看最近结果；不会自动重装。</source><translation>The driver change failed. See the last result for details. The driver will not be reinstalled automatically.</translation></message>
     <message><source>操作状态</source><translation>Operation status</translation></message>
     <message><source>请选择设备</source><translation>Select device</translation></message>
     <message><source>设备 %1 已断开，请重新选择</source><translation>Device %1 disconnected; select a target</translation></message>

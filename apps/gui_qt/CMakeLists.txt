@@ -21,6 +21,8 @@ qt_add_library(
     FileSelectionDialog.hpp
     GuiDialogs.cpp
     GuiDialogs.hpp
+    driver/DriverManagementDialog.cpp
+    driver/DriverManagementDialog.hpp
     GuiSettings.cpp
     GuiSettings.hpp
     GuiAppearanceSettings.cpp
@@ -61,7 +63,12 @@ target_link_libraries(
         Zz::PureTools
         zzrk::transport
         zzrk::workflow
+        zzrk::driver_policy
 )
+if(WIN32 AND ZZRK_ENABLE_WINDOWS_DRIVER_MANAGEMENT)
+    target_compile_definitions(zzrk_gui_support PUBLIC ZZRK_ENABLE_WINDOWS_DRIVER_MANAGEMENT=1)
+    target_link_libraries(zzrk_gui_support PRIVATE shell32)
+endif()
 target_include_directories(zzrk_gui_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 set_target_properties(zzrk_gui_support PROPERTIES AUTOMOC ON)
 add_library(zzrk::gui ALIAS zzrk_gui_support)
@@ -100,3 +107,12 @@ set_target_properties(
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
 )
 qt_finalize_executable(ZzRkDevTool)
+if(WIN32 AND ZZRK_ENABLE_WINDOWS_DRIVER_MANAGEMENT)
+    add_dependencies(ZzRkDevTool zzrk-driver-helper zzrk_libwdi)
+    add_custom_command(TARGET ZzRkDevTool POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:zzrk-driver-helper>" "$<TARGET_FILE_DIR:ZzRkDevTool>/zzrk-driver-helper.exe"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${ZZRK_LIBWDI_DLL}" "$<TARGET_FILE_DIR:ZzRkDevTool>/libwdi.dll"
+        VERBATIM)
+endif()

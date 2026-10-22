@@ -150,6 +150,7 @@ signals:
 private slots:
   void handleScanFinished();
   void inspectSelectedDevice();
+  void manageSelectedDeviceDriver();
   void handleInspectionFinished();
   void handlePartitionTableFinished();
   void backupSelectedPartition();
